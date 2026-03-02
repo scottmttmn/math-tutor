@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@latest . --typescript --tailwind --app --src-dir --eslint --no-turbopack --use-npm --import-alias \"@/*\")",
+      "Bash(npm install @anthropic-ai/sdk idb uuid)",
+      "Bash(npm install --save-dev @types/uuid)",
+      "Bash(npx next build)",
+      "Bash(npm install)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(lsof -ti :3000)",
+      "Bash(xargs kill -9)",
+      "Bash(test -f /Users/scottmittman/Code/claude-math/.env.local)",
+      "Bash(echo $ANTHROPIC_API_KEY)",
+      "Bash(git init)",
+      "Bash(git status -u)",
+      "Bash(git add .gitignore .claude/launch.json .claude/settings.local.json README.md eslint.config.mjs next.config.ts package-lock.json package.json postcss.config.mjs public/ src/ tsconfig.json)",
+      "Bash(git commit:*)"
+    ]
+  }
+}
