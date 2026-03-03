@@ -1,7 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { TutorRequest } from '@/types';
-
-const anthropic = new Anthropic();
+import OpenAI from 'openai';
+import type { TutorRequest, ModelConfig } from '@/types';
 
 const SYSTEM_PROMPT = `You are a patient, encouraging math tutor helping a student work through problems.
 You can see the student's handwritten work as an image. The problem they are working on is provided in the conversation.
@@ -34,7 +33,7 @@ RULES YOU MUST FOLLOW:
 function friendlyError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes('401') || message.includes('authentication') || message.includes('invalid x-api-key')) {
-    return 'API key is missing or invalid. Add your ANTHROPIC_API_KEY to .env.local and restart the server.';
+    return 'API key is missing or invalid. Check your API key in .env.local and restart the server.';
   }
   if (message.includes('429') || message.includes('rate_limit')) {
     return 'Rate limited by the API. Please wait a moment and try again.';
@@ -43,96 +42,200 @@ function friendlyError(error: unknown): string {
     return 'The AI service is temporarily overloaded. Please try again shortly.';
   }
   if (message.includes('credit') || message.includes('billing') || message.includes('balance')) {
-    return 'Your Anthropic API credit balance is too low. Please add credits at console.anthropic.com.';
+    return 'Your API credit balance is too low. Please add credits to your account.';
   }
   return message;
+}
+
+function streamAnthropicResponse(
+  modelConfig: ModelConfig,
+  messages: Anthropic.MessageParam[],
+): ReadableStream {
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  const stream = anthropic.messages.stream({
+    model: modelConfig.model,
+    max_tokens: 1024,
+    system: SYSTEM_PROMPT,
+    messages,
+  });
+
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        stream.on('text', (text) => {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: 'text_delta', content: text })}\n\n`)
+          );
+        });
+
+        stream.on('error', (error) => {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: 'error', error: friendlyError(error) })}\n\n`)
+          );
+          controller.close();
+        });
+
+        stream.on('end', () => {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: 'message_stop' })}\n\n`)
+          );
+          controller.close();
+        });
+      } catch (err) {
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ type: 'error', error: friendlyError(err) })}\n\n`)
+        );
+        controller.close();
+      }
+    },
+  });
+}
+
+function streamOpenAIResponse(
+  modelConfig: ModelConfig,
+  chatHistory: { role: string; content: string }[],
+  canvasImage: string,
+  problemStatement: string,
+  userQuestion?: string,
+): ReadableStream {
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    baseURL: modelConfig.baseUrl || 'https://api.openai.com/v1',
+  });
+
+  // Build OpenAI messages
+  const messages: OpenAI.ChatCompletionMessageParam[] = [
+    { role: 'system', content: SYSTEM_PROMPT },
+  ];
+
+  // Add chat history
+  for (const msg of chatHistory) {
+    if (msg.role === 'user') {
+      messages.push({ role: 'user', content: msg.content });
+    } else {
+      messages.push({ role: 'assistant', content: msg.content });
+    }
+  }
+
+  // Build the latest user message with image if provided
+  const userParts: OpenAI.ChatCompletionContentPart[] = [];
+
+  if (canvasImage) {
+    userParts.push({
+      type: 'image_url',
+      image_url: { url: `data:image/png;base64,${canvasImage}` },
+    });
+  }
+
+  let textContent = '';
+  if (problemStatement) {
+    textContent += `The problem I'm working on: ${problemStatement}\n\n`;
+  }
+  if (userQuestion) {
+    textContent += userQuestion;
+  } else {
+    textContent += canvasImage
+      ? 'Here is my work so far. Can you give me a hint?'
+      : 'Can you give me a hint on what to do next?';
+  }
+
+  userParts.push({ type: 'text', text: textContent });
+  messages.push({ role: 'user', content: userParts });
+
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        const stream = await openai.chat.completions.create({
+          model: modelConfig.model,
+          max_tokens: 1024,
+          messages,
+          stream: true,
+        });
+
+        for await (const chunk of stream) {
+          const delta = chunk.choices[0]?.delta?.content;
+          if (delta) {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ type: 'text_delta', content: delta })}\n\n`)
+            );
+          }
+        }
+
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ type: 'message_stop' })}\n\n`)
+        );
+        controller.close();
+      } catch (err) {
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ type: 'error', error: friendlyError(err) })}\n\n`)
+        );
+        controller.close();
+      }
+    },
+  });
 }
 
 export async function POST(request: Request) {
   try {
     const body: TutorRequest = await request.json();
-    const { problemStatement, chatHistory, canvasImage } = body;
+    const { problemStatement, chatHistory, canvasImage, modelConfig, userQuestion } = body;
 
-    // Build messages for Anthropic API
-    const messages: Anthropic.MessageParam[] = [];
+    let readableStream: ReadableStream;
 
-    // Add chat history (text only for previous turns)
-    for (const msg of chatHistory) {
-      if (msg.role === 'user') {
-        messages.push({ role: 'user', content: msg.content });
-      } else {
-        messages.push({ role: 'assistant', content: msg.content });
-      }
-    }
+    if (modelConfig.provider === 'openai-compatible') {
+      readableStream = streamOpenAIResponse(
+        modelConfig,
+        chatHistory,
+        canvasImage,
+        problemStatement,
+        userQuestion,
+      );
+    } else {
+      // Anthropic path
+      const messages: Anthropic.MessageParam[] = [];
 
-    // Build the latest user message with image if provided
-    const userContent: Anthropic.ContentBlockParam[] = [];
-
-    if (canvasImage) {
-      userContent.push({
-        type: 'image',
-        source: {
-          type: 'base64',
-          media_type: 'image/png',
-          data: canvasImage,
-        },
-      });
-    }
-
-    let textContent = '';
-    if (problemStatement) {
-      textContent += `The problem I'm working on: ${problemStatement}\n\n`;
-    }
-    textContent += canvasImage
-      ? 'Here is my work so far. Can you give me a hint?'
-      : 'Can you give me a hint on what to do next?';
-
-    userContent.push({ type: 'text', text: textContent });
-
-    messages.push({ role: 'user', content: userContent });
-
-    // Ensure messages alternate properly (user, assistant, user, ...)
-    // The Anthropic API requires alternating roles, so we need to handle this
-    const cleanedMessages = cleanMessages(messages);
-
-    const stream = anthropic.messages.stream({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 1024,
-      system: SYSTEM_PROMPT,
-      messages: cleanedMessages,
-    });
-
-    const encoder = new TextEncoder();
-    const readableStream = new ReadableStream({
-      async start(controller) {
-        try {
-          stream.on('text', (text) => {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ type: 'text_delta', content: text })}\n\n`)
-            );
-          });
-
-          stream.on('error', (error) => {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ type: 'error', error: friendlyError(error) })}\n\n`)
-            );
-            controller.close();
-          });
-
-          stream.on('end', () => {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ type: 'message_stop' })}\n\n`)
-            );
-            controller.close();
-          });
-        } catch (err) {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ type: 'error', error: friendlyError(err) })}\n\n`)
-          );
-          controller.close();
+      for (const msg of chatHistory) {
+        if (msg.role === 'user') {
+          messages.push({ role: 'user', content: msg.content });
+        } else {
+          messages.push({ role: 'assistant', content: msg.content });
         }
-      },
-    });
+      }
+
+      const userContent: Anthropic.ContentBlockParam[] = [];
+
+      if (canvasImage) {
+        userContent.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: 'image/png',
+            data: canvasImage,
+          },
+        });
+      }
+
+      let textContent = '';
+      if (problemStatement) {
+        textContent += `The problem I'm working on: ${problemStatement}\n\n`;
+      }
+      if (userQuestion) {
+        textContent += userQuestion;
+      } else {
+        textContent += canvasImage
+          ? 'Here is my work so far. Can you give me a hint?'
+          : 'Can you give me a hint on what to do next?';
+      }
+
+      userContent.push({ type: 'text', text: textContent });
+      messages.push({ role: 'user', content: userContent });
+
+      const cleanedMessages = cleanMessages(messages);
+      readableStream = streamAnthropicResponse(modelConfig, cleanedMessages);
+    }
 
     return new Response(readableStream, {
       headers: {
@@ -147,11 +250,9 @@ export async function POST(request: Request) {
 }
 
 function cleanMessages(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
-  // Ensure the conversation starts with a user message and alternates
   const cleaned: Anthropic.MessageParam[] = [];
 
   for (const msg of messages) {
-    // Skip empty assistant messages
     if (msg.role === 'assistant' && (!msg.content || msg.content === '')) continue;
 
     if (cleaned.length === 0) {
@@ -163,7 +264,6 @@ function cleanMessages(messages: Anthropic.MessageParam[]): Anthropic.MessagePar
 
     const lastRole = cleaned[cleaned.length - 1].role;
     if (msg.role === lastRole) {
-      // Merge consecutive same-role messages
       if (msg.role === 'user') {
         const lastContent = typeof cleaned[cleaned.length - 1].content === 'string'
           ? cleaned[cleaned.length - 1].content as string
@@ -179,7 +279,5 @@ function cleanMessages(messages: Anthropic.MessageParam[]): Anthropic.MessagePar
     }
   }
 
-  // Ensure it ends with a user message (the API call)
-  // The last message we push should already be user since we add it last
   return cleaned;
 }

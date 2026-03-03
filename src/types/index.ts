@@ -62,12 +62,24 @@ export interface SessionMetadata {
   messageCount: number;
 }
 
+// === Model Config Types ===
+
+export type Provider = 'anthropic' | 'openai-compatible';
+
+export interface ModelConfig {
+  provider: Provider;
+  model: string;
+  baseUrl: string;
+}
+
 // === API Types ===
 
 export interface TutorRequest {
   problemStatement: string;
   chatHistory: ChatMessage[];
   canvasImage: string;
+  modelConfig: ModelConfig;
+  userQuestion?: string;
 }
 
 export interface TutorStreamEvent {

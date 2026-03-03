@@ -10,16 +10,24 @@ import { saveSession as dbSaveSession, loadSession as dbLoadSession } from '@/li
 import { canvasToBlob } from '@/lib/canvasUtils';
 import { RATE_LIMIT_MS } from '@/lib/constants';
 
+import { getModelConfig } from '@/lib/modelConfig';
+
 import TopBar from './TopBar';
 import BottomToolbar from './BottomToolbar';
 import ProblemStatement from '../workspace/ProblemStatement';
 import DrawingCanvas, { type DrawingCanvasHandle } from '../workspace/DrawingCanvas';
 import ChatPanel from '../chat/ChatPanel';
 import SessionList from '../sessions/SessionList';
+import SettingsModal from './SettingsModal';
+import HelpQuestionModal from './HelpQuestionModal';
 
 function AppContent() {
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [modelLabel, setModelLabel] = useState(() => getModelConfig().model);
+  const [helpModalOpen, setHelpModalOpen] = useState(false);
+  const [pendingImage, setPendingImage] = useState('');
 
   const { strokes, selection } = useCanvasState();
   const canvasDispatch = useCanvasDispatch();
@@ -65,21 +73,33 @@ function AppContent() {
     canvasDispatch({ type: 'LOAD_STROKES', strokes: session.canvasStrokes });
   }, [sessionDispatch, canvasDispatch]);
 
-  const handleAskForHelp = useCallback(async () => {
+  const handleAskForHelp = useCallback(() => {
     let image = '';
-    if (selection && canvasHandle.current) {
-      image = canvasHandle.current.captureRegion(selection);
-    } else if (canvasHandle.current) {
-      image = canvasHandle.current.captureFullCanvas();
+    if (strokes.length > 0) {
+      if (selection && canvasHandle.current) {
+        image = canvasHandle.current.captureRegion(selection);
+      } else if (canvasHandle.current) {
+        image = canvasHandle.current.captureFullCanvas();
+      }
     }
 
-    if (!image) return;
+    setPendingImage(image);
+    setHelpModalOpen(true);
+  }, [selection, strokes.length]);
 
-    const success = await sendHelp(image);
+  const handleHelpSend = useCallback(async (question: string) => {
+    setHelpModalOpen(false);
+    const success = await sendHelp(pendingImage, question);
     if (success) {
       recordUsage();
     }
-  }, [selection, sendHelp, recordUsage]);
+    setPendingImage('');
+  }, [pendingImage, sendHelp, recordUsage]);
+
+  const handleHelpCancel = useCallback(() => {
+    setHelpModalOpen(false);
+    setPendingImage('');
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -106,6 +126,8 @@ function AppContent() {
         onNew={handleNew}
         onSave={handleSave}
         onOpenSessions={() => setSessionsOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
+        modelLabel={modelLabel}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -126,6 +148,21 @@ function AppContent() {
         isOpen={sessionsOpen}
         onClose={() => setSessionsOpen(false)}
         onLoad={handleLoad}
+      />
+
+      <HelpQuestionModal
+        isOpen={helpModalOpen}
+        capturedImage={pendingImage}
+        onSend={handleHelpSend}
+        onCancel={handleHelpCancel}
+      />
+
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => {
+          setSettingsOpen(false);
+          setModelLabel(getModelConfig().model);
+        }}
       />
     </div>
   );

@@ -3,19 +3,22 @@
 import { useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useSessionState, useSessionDispatch } from '@/context/SessionContext';
+import { getModelConfig } from '@/lib/modelConfig';
 import type { ChatMessage, TutorStreamEvent } from '@/types';
 
 export function useTutorChat() {
   const { problemStatement, chatHistory, isStreaming } = useSessionState();
   const dispatch = useSessionDispatch();
 
-  const sendHelp = useCallback(async (canvasImage: string): Promise<boolean> => {
+  const sendHelp = useCallback(async (canvasImage: string, question?: string): Promise<boolean> => {
     if (isStreaming) return false;
+
+    const userContent = question || 'I need help with this part of my work.';
 
     const userMessage: ChatMessage = {
       id: uuidv4(),
       role: 'user',
-      content: 'I need help with this part of my work.',
+      content: userContent,
       timestamp: Date.now(),
       imagePreview: canvasImage.length > 100 ? canvasImage.substring(0, 100) + '...' : canvasImage,
     };
@@ -39,6 +42,8 @@ export function useTutorChat() {
           problemStatement,
           chatHistory: chatHistory,
           canvasImage,
+          modelConfig: getModelConfig(),
+          userQuestion: userContent,
         }),
       });
 
@@ -126,6 +131,7 @@ export function useTutorChat() {
           problemStatement,
           chatHistory: [...chatHistory, userMessage],
           canvasImage: '',
+          modelConfig: getModelConfig(),
         }),
       });
 
