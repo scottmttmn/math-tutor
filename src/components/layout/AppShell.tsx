@@ -19,19 +19,17 @@ import DrawingCanvas, { type DrawingCanvasHandle } from '../workspace/DrawingCan
 import ChatPanel from '../chat/ChatPanel';
 import SessionList from '../sessions/SessionList';
 import SettingsModal from './SettingsModal';
-import HelpQuestionModal from './HelpQuestionModal';
 
 function AppContent() {
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelLabel, setModelLabel] = useState(() => getModelConfig().model);
-  const [helpModalOpen, setHelpModalOpen] = useState(false);
-  const [pendingImage, setPendingImage] = useState('');
+  const [chatOpen, setChatOpen] = useState(false);
 
   const { strokes, selection } = useCanvasState();
   const canvasDispatch = useCanvasDispatch();
-  const { currentSessionId, problemStatement, chatHistory, isStreaming } = useSessionState();
+  const { currentSessionId, problemStatement, problemImage, chatHistory, isStreaming, isSolved } = useSessionState();
   const sessionDispatch = useSessionDispatch();
   const { sendHelp } = useTutorChat();
   const { recordUsage } = useRateLimit(RATE_LIMIT_MS);
@@ -41,7 +39,7 @@ function AppContent() {
     sessionDispatch({ type: 'NEW_SESSION' });
   }, [canvasDispatch, sessionDispatch]);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(async (opts?: { isSolvedOverride?: boolean }) => {
     const id = currentSessionId || uuidv4();
     const canvas = canvasHandle.current?.getCanvas();
     const blob = canvas ? await canvasToBlob(canvas) : null;
@@ -50,15 +48,17 @@ function AppContent() {
       id,
       title: problemStatement.slice(0, 50) || 'Untitled',
       problemStatement,
+      problemImage: problemImage ?? null,
       canvasStrokes: strokes,
       canvasImageBlob: blob,
       chatHistory,
+      isSolved: opts?.isSolvedOverride !== undefined ? opts.isSolvedOverride : isSolved,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
 
     sessionDispatch({ type: 'SET_CURRENT_SESSION_ID', id });
-  }, [currentSessionId, problemStatement, strokes, chatHistory, sessionDispatch]);
+  }, [currentSessionId, problemStatement, problemImage, strokes, chatHistory, isSolved, sessionDispatch]);
 
   const handleLoad = useCallback(async (id: string) => {
     const session = await dbLoadSession(id);
@@ -68,12 +68,14 @@ function AppContent() {
       type: 'LOAD_SESSION',
       sessionId: session.id,
       problemStatement: session.problemStatement,
+      problemImage: session.problemImage ?? null,
       chatHistory: session.chatHistory,
+      isSolved: session.isSolved,
     });
     canvasDispatch({ type: 'LOAD_STROKES', strokes: session.canvasStrokes });
   }, [sessionDispatch, canvasDispatch]);
 
-  const handleAskForHelp = useCallback(() => {
+  const handleAskForHelp = useCallback(async () => {
     let image = '';
     if (strokes.length > 0) {
       if (selection && canvasHandle.current) {
@@ -82,24 +84,22 @@ function AppContent() {
         image = canvasHandle.current.captureFullCanvas();
       }
     }
+    setChatOpen(true);
+    const success = await sendHelp(image);
+    if (success) recordUsage();
+  }, [selection, strokes.length, sendHelp, recordUsage]);
 
-    setPendingImage(image);
-    setHelpModalOpen(true);
-  }, [selection, strokes.length]);
+  const handleSetProblemImage = useCallback(() => {
+    if (!canvasHandle.current) return;
+    const image = canvasHandle.current.captureFullCanvas();
+    sessionDispatch({ type: 'SET_PROBLEM_IMAGE', image });
+  }, [sessionDispatch]);
 
-  const handleHelpSend = useCallback(async (question: string) => {
-    setHelpModalOpen(false);
-    const success = await sendHelp(pendingImage, question);
-    if (success) {
-      recordUsage();
-    }
-    setPendingImage('');
-  }, [pendingImage, sendHelp, recordUsage]);
-
-  const handleHelpCancel = useCallback(() => {
-    setHelpModalOpen(false);
-    setPendingImage('');
-  }, []);
+  const handleToggleSolved = useCallback(async () => {
+    const newSolved = !isSolved;
+    sessionDispatch({ type: 'TOGGLE_SOLVED' });
+    await handleSave({ isSolvedOverride: newSolved });
+  }, [isSolved, sessionDispatch, handleSave]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -128,33 +128,35 @@ function AppContent() {
         onOpenSessions={() => setSessionsOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
         modelLabel={modelLabel}
+        chatOpen={chatOpen}
+        onToggleChat={() => setChatOpen((o) => !o)}
       />
 
       <div className="flex-1 flex overflow-hidden">
         {/* Left panel: workspace */}
         <div className="flex-[3] flex flex-col min-w-0">
-          <ProblemStatement />
+          <ProblemStatement onCaptureProblemImage={handleSetProblemImage} />
           <DrawingCanvas ref={canvasHandle} />
-          <BottomToolbar onAskForHelp={handleAskForHelp} isStreaming={isStreaming} />
+          <BottomToolbar
+            onAskForHelp={handleAskForHelp}
+            isStreaming={isStreaming}
+            isSolved={isSolved}
+            onToggleSolved={handleToggleSolved}
+          />
         </div>
 
-        {/* Right panel: chat */}
-        <div className="flex-[2] min-w-[300px]">
-          <ChatPanel />
-        </div>
+        {/* Right panel: chat (collapsible) */}
+        {chatOpen && (
+          <div className="flex-[2] min-w-[300px] border-l border-gray-200">
+            <ChatPanel />
+          </div>
+        )}
       </div>
 
       <SessionList
         isOpen={sessionsOpen}
         onClose={() => setSessionsOpen(false)}
         onLoad={handleLoad}
-      />
-
-      <HelpQuestionModal
-        isOpen={helpModalOpen}
-        capturedImage={pendingImage}
-        onSend={handleHelpSend}
-        onCancel={handleHelpCancel}
       />
 
       <SettingsModal

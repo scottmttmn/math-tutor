@@ -7,7 +7,7 @@ import { getModelConfig } from '@/lib/modelConfig';
 import type { ChatMessage, TutorStreamEvent } from '@/types';
 
 export function useTutorChat() {
-  const { problemStatement, chatHistory, isStreaming } = useSessionState();
+  const { problemStatement, problemImage, chatHistory, isStreaming } = useSessionState();
   const dispatch = useSessionDispatch();
 
   const sendHelp = useCallback(async (canvasImage: string, question?: string): Promise<boolean> => {
@@ -44,6 +44,7 @@ export function useTutorChat() {
           canvasImage,
           modelConfig: getModelConfig(),
           userQuestion: userContent,
+          problemImage: problemImage ?? undefined,
         }),
       });
 
@@ -100,7 +101,7 @@ export function useTutorChat() {
       dispatch({ type: 'SET_STREAMING', streaming: false });
       return false;
     }
-  }, [problemStatement, chatHistory, isStreaming, dispatch]);
+  }, [problemStatement, problemImage, chatHistory, isStreaming, dispatch]);
 
   const sendFollowUp = useCallback(async (text: string): Promise<boolean> => {
     if (isStreaming || !text.trim()) return false;
@@ -129,9 +130,11 @@ export function useTutorChat() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           problemStatement,
-          chatHistory: [...chatHistory, userMessage],
+          chatHistory: chatHistory,
           canvasImage: '',
           modelConfig: getModelConfig(),
+          userQuestion: text.trim(),
+          problemImage: problemImage ?? undefined,
         }),
       });
 
@@ -188,7 +191,7 @@ export function useTutorChat() {
       dispatch({ type: 'SET_STREAMING', streaming: false });
       return false;
     }
-  }, [problemStatement, chatHistory, isStreaming, dispatch]);
+  }, [problemStatement, problemImage, chatHistory, isStreaming, dispatch]);
 
   return { sendHelp, sendFollowUp, isStreaming };
 }

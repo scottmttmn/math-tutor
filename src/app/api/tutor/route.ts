@@ -5,6 +5,8 @@ import type { TutorRequest, ModelConfig } from '@/types';
 const SYSTEM_PROMPT = `You are a patient, encouraging math tutor helping a student work through problems.
 You can see the student's handwritten work as an image. The problem they are working on is provided in the conversation.
 
+When a problem figure image is provided (labeled as "Problem figure" and appearing first), it shows the geometry diagram or figure that defines the problem — treat it as the question itself. Any subsequent image shows the student's current work toward solving it.
+
 RULES YOU MUST FOLLOW:
 
 1. NEVER give the full solution or final answer. Your job is to guide, not solve.
@@ -99,6 +101,7 @@ function streamOpenAIResponse(
   canvasImage: string,
   problemStatement: string,
   userQuestion?: string,
+  problemImage?: string,
 ): ReadableStream {
   const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -119,8 +122,15 @@ function streamOpenAIResponse(
     }
   }
 
-  // Build the latest user message with image if provided
+  // Build the latest user message with images if provided
   const userParts: OpenAI.ChatCompletionContentPart[] = [];
+
+  if (problemImage) {
+    userParts.push({
+      type: 'image_url',
+      image_url: { url: `data:image/png;base64,${problemImage}` },
+    });
+  }
 
   if (canvasImage) {
     userParts.push({
@@ -130,6 +140,9 @@ function streamOpenAIResponse(
   }
 
   let textContent = '';
+  if (problemImage) {
+    textContent += 'Problem figure: shown in the first image above.\n\n';
+  }
   if (problemStatement) {
     textContent += `The problem I'm working on: ${problemStatement}\n\n`;
   }
@@ -181,7 +194,7 @@ function streamOpenAIResponse(
 export async function POST(request: Request) {
   try {
     const body: TutorRequest = await request.json();
-    const { problemStatement, chatHistory, canvasImage, modelConfig, userQuestion } = body;
+    const { problemStatement, chatHistory, canvasImage, modelConfig, userQuestion, problemImage } = body;
 
     let readableStream: ReadableStream;
 
@@ -192,6 +205,7 @@ export async function POST(request: Request) {
         canvasImage,
         problemStatement,
         userQuestion,
+        problemImage,
       );
     } else {
       // Anthropic path
@@ -207,6 +221,17 @@ export async function POST(request: Request) {
 
       const userContent: Anthropic.ContentBlockParam[] = [];
 
+      if (problemImage) {
+        userContent.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: 'image/png',
+            data: problemImage,
+          },
+        });
+      }
+
       if (canvasImage) {
         userContent.push({
           type: 'image',
@@ -219,6 +244,9 @@ export async function POST(request: Request) {
       }
 
       let textContent = '';
+      if (problemImage) {
+        textContent += 'Problem figure: shown in the first image above.\n\n';
+      }
       if (problemStatement) {
         textContent += `The problem I'm working on: ${problemStatement}\n\n`;
       }

@@ -18,11 +18,18 @@ export default function SessionCard({ session, onLoad, onDelete }: Props) {
   });
 
   return (
-    <div className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
+    <div className={`flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 ${session.isSolved ? 'border-green-300 bg-green-50 hover:bg-green-100' : 'border-gray-200'}`}>
       <div className="flex-1 min-w-0 mr-3">
-        <p className="text-sm font-medium text-gray-800 truncate">
-          {session.title || 'Untitled'}
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium text-gray-800 truncate">
+            {session.title || 'Untitled'}
+          </p>
+          {session.isSolved && (
+            <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded-full border border-green-200">
+              ✓ Solved
+            </span>
+          )}
+        </div>
         <p className="text-xs text-gray-500 truncate mt-0.5">
           {session.problemStatement || 'No problem set'}
         </p>

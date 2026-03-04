@@ -8,9 +8,11 @@ import type { DrawingTool } from '@/types';
 interface Props {
   onAskForHelp: () => void;
   isStreaming: boolean;
+  isSolved: boolean;
+  onToggleSolved: () => void;
 }
 
-export default function BottomToolbar({ onAskForHelp, isStreaming }: Props) {
+export default function BottomToolbar({ onAskForHelp, isStreaming, isSolved, onToggleSolved }: Props) {
   const { toolSettings, strokes, undoneStrokes, selection } = useCanvasState();
   const dispatch = useCanvasDispatch();
   const { isLimited, formatRemaining } = useRateLimit(RATE_LIMIT_MS);
@@ -122,6 +124,20 @@ export default function BottomToolbar({ onAskForHelp, isStreaming }: Props) {
         </span>
       )}
 
+      {/* Mark Solved */}
+      <button
+        onClick={onToggleSolved}
+        className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
+          isSolved
+            ? 'bg-green-500 text-white border-green-500 hover:bg-green-600'
+            : 'text-gray-600 border-gray-300 hover:bg-gray-50'
+        }`}
+        title={isSolved ? 'Click to un-mark as solved' : 'Mark this problem as solved'}
+      >
+        <CheckIcon solved={isSolved} />
+        {isSolved ? 'Solved!' : 'Mark Solved'}
+      </button>
+
       {/* Ask for Help */}
       <button
         onClick={onAskForHelp}
@@ -183,6 +199,15 @@ function SelectIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="3 2">
       <rect x="2" y="2" width="12" height="12" rx="1" />
+    </svg>
+  );
+}
+
+function CheckIcon({ solved }: { solved: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={solved ? 2.5 : 1.5} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="8" cy="8" r="6.5" />
+      <polyline points="5,8.5 7,10.5 11,6" />
     </svg>
   );
 }

@@ -46,11 +46,13 @@ export interface Session {
   id: string;
   title: string;
   problemStatement: string;
+  problemImage: string | null;
   canvasStrokes: Stroke[];
   canvasImageBlob: Blob | null;
   chatHistory: ChatMessage[];
   createdAt: number;
   updatedAt: number;
+  isSolved?: boolean;
 }
 
 export interface SessionMetadata {
@@ -60,6 +62,7 @@ export interface SessionMetadata {
   createdAt: number;
   updatedAt: number;
   messageCount: number;
+  isSolved?: boolean;
 }
 
 // === Model Config Types ===
@@ -80,6 +83,7 @@ export interface TutorRequest {
   canvasImage: string;
   modelConfig: ModelConfig;
   userQuestion?: string;
+  problemImage?: string;
 }
 
 export interface TutorStreamEvent {

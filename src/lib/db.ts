@@ -8,11 +8,13 @@ interface MathTutorDB extends DBSchema {
       id: string;
       title: string;
       problemStatement: string;
+      problemImage: string | null;
       canvasStrokes: Stroke[];
       canvasImageBlob: Blob | null;
       chatHistory: ChatMessage[];
       createdAt: number;
       updatedAt: number;
+      isSolved?: boolean;
     };
     indexes: {
       'by-updated': number;
