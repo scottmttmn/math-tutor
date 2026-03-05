@@ -1,219 +1,215 @@
-# CLAUDE.md — Math Tutor AI Assistant Guide
+# CLAUDE.md — Math Tutor Codebase Guide
 
-This file provides guidance for AI assistants (Claude, etc.) working in this codebase.
+This file provides context for AI assistants working on this codebase.
 
 ---
 
 ## Project Overview
 
-**Math Tutor** is a Next.js web application that provides an AI-powered Socratic math tutoring experience. Students can:
-- Draw math problems on a canvas
-- Type a problem statement
-- Ask for guided hints (not direct answers) from an AI tutor
-- Ask follow-up questions via text or voice
-- Save/load sessions via IndexedDB
+**Math Tutor** is an AI-powered Socratic math tutoring application. It combines a freehand drawing canvas with streaming AI chat to guide students through math problems using hints — never direct answers.
 
-The app supports multiple AI providers: Anthropic (Claude), OpenAI-compatible APIs, Google Gemini, Groq, and Ollama.
+- **Framework:** Next.js 16 (App Router), React 19, TypeScript 5
+- **Styling:** Tailwind CSS 4
+- **AI Providers:** Anthropic Claude, OpenAI, Google Gemini, Groq, Ollama (local)
+- **Persistence:** IndexedDB (sessions), localStorage (model config, rate limit)
 
 ---
 
-## Development Commands
-
-```bash
-npm run dev     # Start Next.js development server on port 3000
-npm run build   # Production build
-npm start       # Run production server
-npm run lint    # Run ESLint
-```
-
-No test runner is configured. Verify changes manually via the dev server.
-
----
-
-## Directory Structure
+## Repository Structure
 
 ```
 src/
 ├── app/
-│   ├── api/tutor/route.ts     # Streaming AI tutor API endpoint (SSE)
-│   ├── page.tsx               # Root page — renders <AppShell>
-│   ├── layout.tsx             # Root layout — Geist font, metadata
-│   └── globals.css            # Global CSS reset and base styles
+│   ├── api/tutor/route.ts     # Streaming API endpoint (Anthropic + OpenAI-compat)
+│   ├── page.tsx               # Root page (renders AppShell)
+│   ├── layout.tsx             # Root layout (metadata, fonts)
+│   └── globals.css            # Global Tailwind styles
 ├── components/
-│   ├── chat/
-│   │   ├── ChatPanel.tsx      # Chat display with auto-scroll
-│   │   ├── ChatMessage.tsx    # Message bubble with loading animation
-│   │   └── ChatInput.tsx      # Follow-up text input
 │   ├── layout/
-│   │   ├── AppShell.tsx       # Main layout orchestrator; keyboard shortcuts
-│   │   ├── TopBar.tsx         # Header: New/Save/Load/Settings buttons
-│   │   ├── SettingsModal.tsx  # Provider/model selection and custom config
-│   │   └── HelpQuestionModal.tsx  # Voice-enabled question input with image preview
+│   │   ├── AppShell.tsx       # Top-level app container; wires contexts + UI
+│   │   ├── TopBar.tsx         # Header bar (New, Save, Load, Settings)
+│   │   ├── BottomToolbar.tsx  # Drawing tool controls (pen, eraser, select, colors)
+│   │   ├── SettingsModal.tsx  # Model/provider configuration (defines PRESETS array)
+│   │   └── HelpQuestionModal.tsx  # Custom question input with voice
 │   ├── workspace/
-│   │   ├── DrawingCanvas.tsx  # Dual-canvas drawing + selection overlay
-│   │   └── ProblemStatement.tsx   # Textarea for problem text
+│   │   ├── DrawingCanvas.tsx  # Freehand canvas (dual-canvas: draw + overlay); exposes DrawingCanvasHandle
+│   │   └── ProblemStatement.tsx   # Textarea for the math problem
+│   ├── chat/
+│   │   ├── ChatPanel.tsx      # Chat display and scroll container
+│   │   ├── ChatMessage.tsx    # Individual message bubble
+│   │   └── ChatInput.tsx      # Follow-up message input
 │   └── sessions/
-│       ├── SessionList.tsx    # Modal listing saved sessions
-│       └── SessionCard.tsx    # Individual session card (load/delete)
+│       ├── SessionList.tsx    # Saved sessions modal
+│       └── SessionCard.tsx    # Session preview card
 ├── context/
-│   ├── CanvasContext.tsx      # Canvas state: strokes, tools, undo/redo
-│   └── SessionContext.tsx     # Chat history, streaming state, session metadata
+│   ├── CanvasContext.tsx      # Canvas state (tool, color, strokes, undo/redo)
+│   └── SessionContext.tsx     # Session state (problem, chat history, sessions)
 ├── hooks/
-│   ├── useCanvas.ts           # Pointer events, stroke recording, canvas capture
-│   ├── useTutorChat.ts        # Streaming API calls to /api/tutor
-│   ├── useRateLimit.ts        # 5-minute cooldown on help requests (localStorage)
-│   ├── useSelection.ts        # Region selection on overlay canvas
-│   └── useSpeechRecognition.ts  # Web Speech API integration
+│   ├── useCanvas.ts           # Pointer event handling, stroke recording, replay, canvas capture
+│   ├── useSelection.ts        # Overlay canvas selection rectangle logic
+│   ├── useSpeechRecognition.ts# Web Speech API wrapper with error recovery
+│   ├── useTutorChat.ts        # Sends requests to /api/tutor, handles SSE stream
+│   └── useRateLimit.ts        # 5-min cooldown enforcement via localStorage
 ├── lib/
-│   ├── db.ts                  # IndexedDB (idb) — session CRUD
-│   ├── modelConfig.ts         # localStorage model config read/write
-│   ├── canvasUtils.ts         # Canvas → Blob (PNG) conversion
-│   └── constants.ts           # Color palette, brush thickness values, rate limit duration
+│   ├── db.ts                  # IndexedDB CRUD for sessions via `idb`
+│   ├── modelConfig.ts         # localStorage get/set for ModelConfig
+│   ├── constants.ts           # App-wide constants (colors, thicknesses, RATE_LIMIT_MS)
+│   └── canvasUtils.ts         # canvasToBlob → Blob (for saving to IndexedDB)
 └── types/
-    ├── index.ts               # All core TypeScript interfaces
-    └── speech-recognition.d.ts  # Web Speech API type declarations
+    ├── index.ts               # All shared TypeScript types
+    └── speech-recognition.d.ts# Web Speech API type declarations
 ```
 
 ---
 
-## Architecture & Key Patterns
+## Key Conventions
+
+### TypeScript
+- Strict mode is on. All types must be explicit; avoid `any`.
+- Shared types live in `src/types/index.ts`. Add new types there, not inline.
+- Path alias `@/*` resolves to `src/*`. Always use this for imports within `src/`.
 
 ### State Management
-- **React Context + useReducer** — no Redux or Zustand. Two contexts:
-  - `CanvasContext`: strokes, current tool, undo/redo stacks
-  - `SessionContext`: problem text, chat messages, streaming flag, session metadata
-- Reducers follow the pattern: `(state, action) → newState`
+- Global state uses React Context + `useReducer`. Do **not** introduce external state libraries (Redux, Zustand, etc.).
+- **CanvasContext** owns all drawing state. Never manage strokes in a component.
+- **SessionContext** owns all session/chat state. Components dispatch actions; they do not mutate state directly.
 
-### Canvas System
-- **Dual-canvas architecture**: one canvas for drawing strokes, an invisible overlay canvas for region selection.
-- Device pixel ratio (DPR) scaling is applied for sharp rendering on HiDPI displays.
-- Undo/redo is stroke-based (array of stroke arrays), implemented in `CanvasContext`.
-- Canvas snapshots are encoded as base64 PNG and sent to the AI API.
+### Components
+- Components should be pure presentational where possible; logic belongs in hooks.
+- Custom hooks encapsulate complex behavior (`useCanvas`, `useTutorChat`, etc.). Follow this pattern for new features.
+- Modals are conditionally rendered inside `AppShell`; control their visibility with boolean state in `AppShell` or a context.
 
-### API / Streaming
-- The single backend endpoint is `POST /api/tutor` (`src/app/api/tutor/route.ts`).
-- Responses are streamed as **Server-Sent Events (SSE)** using the Vercel AI streaming pattern.
-- The hook `useTutorChat` handles stream parsing and appends text chunks to the session message.
-- Both Anthropic SDK and OpenAI-compatible clients are supported.
+### Styling
+- Use Tailwind CSS utility classes only. No CSS modules, no `styled-components`.
+- No dark mode is implemented. Do not add one without explicit request.
+- Buttons follow a consistent pattern: base classes + hover/disabled variants. Match existing button styles.
 
-### Multi-Provider Support
-Provider configuration is stored in **localStorage** under `mathTutor_modelConfig`:
-```ts
-{
-  provider: 'anthropic' | 'openai-compatible',
-  model: string,       // e.g. 'claude-opus-4-6'
-  baseUrl: string      // used for OpenAI-compatible endpoints
-}
+### Canvas
+- The drawing canvas uses **two overlapping `<canvas>` elements**: the main drawing canvas and a transparent overlay for selection UI.
+- Both canvases scale by `window.devicePixelRatio` for crisp rendering on high-DPI screens.
+- Always use `replayStrokes` to reconstruct canvas from stored strokes (do not cache pixel data for undo).
+- Erasing uses `globalCompositeOperation = 'destination-out'` on the canvas context.
+- `DrawingCanvas` exposes a `DrawingCanvasHandle` ref with `captureFullCanvas()`, `captureRegion(rect)`, and `getCanvas()`. These are implemented in `useCanvas.ts`.
+- `canvasUtils.ts` only contains `canvasToBlob` (for converting canvas to a `Blob` to store in IndexedDB). Do not add capture logic there.
+
+### API Route (`/api/tutor`)
+- Supports two provider paths: **Anthropic** (`@anthropic-ai/sdk`) and **OpenAI-compatible** (`openai` SDK).
+- Always returns a **streaming response** using Server-Sent Events. Do not convert to a non-streaming response.
+- The system prompt enforces Socratic tutoring. Do **not** weaken or remove the "no direct answers" constraint.
+- Canvas images are passed as base64 PNG in the message content. Skip image attachment when the canvas is blank.
+- The API cleans message history to ensure valid alternating user/assistant turns before sending to the model (Anthropic path only).
+- Request body shape: `{ problemStatement, chatHistory, canvasImage, modelConfig, userQuestion? }` (see `TutorRequest` in `src/types/index.ts`).
+
+### Session Persistence
+- Sessions are stored in IndexedDB using the `idb` library (`src/lib/db.ts`). Do not use `localStorage` for session data.
+- `db.ts` exports: `saveSession`, `loadSession`, `deleteSession`, `listSessions`.
+- Session fields: `id`, `title`, `problemStatement`, `canvasStrokes`, `canvasImageBlob`, `chatHistory`, `createdAt`, `updatedAt`.
+- `SessionMetadata` (used for session list): `id`, `title`, `problemStatement`, `createdAt`, `updatedAt`, `messageCount`.
+- Model configuration (provider, model ID, base URL) is stored in `localStorage` via `src/lib/modelConfig.ts`.
+
+---
+
+## Development Workflow
+
+### Setup
+```bash
+# Install dependencies
+npm install
+
+# Create environment file
+cp .env.example .env.local  # (or create manually)
+# Add at minimum: ANTHROPIC_API_KEY=<your-key>
+
+# Start development server
+npm run dev   # http://localhost:3000
 ```
-Presets for Anthropic, Google Gemini (via OpenAI-compat), Groq, and Ollama are defined in `SettingsModal.tsx`.
 
-### Persistence
-- **Sessions** (problem text, chat, canvas snapshot, strokes) are stored in **IndexedDB** via the `idb` library (`src/lib/db.ts`).
-- **Model config** and **rate limit timestamps** live in **localStorage**.
-
-### AI Tutor Behavior
-- The system prompt in `src/app/api/tutor/route.ts` enforces **Socratic tutoring**: guide with questions and hints, never give direct answers.
-- The system prompt is substantial (~8 KB); treat it as the core product logic.
-
----
-
-## TypeScript Conventions
-
-- **Strict mode** is enabled in `tsconfig.json`.
-- Path alias `@/*` maps to `./src/*` — always use this for imports within `src/`.
-- All types are centralized in `src/types/index.ts`. Add new shared types there.
-- Client components must include `'use client'` at the top.
-- Server components and API routes do **not** use `'use client'`.
-
----
-
-## Styling Conventions
-
-- **Tailwind CSS v4** via PostCSS.
-- All styling uses Tailwind utility classes inline on JSX elements.
-- No CSS modules, no `styled-components`.
-- Global styles (resets, base font) are in `src/app/globals.css`.
-- Color constants and tool values are in `src/lib/constants.ts` — use these rather than hard-coding.
-
----
-
-## Environment Variables
-
-| Variable | Purpose | Where set |
+### Environment Variables
+| Variable | Required | Description |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | Anthropic Claude API | Server environment / `.env.local` |
-| `OPENAI_API_KEY` | OpenAI-compatible APIs | Server environment / `.env.local` |
+| `ANTHROPIC_API_KEY` | For Anthropic/Claude | Anthropic API key |
+| `OPENAI_API_KEY` | For OpenAI-compat | OpenAI / Google / Groq key |
 
-These are accessed server-side only inside `src/app/api/tutor/route.ts`. Never expose them to the client.
+The app shows user-friendly error messages for missing/invalid keys.
 
-Create a `.env.local` file (git-ignored) for local development:
+### Scripts
+```bash
+npm run dev    # Development server (port 3000)
+npm run build  # Production build
+npm run start  # Production server
+npm run lint   # ESLint
 ```
-ANTHROPIC_API_KEY=your_key_here
-```
+
+### Linting
+ESLint uses the Next.js core web vitals config. Run `npm run lint` before committing. There is no Prettier config; formatting follows ESLint rules.
 
 ---
 
-## Component Conventions
+## Core Data Flow
 
-- Use **named exports** for all components (no default export inconsistency).
-- Use `useCallback` for event handlers passed as props or used in `useEffect` dependency arrays.
-- Use **ref forwarding** (`forwardRef`) when a parent needs direct DOM access (e.g., canvas refs).
-- Keep business logic in **hooks**, not in components.
-- Components under `src/components/` are all client-side — they must have `'use client'`.
+### Help Request (primary user flow)
+1. User writes problem in `ProblemStatement`, draws on `DrawingCanvas`.
+2. Clicks **Ask for Help** → `HelpQuestionModal` opens (optional custom question + voice).
+3. On submit: `AppShell.handleAskForHelp()` calls `canvasHandle.current.captureFullCanvas()` or `captureRegion(selection)` → base64 PNG.
+4. `useTutorChat.sendHelp(canvasImage, question)` POSTs to `/api/tutor` with `{ problemStatement, chatHistory, canvasImage, modelConfig, userQuestion }`.
+5. API streams SSE response; client appends `text_delta` events to chat in real time via `APPEND_TO_LAST_MESSAGE` dispatch.
+6. Session is **not auto-saved**; user must click **Save** manually.
 
----
+### Follow-up Chat
+- `useTutorChat.sendFollowUp(text)` sends text-only follow-up messages (no image) via the same `/api/tutor` endpoint.
 
-## Key Files to Understand First
+### Session Save/Load
+- **Save:** `handleSave` in `AppShell` calls `db.saveSession()` with current canvas strokes + chat.
+- **Load:** `handleLoad` calls `db.loadSession()`, dispatches to both contexts to restore state.
+- **Keyboard shortcut:** `Cmd/Ctrl+S` triggers save. `Cmd/Ctrl+Z` / `Cmd/Ctrl+Shift+Z` for undo/redo.
 
-When onboarding to this codebase, read these in order:
-
-1. `src/types/index.ts` — understand the data model
-2. `src/context/SessionContext.tsx` — session and chat state
-3. `src/context/CanvasContext.tsx` — canvas and drawing state
-4. `src/app/api/tutor/route.ts` — the AI endpoint and system prompt
-5. `src/hooks/useTutorChat.ts` — how the frontend calls the API
-6. `src/components/layout/AppShell.tsx` — how everything is wired together
-
----
-
-## Git Workflow
-
-- **Active development branch**: `claude/add-claude-documentation-YZsPb`
-- `master` is the local base branch; `origin/main` is the remote default.
-- Commit messages should be imperative and descriptive (e.g., `Add voice input support to HelpQuestionModal`).
-- There is no CI/CD pipeline; lint manually with `npm run lint` before committing.
+### Rate Limiting
+- `useRateLimit` enforces a 5-minute cooldown (`RATE_LIMIT_MS = 300000` in `constants.ts`) between help requests.
+- Timestamp persisted to `localStorage`; returns `{ isLimited, remainingMs, recordUsage, formatRemaining }`.
 
 ---
 
-## Things That Do NOT Exist (Don't Add Without Discussion)
+## AI Provider Configuration
 
-- No unit or integration tests — do not assume a test runner is available.
-- No Redux/Zustand/Jotai — use React Context.
-- No CSS modules or styled-components — use Tailwind.
-- No server-side session storage — IndexedDB is client-side only.
-- No authentication system.
-- No database beyond IndexedDB.
+Configured via `SettingsModal` and stored in `localStorage`. Provider presets are defined as the `PRESETS` array inside `SettingsModal.tsx` (not in `constants.ts`):
+
+| Provider | SDK Used | Default Model | Base URL |
+|---|---|---|---|
+| Anthropic (Claude) | `@anthropic-ai/sdk` | `claude-sonnet-4-5-20250929` | Default (api.anthropic.com) |
+| OpenAI | `openai` (compat) | `gpt-4o` | `https://api.openai.com/v1` |
+| Google Gemini | `openai` (compat) | `gemini-2.0-flash` | `https://generativelanguage.googleapis.com/v1beta/openai/` |
+| Groq | `openai` (compat) | `llama-3.3-70b-versatile` | `https://api.groq.com/openai/v1` |
+| Ollama | `openai` (compat) | `llama3.2-vision` | `http://localhost:11434/v1` |
+| Custom | `openai` (compat) | User-specified | User-specified |
+
+Default model config (when nothing is saved in localStorage): `anthropic` / `claude-sonnet-4-5-20250929`.
 
 ---
 
-## Common Tasks
+## Common Patterns
 
-### Add a new AI provider preset
-Edit `src/components/layout/SettingsModal.tsx` — add an entry to the presets array with `{ label, provider, model, baseUrl }`.
+### Adding a new API provider
+1. Add a preset entry to the `PRESETS` array in `src/components/layout/SettingsModal.tsx`.
+2. The API route auto-routes to the OpenAI SDK for any non-Anthropic provider; no route changes needed for OpenAI-compatible APIs.
 
-### Modify the AI tutor's behavior
-Edit the system prompt string in `src/app/api/tutor/route.ts`.
+### Adding a new canvas tool
+1. Add the tool name to the `DrawingTool` union type in `src/types/index.ts`.
+2. Add handling in `useCanvas.ts` (pointer event logic) or `useSelection.ts`.
+3. Add a button to `BottomToolbar.tsx`.
+4. Update `CanvasContext` state/reducer if new tool settings are needed.
 
-### Add a new drawing tool
-1. Add the tool type to `src/types/index.ts`
-2. Handle it in `src/context/CanvasContext.tsx` (state)
-3. Add UI button in `src/components/layout/BottomToolbar.tsx`
-4. Handle pointer logic in `src/hooks/useCanvas.ts`
+### Adding a new session field
+1. Update `Session` and `SessionMetadata` types in `src/types/index.ts`.
+2. Update `db.ts` to read/write the new field.
+3. Update dispatch actions in `SessionContext.tsx`.
 
-### Add a new session field
-1. Update `Session` type in `src/types/index.ts`
-2. Update `SessionContext.tsx` (state and reducer)
-3. Update `src/lib/db.ts` (IndexedDB schema / read/write)
+---
 
-### Change rate limit duration
-Edit `RATE_LIMIT_MS` in `src/lib/constants.ts`.
+## Important Constraints
+
+- **Do not give full solutions.** The system prompt explicitly enforces Socratic tutoring. Never modify the system prompt to weaken this constraint.
+- **Do not break streaming.** The API must remain SSE-based. Don't convert to JSON responses.
+- **Do not replace the canvas architecture.** The dual-canvas + stroke-replay pattern is intentional for undo/redo and region capture.
+- **Do not add dark mode** unless explicitly requested.
+- **Do not introduce new state management libraries.** Use React Context + useReducer.
+- **Rate limiting is intentional.** Do not remove or reduce the 5-minute cooldown without explicit direction.
