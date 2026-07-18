@@ -3,17 +3,18 @@
 import { useCanvasState, useCanvasDispatch } from '@/context/CanvasContext';
 import { useRateLimit } from '@/hooks/useRateLimit';
 import { COLOR_PRESETS, THICKNESS_MIN, THICKNESS_MAX, RATE_LIMIT_MS } from '@/lib/constants';
-import type { DrawingTool } from '@/types';
+import type { DrawingTool, SessionType } from '@/types';
 
 interface Props {
   onAskForHelp: () => void;
   isStreaming: boolean;
   isSolved: boolean;
   onToggleSolved: () => void;
+  sessionType: SessionType;
 }
 
-export default function BottomToolbar({ onAskForHelp, isStreaming, isSolved, onToggleSolved }: Props) {
-  const { toolSettings, strokes, undoneStrokes, selection } = useCanvasState();
+export default function BottomToolbar({ onAskForHelp, isStreaming, isSolved, onToggleSolved, sessionType }: Props) {
+  const { toolSettings, strokes, past, future, selection } = useCanvasState();
   const dispatch = useCanvasDispatch();
   const { isLimited, formatRemaining } = useRateLimit(RATE_LIMIT_MS);
 
@@ -50,6 +51,13 @@ export default function BottomToolbar({ onAskForHelp, isStreaming, isSolved, onT
           title="Select Region"
         >
           <SelectIcon />
+        </ToolButton>
+        <ToolButton
+          active={toolSettings.activeTool === 'pan'}
+          onClick={() => setTool('pan')}
+          title="Pan / Scroll (drag to scroll the canvas)"
+        >
+          <HandIcon />
         </ToolButton>
       </div>
 
@@ -91,7 +99,7 @@ export default function BottomToolbar({ onAskForHelp, isStreaming, isSolved, onT
       <div className="flex items-center gap-1">
         <button
           onClick={() => dispatch({ type: 'UNDO' })}
-          disabled={strokes.length === 0}
+          disabled={past.length === 0}
           className="px-2 py-1 text-xs text-gray-600 rounded hover:bg-gray-100 disabled:opacity-30"
           title="Undo (Ctrl+Z)"
         >
@@ -99,7 +107,7 @@ export default function BottomToolbar({ onAskForHelp, isStreaming, isSolved, onT
         </button>
         <button
           onClick={() => dispatch({ type: 'REDO' })}
-          disabled={undoneStrokes.length === 0}
+          disabled={future.length === 0}
           className="px-2 py-1 text-xs text-gray-600 rounded hover:bg-gray-100 disabled:opacity-30"
           title="Redo (Ctrl+Shift+Z)"
         >
@@ -117,38 +125,55 @@ export default function BottomToolbar({ onAskForHelp, isStreaming, isSolved, onT
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Selection indicator */}
+      {/* Selection indicator + erase button */}
       {selection && (
-        <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
-          Region selected
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+            Region selected
+          </span>
+          <button
+            onClick={() => dispatch({ type: 'ERASE_SELECTION', rect: selection })}
+            className="px-2 py-0.5 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100"
+            title="Erase strokes inside selected region (Delete)"
+          >
+            Erase
+          </button>
+        </div>
       )}
 
-      {/* Mark Solved */}
-      <button
-        onClick={onToggleSolved}
-        className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
-          isSolved
-            ? 'bg-green-500 text-white border-green-500 hover:bg-green-600'
-            : 'text-gray-600 border-gray-300 hover:bg-gray-50'
-        }`}
-        title={isSolved ? 'Click to un-mark as solved' : 'Mark this problem as solved'}
-      >
-        <CheckIcon solved={isSolved} />
-        {isSolved ? 'Solved!' : 'Mark Solved'}
-      </button>
+      {/* Mark Solved — only for problem sessions */}
+      {sessionType === 'problem' && (
+        <button
+          onClick={onToggleSolved}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
+            isSolved
+              ? 'bg-green-500 text-white border-green-500 hover:bg-green-600'
+              : 'text-gray-600 border-gray-300 hover:bg-gray-50'
+          }`}
+          title={isSolved ? 'Click to un-mark as solved' : 'Mark this problem as solved'}
+        >
+          <CheckIcon solved={isSolved} />
+          {isSolved ? 'Solved!' : 'Mark Solved'}
+        </button>
+      )}
 
-      {/* Ask for Help */}
+      {/* Ask for Help / Ask About This */}
       <button
         onClick={onAskForHelp}
         disabled={helpDisabled}
         className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
           helpDisabled
             ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            : sessionType === 'note'
+            ? 'bg-blue-500 text-white hover:bg-blue-600'
             : 'bg-green-500 text-white hover:bg-green-600'
         }`}
       >
-        {isLimited ? `Wait ${formatRemaining()}` : 'Ask for Help'}
+        {isLimited
+          ? `Wait ${formatRemaining()}`
+          : sessionType === 'note'
+          ? 'Ask About This'
+          : 'Ask for Help'}
       </button>
     </div>
   );
@@ -199,6 +224,14 @@ function SelectIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="3 2">
       <rect x="2" y="2" width="12" height="12" rx="1" />
+    </svg>
+  );
+}
+
+function HandIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 1.5v6M4 4v3M2 5.5v3a4 4 0 0 0 4 4h2a4 4 0 0 0 4-4V6.5a1 1 0 0 0-2 0V8M8 1.5v7M10 4v3" />
     </svg>
   );
 }

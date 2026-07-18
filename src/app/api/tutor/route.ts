@@ -2,6 +2,17 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import type { TutorRequest, ModelConfig } from '@/types';
 
+const NOTE_SYSTEM_PROMPT = `You are a helpful math tutor helping a student understand concepts they find confusing.
+The student has written notes or drawn diagrams on their canvas. They may have selected a specific region they want explained.
+
+RULES:
+1. Give clear, direct explanations — this is study time, not problem-solving time. You may state answers and full explanations directly.
+2. If the student highlighted a specific region, focus your explanation on that area.
+3. Identify and correct any misconceptions directly and kindly.
+4. Keep responses concise (3–5 sentences) unless a step-by-step breakdown is clearly needed.
+5. Use examples or analogies if they help clarify the concept.
+6. Respond in plain text with standard math notation (fractions as a/b, exponents as x^2, square roots as sqrt(x), etc.).`;
+
 const SYSTEM_PROMPT = `You are a patient, encouraging math tutor helping a student work through problems.
 You can see the student's handwritten work as an image. The problem they are working on is provided in the conversation.
 
@@ -52,13 +63,14 @@ function friendlyError(error: unknown): string {
 function streamAnthropicResponse(
   modelConfig: ModelConfig,
   messages: Anthropic.MessageParam[],
+  systemPrompt: string = SYSTEM_PROMPT,
 ): ReadableStream {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   const stream = anthropic.messages.stream({
     model: modelConfig.model,
     max_tokens: 1024,
-    system: SYSTEM_PROMPT,
+    system: systemPrompt,
     messages,
   });
 
@@ -102,15 +114,16 @@ function streamOpenAIResponse(
   problemStatement: string,
   userQuestion?: string,
   problemImage?: string,
+  systemPrompt: string = SYSTEM_PROMPT,
 ): ReadableStream {
   const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+    apiKey: process.env.OPENAI_API_KEY ?? 'ollama',
     baseURL: modelConfig.baseUrl || 'https://api.openai.com/v1',
   });
 
   // Build OpenAI messages
   const messages: OpenAI.ChatCompletionMessageParam[] = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: systemPrompt },
   ];
 
   // Add chat history
@@ -194,7 +207,9 @@ function streamOpenAIResponse(
 export async function POST(request: Request) {
   try {
     const body: TutorRequest = await request.json();
-    const { problemStatement, chatHistory, canvasImage, modelConfig, userQuestion, problemImage } = body;
+    const { problemStatement, chatHistory, canvasImage, modelConfig, userQuestion, problemImage, sessionType } = body;
+
+    const systemPrompt = sessionType === 'note' ? NOTE_SYSTEM_PROMPT : SYSTEM_PROMPT;
 
     let readableStream: ReadableStream;
 
@@ -206,6 +221,7 @@ export async function POST(request: Request) {
         problemStatement,
         userQuestion,
         problemImage,
+        systemPrompt,
       );
     } else {
       // Anthropic path
@@ -262,7 +278,7 @@ export async function POST(request: Request) {
       messages.push({ role: 'user', content: userContent });
 
       const cleanedMessages = cleanMessages(messages);
-      readableStream = streamAnthropicResponse(modelConfig, cleanedMessages);
+      readableStream = streamAnthropicResponse(modelConfig, cleanedMessages, systemPrompt);
     }
 
     return new Response(readableStream, {

@@ -9,7 +9,7 @@ const PRESETS: { label: string; provider: Provider; model: string; baseUrl: stri
   { label: 'Google Gemini', provider: 'openai-compatible', model: 'gemini-2.0-flash', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/' },
   { label: 'OpenAI', provider: 'openai-compatible', model: 'gpt-4o', baseUrl: 'https://api.openai.com/v1' },
   { label: 'Groq', provider: 'openai-compatible', model: 'llama-3.3-70b-versatile', baseUrl: 'https://api.groq.com/openai/v1' },
-  { label: 'Ollama (local)', provider: 'openai-compatible', model: 'llama3.2-vision', baseUrl: 'http://localhost:11434/v1' },
+  { label: 'Ollama', provider: 'openai-compatible', model: 'llama3.2-vision', baseUrl: process.env.NEXT_PUBLIC_OLLAMA_BASE_URL ?? 'http://localhost:11434/v1' },
   { label: 'Custom', provider: 'openai-compatible', model: '', baseUrl: '' },
 ];
 
@@ -26,8 +26,8 @@ interface Props {
 }
 
 export default function SettingsModal({ isOpen, onClose }: Props) {
-  const [config, setConfig] = useState<ModelConfig>(getModelConfig);
-  const [presetIdx, setPresetIdx] = useState(() => findPresetIndex(getModelConfig()));
+  const [config, setConfig] = useState<ModelConfig>({ provider: 'anthropic', model: '', baseUrl: '' });
+  const [presetIdx, setPresetIdx] = useState(0);
 
   useEffect(() => {
     if (isOpen) {
@@ -54,7 +54,7 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
     onClose();
   };
 
-  const isCustom = presetIdx === PRESETS.length - 1;
+  const isOpenAICompatible = PRESETS[presetIdx]?.provider === 'openai-compatible';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -83,22 +83,24 @@ export default function SettingsModal({ isOpen, onClose }: Props) {
           className="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
 
-        {/* Base URL (only for Custom) */}
-        {isCustom && (
+        {/* Base URL (all non-Anthropic providers) */}
+        {isOpenAICompatible && (
           <>
             <label className="block text-sm font-medium text-gray-700 mb-1">Base URL</label>
             <input
               type="text"
               value={config.baseUrl}
               onChange={(e) => setConfig({ ...config, baseUrl: e.target.value })}
-              placeholder="https://api.openai.com/v1"
+              placeholder="http://192.168.x.x:11434/v1"
               className="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </>
         )}
 
         <p className="text-xs text-gray-500 mb-4">
-          API keys are read from .env.local ({config.provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY'})
+          {config.provider === 'anthropic'
+            ? 'API key read from .env.local (ANTHROPIC_API_KEY)'
+            : 'API key read from .env.local (OPENAI_API_KEY). Ollama does not need one.'}
         </p>
 
         <div className="flex justify-end gap-2 mt-2">

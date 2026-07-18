@@ -19,7 +19,7 @@ export interface SelectionRect {
   height: number;
 }
 
-export type DrawingTool = 'pen' | 'eraser' | 'select';
+export type DrawingTool = 'pen' | 'eraser' | 'select' | 'pan';
 
 export interface ToolSettings {
   activeTool: DrawingTool;
@@ -42,6 +42,8 @@ export interface ChatMessage {
 
 // === Session Types ===
 
+export type SessionType = 'problem' | 'note';
+
 export interface Session {
   id: string;
   title: string;
@@ -53,6 +55,7 @@ export interface Session {
   createdAt: number;
   updatedAt: number;
   isSolved?: boolean;
+  sessionType?: SessionType;
 }
 
 export interface SessionMetadata {
@@ -63,6 +66,7 @@ export interface SessionMetadata {
   updatedAt: number;
   messageCount: number;
   isSolved?: boolean;
+  sessionType?: SessionType;
 }
 
 // === Model Config Types ===
@@ -84,6 +88,7 @@ export interface TutorRequest {
   modelConfig: ModelConfig;
   userQuestion?: string;
   problemImage?: string;
+  sessionType?: SessionType;
 }
 
 export interface TutorStreamEvent {

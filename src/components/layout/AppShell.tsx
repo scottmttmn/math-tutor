@@ -12,9 +12,11 @@ import { RATE_LIMIT_MS } from '@/lib/constants';
 
 import { getModelConfig } from '@/lib/modelConfig';
 
+import type { SessionType } from '@/types';
 import TopBar from './TopBar';
 import BottomToolbar from './BottomToolbar';
 import ProblemStatement from '../workspace/ProblemStatement';
+import NoteHeader from '../workspace/NoteHeader';
 import DrawingCanvas, { type DrawingCanvasHandle } from '../workspace/DrawingCanvas';
 import ChatPanel from '../chat/ChatPanel';
 import SessionList from '../sessions/SessionList';
@@ -24,19 +26,20 @@ function AppContent() {
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [modelLabel, setModelLabel] = useState(() => getModelConfig().model);
+  const [modelLabel, setModelLabel] = useState('');
+  useEffect(() => { setModelLabel(getModelConfig().model); }, []);
   const [chatOpen, setChatOpen] = useState(false);
 
   const { strokes, selection } = useCanvasState();
   const canvasDispatch = useCanvasDispatch();
-  const { currentSessionId, problemStatement, problemImage, chatHistory, isStreaming, isSolved } = useSessionState();
+  const { currentSessionId, problemStatement, problemImage, chatHistory, isStreaming, isSolved, sessionType } = useSessionState();
   const sessionDispatch = useSessionDispatch();
   const { sendHelp } = useTutorChat();
   const { recordUsage } = useRateLimit(RATE_LIMIT_MS);
 
-  const handleNew = useCallback(() => {
+  const handleNew = useCallback((type: SessionType = 'problem') => {
     canvasDispatch({ type: 'CLEAR' });
-    sessionDispatch({ type: 'NEW_SESSION' });
+    sessionDispatch({ type: 'NEW_SESSION', sessionType: type });
   }, [canvasDispatch, sessionDispatch]);
 
   const handleSave = useCallback(async (opts?: { isSolvedOverride?: boolean }) => {
@@ -53,12 +56,13 @@ function AppContent() {
       canvasImageBlob: blob,
       chatHistory,
       isSolved: opts?.isSolvedOverride !== undefined ? opts.isSolvedOverride : isSolved,
+      sessionType,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
 
     sessionDispatch({ type: 'SET_CURRENT_SESSION_ID', id });
-  }, [currentSessionId, problemStatement, problemImage, strokes, chatHistory, isSolved, sessionDispatch]);
+  }, [currentSessionId, problemStatement, problemImage, strokes, chatHistory, isSolved, sessionType, sessionDispatch]);
 
   const handleLoad = useCallback(async (id: string) => {
     const session = await dbLoadSession(id);
@@ -71,6 +75,7 @@ function AppContent() {
       problemImage: session.problemImage ?? null,
       chatHistory: session.chatHistory,
       isSolved: session.isSolved,
+      sessionType: session.sessionType,
     });
     canvasDispatch({ type: 'LOAD_STROKES', strokes: session.canvasStrokes });
   }, [sessionDispatch, canvasDispatch]);
@@ -101,24 +106,38 @@ function AppContent() {
     await handleSave({ isSolvedOverride: newSolved });
   }, [isSolved, sessionDispatch, handleSave]);
 
-  // Keyboard shortcuts
+  // Stable refs so the keyboard listener never needs to be re-registered
+  const handleSaveRef = useRef(handleSave);
+  const selectionRef = useRef(selection);
+  useEffect(() => { handleSaveRef.current = handleSave; }, [handleSave]);
+  useEffect(() => { selectionRef.current = selection; }, [selection]);
+
+  // Keyboard shortcuts — registered once; refs always have the latest values
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Don't fire shortcuts when typing in inputs or contenteditable elements
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key === 'z' && !e.shiftKey) {
+      const key = e.key.toLowerCase();
+      if (mod && key === 'z' && !e.shiftKey) {
         e.preventDefault();
         canvasDispatch({ type: 'UNDO' });
-      } else if (mod && e.key === 'z' && e.shiftKey) {
+      } else if (mod && key === 'z' && e.shiftKey) {
         e.preventDefault();
         canvasDispatch({ type: 'REDO' });
-      } else if (mod && e.key === 's') {
+      } else if (mod && key === 's') {
         e.preventDefault();
-        handleSave();
+        handleSaveRef.current();
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectionRef.current) {
+        e.preventDefault();
+        canvasDispatch({ type: 'ERASE_SELECTION', rect: selectionRef.current });
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [canvasDispatch, handleSave]);
+  }, [canvasDispatch]); // canvasDispatch is stable (from useReducer) — listener registered once
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
@@ -135,13 +154,18 @@ function AppContent() {
       <div className="flex-1 flex overflow-hidden">
         {/* Left panel: workspace */}
         <div className="flex-[3] flex flex-col min-w-0">
-          <ProblemStatement onCaptureProblemImage={handleSetProblemImage} />
-          <DrawingCanvas ref={canvasHandle} />
+          {sessionType === 'note'
+            ? <NoteHeader />
+            : <ProblemStatement onCaptureProblemImage={handleSetProblemImage} />}
+          <div className="flex-1 overflow-y-auto bg-gray-50">
+            <DrawingCanvas ref={canvasHandle} />
+          </div>
           <BottomToolbar
             onAskForHelp={handleAskForHelp}
             isStreaming={isStreaming}
             isSolved={isSolved}
             onToggleSolved={handleToggleSolved}
+            sessionType={sessionType}
           />
         </div>
 

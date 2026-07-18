@@ -17,10 +17,20 @@ export default function SessionCard({ session, onLoad, onDelete }: Props) {
     minute: '2-digit',
   });
 
+  const isNote = session.sessionType === 'note';
+  const borderClass = session.isSolved
+    ? 'border-green-300 bg-green-50 hover:bg-green-100'
+    : isNote
+    ? 'border-blue-200 bg-blue-50 hover:bg-blue-100'
+    : 'border-gray-200 hover:bg-gray-50';
+
   return (
-    <div className={`flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 ${session.isSolved ? 'border-green-300 bg-green-50 hover:bg-green-100' : 'border-gray-200'}`}>
+    <div className={`flex items-center justify-between p-3 border rounded-lg ${borderClass}`}>
       <div className="flex-1 min-w-0 mr-3">
         <div className="flex items-center gap-2">
+          <span className="text-sm shrink-0" title={isNote ? 'Notes' : 'Problem'}>
+            {isNote ? '📝' : '📐'}
+          </span>
           <p className="text-sm font-medium text-gray-800 truncate">
             {session.title || 'Untitled'}
           </p>
@@ -31,7 +41,7 @@ export default function SessionCard({ session, onLoad, onDelete }: Props) {
           )}
         </div>
         <p className="text-xs text-gray-500 truncate mt-0.5">
-          {session.problemStatement || 'No problem set'}
+          {session.problemStatement || (isNote ? 'No topic set' : 'No problem set')}
         </p>
         <p className="text-xs text-gray-400 mt-0.5">
           {dateStr} &middot; {session.messageCount} messages

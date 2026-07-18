@@ -1,5 +1,5 @@
 import { openDB, type IDBPDatabase, type DBSchema } from 'idb';
-import type { Stroke, ChatMessage } from '@/types';
+import type { Stroke, ChatMessage, SessionType } from '@/types';
 
 interface MathTutorDB extends DBSchema {
   sessions: {
@@ -15,6 +15,7 @@ interface MathTutorDB extends DBSchema {
       createdAt: number;
       updatedAt: number;
       isSolved?: boolean;
+      sessionType?: SessionType;
     };
     indexes: {
       'by-updated': number;

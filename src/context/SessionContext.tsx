@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useReducer, type Dispatch } from 'react';
-import type { ChatMessage, SessionMetadata } from '@/types';
+import type { ChatMessage, SessionMetadata, SessionType } from '@/types';
 
 type SessionAction =
   | { type: 'SET_PROBLEM'; text: string }
@@ -9,8 +9,8 @@ type SessionAction =
   | { type: 'ADD_MESSAGE'; message: ChatMessage }
   | { type: 'APPEND_TO_LAST_MESSAGE'; content: string }
   | { type: 'SET_STREAMING'; streaming: boolean }
-  | { type: 'LOAD_SESSION'; sessionId: string; problemStatement: string; chatHistory: ChatMessage[]; problemImage: string | null; isSolved?: boolean }
-  | { type: 'NEW_SESSION' }
+  | { type: 'LOAD_SESSION'; sessionId: string; problemStatement: string; chatHistory: ChatMessage[]; problemImage: string | null; isSolved?: boolean; sessionType?: SessionType }
+  | { type: 'NEW_SESSION'; sessionType?: SessionType }
   | { type: 'SET_SESSION_LIST'; sessions: SessionMetadata[] }
   | { type: 'SET_CURRENT_SESSION_ID'; id: string }
   | { type: 'TOGGLE_SOLVED' };
@@ -23,6 +23,7 @@ interface SessionState {
   savedSessions: SessionMetadata[];
   isStreaming: boolean;
   isSolved: boolean;
+  sessionType: SessionType;
 }
 
 const initialState: SessionState = {
@@ -33,6 +34,7 @@ const initialState: SessionState = {
   savedSessions: [],
   isStreaming: false,
   isSolved: false,
+  sessionType: 'problem',
 };
 
 function sessionReducer(state: SessionState, action: SessionAction): SessionState {
@@ -60,6 +62,7 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         problemImage: action.problemImage,
         chatHistory: action.chatHistory,
         isSolved: !!action.isSolved,
+        sessionType: action.sessionType ?? 'problem',
       };
     case 'NEW_SESSION':
       return {
@@ -69,6 +72,7 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         problemImage: null,
         chatHistory: [],
         isSolved: false,
+        sessionType: action.sessionType ?? 'problem',
       };
     case 'TOGGLE_SOLVED':
       return { ...state, isSolved: !state.isSolved };

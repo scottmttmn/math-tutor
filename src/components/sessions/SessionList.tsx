@@ -26,6 +26,7 @@ export default function SessionList({ isOpen, onClose, onLoad }: Props) {
             updatedAt: s.updatedAt,
             messageCount: s.chatHistory.length,
             isSolved: s.isSolved,
+            sessionType: s.sessionType,
           }))
         );
       });

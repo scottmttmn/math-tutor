@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useReducer, type Dispatch } from 'react';
-import type { DrawingTool, Stroke, SelectionRect, ToolSettings } from '@/types';
+import type { DrawingTool, Point, Stroke, SelectionRect, ToolSettings } from '@/types';
 import { DEFAULT_PEN_COLOR, DEFAULT_PEN_THICKNESS, DEFAULT_ERASER_THICKNESS } from '@/lib/constants';
 
 type CanvasAction =
@@ -13,12 +13,14 @@ type CanvasAction =
   | { type: 'REDO' }
   | { type: 'CLEAR' }
   | { type: 'LOAD_STROKES'; strokes: Stroke[] }
-  | { type: 'SET_SELECTION'; rect: SelectionRect | null };
+  | { type: 'SET_SELECTION'; rect: SelectionRect | null }
+  | { type: 'ERASE_SELECTION'; rect: SelectionRect };
 
 interface CanvasState {
   toolSettings: ToolSettings;
   strokes: Stroke[];
-  undoneStrokes: Stroke[];
+  past: Stroke[][];    // undo stack: each entry is a complete strokes snapshot
+  future: Stroke[][];  // redo stack
   selection: SelectionRect | null;
 }
 
@@ -30,7 +32,8 @@ const initialState: CanvasState = {
     eraserThickness: DEFAULT_ERASER_THICKNESS,
   },
   strokes: [],
-  undoneStrokes: [],
+  past: [],
+  future: [],
   selection: null,
 };
 
@@ -60,33 +63,74 @@ function canvasReducer(state: CanvasState, action: CanvasAction): CanvasState {
     case 'ADD_STROKE':
       return {
         ...state,
+        past: [...state.past, state.strokes],
         strokes: [...state.strokes, action.stroke],
-        undoneStrokes: [],
+        future: [],
       };
     case 'UNDO': {
-      if (state.strokes.length === 0) return state;
-      const last = state.strokes[state.strokes.length - 1];
+      if (state.past.length === 0) return state;
+      const previous = state.past[state.past.length - 1];
       return {
         ...state,
-        strokes: state.strokes.slice(0, -1),
-        undoneStrokes: [...state.undoneStrokes, last],
+        past: state.past.slice(0, -1),
+        strokes: previous,
+        future: [state.strokes, ...state.future],
       };
     }
     case 'REDO': {
-      if (state.undoneStrokes.length === 0) return state;
-      const restored = state.undoneStrokes[state.undoneStrokes.length - 1];
+      if (state.future.length === 0) return state;
+      const next = state.future[0];
       return {
         ...state,
-        strokes: [...state.strokes, restored],
-        undoneStrokes: state.undoneStrokes.slice(0, -1),
+        past: [...state.past, state.strokes],
+        strokes: next,
+        future: state.future.slice(1),
       };
     }
     case 'CLEAR':
-      return { ...state, strokes: [], undoneStrokes: [] };
+      if (state.strokes.length === 0) return state;
+      return {
+        ...state,
+        past: [...state.past, state.strokes],
+        strokes: [],
+        future: [],
+      };
     case 'LOAD_STROKES':
-      return { ...state, strokes: action.strokes, undoneStrokes: [] };
+      return { ...state, strokes: action.strokes, past: [], future: [] };
     case 'SET_SELECTION':
       return { ...state, selection: action.rect };
+    case 'ERASE_SELECTION': {
+      const { rect } = action;
+      const x1 = Math.min(rect.startX, rect.startX + rect.width);
+      const x2 = Math.max(rect.startX, rect.startX + rect.width);
+      const y1 = Math.min(rect.startY, rect.startY + rect.height);
+      const y2 = Math.max(rect.startY, rect.startY + rect.height);
+      const inside = (p: Point) => p.x >= x1 && p.x <= x2 && p.y >= y1 && p.y <= y2;
+
+      // Split each stroke into runs of consecutive points OUTSIDE the selection.
+      // This clips strokes at the boundary rather than deleting entire strokes
+      // that merely touch the selected region.
+      const newStrokes: Stroke[] = [];
+      for (const stroke of state.strokes) {
+        let run: Point[] = [];
+        for (const point of stroke.points) {
+          if (!inside(point)) {
+            run.push(point);
+          } else {
+            if (run.length >= 2) newStrokes.push({ ...stroke, points: run });
+            run = [];
+          }
+        }
+        if (run.length >= 2) newStrokes.push({ ...stroke, points: run });
+      }
+      return {
+        ...state,
+        past: [...state.past, state.strokes],
+        strokes: newStrokes,
+        future: [],
+        selection: null,
+      };
+    }
     default:
       return state;
   }

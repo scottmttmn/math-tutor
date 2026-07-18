@@ -17,3 +17,5 @@ export const THICKNESS_MIN = 1;
 export const THICKNESS_MAX = 20;
 
 export const CANVAS_BG_COLOR = '#ffffff';
+
+export const CANVAS_HEIGHT = 3000; // logical px — enables vertical scrolling

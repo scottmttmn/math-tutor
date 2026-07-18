@@ -1,7 +1,10 @@
 'use client';
 
+import { useState, useRef, useEffect } from 'react';
+import type { SessionType } from '@/types';
+
 interface Props {
-  onNew: () => void;
+  onNew: (type: SessionType) => void;
   onSave: () => void;
   onOpenSessions: () => void;
   onOpenSettings: () => void;
@@ -19,6 +22,25 @@ export default function TopBar({
   chatOpen,
   onToggleChat,
 }: Props) {
+  const [newDropdownOpen, setNewDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setNewDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const handleNew = (type: SessionType) => {
+    onNew(type);
+    setNewDropdownOpen(false);
+  };
+
   return (
     <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white">
       <div className="flex items-center gap-2">
@@ -49,12 +71,36 @@ export default function TopBar({
         >
           Settings
         </button>
-        <button
-          onClick={onNew}
-          className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-        >
-          New
-        </button>
+
+        {/* New — dropdown for Problem vs Notes */}
+        <div ref={dropdownRef} className="relative">
+          <button
+            onClick={() => setNewDropdownOpen((o) => !o)}
+            className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1"
+          >
+            New
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+              <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            </svg>
+          </button>
+          {newDropdownOpen && (
+            <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+              <button
+                onClick={() => handleNew('problem')}
+                className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+              >
+                <span>📐</span> New Problem
+              </button>
+              <button
+                onClick={() => handleNew('note')}
+                className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+              >
+                <span>📝</span> New Notes
+              </button>
+            </div>
+          )}
+        </div>
+
         <button
           onClick={onSave}
           className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"

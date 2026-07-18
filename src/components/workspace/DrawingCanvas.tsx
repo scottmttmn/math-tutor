@@ -1,9 +1,10 @@
 'use client';
 
-import { useRef, useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { useRef, useState, useEffect, useCallback, forwardRef, useImperativeHandle, type PointerEvent as ReactPointerEvent } from 'react';
 import { useCanvas } from '@/hooks/useCanvas';
 import { useSelection } from '@/hooks/useSelection';
 import { useCanvasState } from '@/context/CanvasContext';
+import { CANVAS_HEIGHT } from '@/lib/constants';
 import type { SelectionRect } from '@/types';
 
 export interface DrawingCanvasHandle {
@@ -50,14 +51,14 @@ const DrawingCanvas = forwardRef<DrawingCanvasHandle>(function DrawingCanvas(_, 
     const rect = container.getBoundingClientRect();
 
     canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
+    canvas.height = CANVAS_HEIGHT * dpr;
     canvas.style.width = `${rect.width}px`;
-    canvas.style.height = `${rect.height}px`;
+    canvas.style.height = `${CANVAS_HEIGHT}px`;
 
     overlay.width = rect.width * dpr;
-    overlay.height = rect.height * dpr;
+    overlay.height = CANVAS_HEIGHT * dpr;
     overlay.style.width = `${rect.width}px`;
-    overlay.style.height = `${rect.height}px`;
+    overlay.style.height = `${CANVAS_HEIGHT}px`;
 
     const ctx = canvas.getContext('2d');
     if (ctx) {
@@ -86,22 +87,54 @@ const DrawingCanvas = forwardRef<DrawingCanvasHandle>(function DrawingCanvas(_, 
   }, [strokes, resizeKey, replayStrokes]);
 
   const isSelectMode = toolSettings.activeTool === 'select';
+  const isPanMode = toolSettings.activeTool === 'pan';
+
+  // Pan tool: drag to scroll the overflow-y-auto container
+  const panStart = useRef<{ clientY: number; scrollTop: number } | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
+
+  const handlePanPointerDown = useCallback((e: ReactPointerEvent<HTMLCanvasElement>) => {
+    const scrollEl = containerRef.current?.parentElement;
+    if (!scrollEl) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    panStart.current = { clientY: e.clientY, scrollTop: scrollEl.scrollTop };
+    setIsPanning(true);
+  }, []);
+
+  const handlePanPointerMove = useCallback((e: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (!panStart.current) return;
+    const scrollEl = containerRef.current?.parentElement;
+    if (!scrollEl) return;
+    const dy = e.clientY - panStart.current.clientY;
+    scrollEl.scrollTop = panStart.current.scrollTop - dy;
+  }, []);
+
+  const handlePanPointerUp = useCallback(() => {
+    panStart.current = null;
+    setIsPanning(false);
+  }, []);
+
+  const canvasCursor = isPanMode
+    ? (isPanning ? 'grabbing' : 'grab')
+    : isSelectMode
+    ? 'crosshair'
+    : 'crosshair'; // always crosshair for drawing precision
 
   return (
-    <div ref={containerRef} className="flex-1 relative bg-white rounded-lg border border-gray-200 overflow-hidden mx-3 mb-2">
+    <div ref={containerRef} className="relative bg-white rounded-lg border border-gray-200 mx-3 mb-2" style={{ height: CANVAS_HEIGHT }}>
       <canvas
         ref={canvasRef}
         className="absolute inset-0 touch-none"
-        style={{ cursor: isSelectMode ? 'crosshair' : 'default' }}
-        onPointerDown={isSelectMode ? undefined : drawPointerDown}
-        onPointerMove={isSelectMode ? undefined : drawPointerMove}
-        onPointerUp={isSelectMode ? undefined : drawPointerUp}
+        style={{ cursor: canvasCursor }}
+        onPointerDown={isPanMode ? handlePanPointerDown : isSelectMode ? undefined : drawPointerDown}
+        onPointerMove={isPanMode ? handlePanPointerMove : isSelectMode ? undefined : drawPointerMove}
+        onPointerUp={isPanMode ? handlePanPointerUp : isSelectMode ? undefined : drawPointerUp}
       />
       <canvas
         ref={overlayRef}
         className="absolute inset-0 touch-none"
         style={{
-          cursor: isSelectMode ? 'crosshair' : 'default',
+          cursor: canvasCursor,
           pointerEvents: isSelectMode ? 'auto' : 'none',
         }}
         onPointerDown={isSelectMode ? selectPointerDown : undefined}
