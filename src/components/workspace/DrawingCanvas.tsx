@@ -18,7 +18,7 @@ const DrawingCanvas = forwardRef<DrawingCanvasHandle>(function DrawingCanvas(_, 
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [resizeKey, setResizeKey] = useState(0);
-  const { toolSettings, strokes } = useCanvasState();
+  const { toolSettings, strokes, selection } = useCanvasState();
 
   const {
     onPointerDown: drawPointerDown,
@@ -85,6 +85,16 @@ const DrawingCanvas = forwardRef<DrawingCanvasHandle>(function DrawingCanvas(_, 
   useEffect(() => {
     replayStrokes(strokes);
   }, [strokes, resizeKey, replayStrokes]);
+
+  // Clear the overlay when the selection is cleared from state (ERASE_SELECTION,
+  // Delete key). The selection pointer handlers repaint the overlay themselves,
+  // so without this the dashed rect lingers after a state-only clear.
+  useEffect(() => {
+    if (selection) return;
+    const overlay = overlayRef.current;
+    const ctx = overlay?.getContext('2d');
+    if (overlay && ctx) ctx.clearRect(0, 0, overlay.width, overlay.height);
+  }, [selection]);
 
   const isSelectMode = toolSettings.activeTool === 'select';
   const isPanMode = toolSettings.activeTool === 'pan';
