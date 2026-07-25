@@ -1,6 +1,7 @@
 'use client';
 
 import type { ChatMessage as ChatMessageType } from '@/types';
+import { renderInlineMarkdown } from '@/lib/inlineMarkdown';
 
 interface Props {
   message: ChatMessageType;
@@ -23,7 +24,9 @@ export default function ChatMessage({ message }: Props) {
             [Canvas snapshot sent]
           </div>
         )}
-        <div className="whitespace-pre-wrap">{message.content}</div>
+        <div className="whitespace-pre-wrap">
+          {isUser ? message.content : renderInlineMarkdown(message.content)}
+        </div>
         {!message.content && (
           <div className="flex gap-1 py-1">
             <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
