@@ -215,7 +215,7 @@ Configured via `SettingsModal` and stored in `localStorage`. Provider presets ar
 |---|---|---|---|
 | Anthropic (Claude) | `@anthropic-ai/sdk` | `claude-sonnet-4-5-20250929` | Default (api.anthropic.com) |
 | OpenAI | `openai` (compat) | `gpt-4o` | `https://api.openai.com/v1` |
-| Google Gemini | `openai` (compat) | `gemini-2.0-flash` | `https://generativelanguage.googleapis.com/v1beta/openai/` |
+| Google Gemini | `openai` (compat) | `gemini-3-flash` | `https://generativelanguage.googleapis.com/v1beta/openai/` |
 | Groq | `openai` (compat) | `llama-3.3-70b-versatile` | `https://api.groq.com/openai/v1` |
 | Ollama | `openai` (compat) | `llama3.2-vision` | `NEXT_PUBLIC_OLLAMA_BASE_URL` ?? `http://localhost:11434/v1` |
 | Custom | `openai` (compat) | User-specified | User-specified |
