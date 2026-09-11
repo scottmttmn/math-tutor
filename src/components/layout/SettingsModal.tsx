@@ -6,7 +6,7 @@ import { getModelConfig, saveModelConfig } from '@/lib/modelConfig';
 
 const PRESETS: { label: string; provider: Provider; model: string; baseUrl: string }[] = [
   { label: 'Anthropic (Claude)', provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', baseUrl: '' },
-  { label: 'Google Gemini', provider: 'openai-compatible', model: 'gemini-2.0-flash', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/' },
+  { label: 'Google Gemini', provider: 'openai-compatible', model: 'gemini-3-flash', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/' },
   { label: 'OpenAI', provider: 'openai-compatible', model: 'gpt-4o', baseUrl: 'https://api.openai.com/v1' },
   { label: 'Groq', provider: 'openai-compatible', model: 'llama-3.3-70b-versatile', baseUrl: 'https://api.groq.com/openai/v1' },
   { label: 'Ollama', provider: 'openai-compatible', model: 'llama3.2-vision', baseUrl: process.env.NEXT_PUBLIC_OLLAMA_BASE_URL ?? 'http://localhost:11434/v1' },
