@@ -53,7 +53,12 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       return { ...state, chatHistory: updated };
     }
     case 'SET_STREAMING':
-      return { ...state, isStreaming: action.streaming };
+      return {
+        ...state,
+        isStreaming: action.streaming,
+        chatHistory: action.streaming ? state.chatHistory : state.chatHistory.map((message) =>
+          message.pending ? { ...message, pending: false } : message),
+      };
     case 'LOAD_SESSION':
       return {
         ...state,

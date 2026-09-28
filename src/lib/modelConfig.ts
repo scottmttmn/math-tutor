@@ -21,4 +21,16 @@ export function getModelConfig(): ModelConfig {
 
 export function saveModelConfig(config: ModelConfig): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+  window.dispatchEvent(new Event('mathTutor:modelConfigChanged'));
 }
+
+export function subscribeModelConfig(onChange: () => void): () => void {
+  window.addEventListener('storage', onChange);
+  window.addEventListener('mathTutor:modelConfigChanged', onChange);
+  return () => {
+    window.removeEventListener('storage', onChange);
+    window.removeEventListener('mathTutor:modelConfigChanged', onChange);
+  };
+}
+
+export const getModelLabel = () => getModelConfig().model;

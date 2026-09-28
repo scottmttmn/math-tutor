@@ -18,7 +18,7 @@ export default function SessionList({ isOpen, onClose, onLoad }: Props) {
     if (isOpen) {
       listSessions().then((all) => {
         setSessions(
-          all.map((s) => ({
+          all.filter((s) => !s.id.startsWith('workbook:')).map((s) => ({
             id: s.id,
             title: s.title,
             problemStatement: s.problemStatement,
@@ -47,6 +47,7 @@ export default function SessionList({ isOpen, onClose, onLoad }: Props) {
           <h3 className="text-sm font-semibold text-gray-800">Saved Sessions</h3>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="text-gray-400 hover:text-gray-600 text-lg leading-none"
           >
             &times;

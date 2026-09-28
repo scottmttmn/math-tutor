@@ -10,27 +10,35 @@ export function useRateLimit(intervalMs: number) {
   const calculateRemaining = useCallback(() => {
     const lastUsage = localStorage.getItem(STORAGE_KEY);
     if (!lastUsage) return 0;
-    const elapsed = Date.now() - parseInt(lastUsage, 10);
+    const timestamp = Number(lastUsage);
+    if (!Number.isFinite(timestamp)) return 0;
+    const elapsed = Date.now() - timestamp;
     return Math.max(0, intervalMs - elapsed);
   }, [intervalMs]);
 
   useEffect(() => {
-    setRemainingMs(calculateRemaining());
+    const update = () => setRemainingMs(calculateRemaining());
+    window.addEventListener('mathTutor:helpUsage', update);
+    window.addEventListener('storage', update);
+    const initialTimer = setTimeout(() => setRemainingMs(calculateRemaining()), 0);
 
     const timer = setInterval(() => {
       const remaining = calculateRemaining();
       setRemainingMs(remaining);
-      if (remaining <= 0) {
-        clearInterval(timer);
-      }
     }, 1000);
 
-    return () => clearInterval(timer);
+    return () => {
+      window.removeEventListener('mathTutor:helpUsage', update);
+      window.removeEventListener('storage', update);
+      clearTimeout(initialTimer);
+      clearInterval(timer);
+    };
   }, [calculateRemaining]);
 
   const recordUsage = useCallback(() => {
     localStorage.setItem(STORAGE_KEY, Date.now().toString());
     setRemainingMs(intervalMs);
+    window.dispatchEvent(new Event('mathTutor:helpUsage'));
   }, [intervalMs]);
 
   const isLimited = remainingMs > 0;

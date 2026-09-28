@@ -38,6 +38,7 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   imagePreview?: string;
+  pending?: boolean;
 }
 
 // === Session Types ===
@@ -89,7 +90,20 @@ export interface TutorRequest {
   userQuestion?: string;
   problemImage?: string;
   sessionType?: SessionType;
+  workbookContext?: WorkbookContext;
 }
+
+export type WorkbookContext =
+  | {
+      kind: 'reading';
+      sectionId: string;
+      selectedPassage?: string;
+    }
+  | {
+      kind: 'exercise';
+      sectionId: string;
+      exerciseId: string;
+    };
 
 export interface TutorStreamEvent {
   type: 'text_delta' | 'message_stop' | 'error';

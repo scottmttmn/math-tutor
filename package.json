@@ -4,13 +4,18 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:workbook": "node --test tests/workbook.test.mjs",
+    "test:workbook:e2e": "node tests/workbook.e2e.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "cheerio": "^1.2.0",
+    "geist": "^1.7.2",
     "idb": "^8.0.3",
+    "katex": "^0.18.9",
     "next": "16.1.6",
     "openai": "^6.25.0",
     "react": "19.2.3",
@@ -19,12 +24,14 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/katex": "^0.16.8",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/uuid": "^10.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "playwright": "^1.58.2",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

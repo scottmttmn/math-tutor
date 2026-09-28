@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import type { ModelConfig, Provider } from '@/types';
 import { getModelConfig, saveModelConfig } from '@/lib/modelConfig';
 
@@ -26,18 +26,13 @@ interface Props {
 }
 
 export default function SettingsModal({ isOpen, onClose }: Props) {
-  const [config, setConfig] = useState<ModelConfig>({ provider: 'anthropic', model: '', baseUrl: '' });
-  const [presetIdx, setPresetIdx] = useState(0);
-
-  useEffect(() => {
-    if (isOpen) {
-      const cfg = getModelConfig();
-      setConfig(cfg);
-      setPresetIdx(findPresetIndex(cfg));
-    }
-  }, [isOpen]);
-
   if (!isOpen) return null;
+  return <SettingsForm onClose={onClose} />;
+}
+
+function SettingsForm({ onClose }: Pick<Props, 'onClose'>) {
+  const [config, setConfig] = useState<ModelConfig>(getModelConfig);
+  const [presetIdx, setPresetIdx] = useState(() => findPresetIndex(getModelConfig()));
 
   const handlePresetChange = (idx: number) => {
     setPresetIdx(idx);

@@ -6,7 +6,6 @@ import { useCanvasState, useCanvasDispatch } from '@/context/CanvasContext';
 
 export function useSelection(
   overlayRef: React.RefObject<HTMLCanvasElement | null>,
-  drawingCanvasRef: React.RefObject<HTMLCanvasElement | null>,
 ) {
   const { toolSettings } = useCanvasState();
   const dispatch = useCanvasDispatch();

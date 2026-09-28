@@ -1,199 +1,88 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useSessionState, useSessionDispatch } from '@/context/SessionContext';
 import { getModelConfig } from '@/lib/modelConfig';
-import type { ChatMessage, TutorStreamEvent } from '@/types';
+import type { ChatMessage, TutorStreamEvent, WorkbookContext } from '@/types';
 
-export function useTutorChat() {
+export function useTutorChat(workbookContext?: WorkbookContext) {
   const { problemStatement, problemImage, chatHistory, isStreaming, sessionType } = useSessionState();
   const dispatch = useSessionDispatch();
+  const pendingRequest = useRef<AbortController | null>(null);
+
+  useEffect(() => () => { pendingRequest.current?.abort(); }, []);
 
   const sendHelp = useCallback(async (canvasImage: string, question?: string): Promise<boolean> => {
-    if (isStreaming) return false;
-
+    if (isStreaming || pendingRequest.current) return false;
+    const abort = new AbortController();
+    pendingRequest.current = abort;
     const userContent = question || 'I need help with this part of my work.';
-
     const userMessage: ChatMessage = {
-      id: uuidv4(),
-      role: 'user',
-      content: userContent,
-      timestamp: Date.now(),
-      imagePreview: canvasImage.length > 100 ? canvasImage.substring(0, 100) + '...' : canvasImage,
+      id: uuidv4(), role: 'user', content: userContent, timestamp: Date.now(),
+      imagePreview: canvasImage ? '[Canvas snapshot sent]' : undefined,
     };
-
-    const assistantMessage: ChatMessage = {
-      id: uuidv4(),
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-    };
-
     dispatch({ type: 'ADD_MESSAGE', message: userMessage });
-    dispatch({ type: 'ADD_MESSAGE', message: assistantMessage });
+    dispatch({ type: 'ADD_MESSAGE', message: { id: uuidv4(), role: 'assistant', content: '', timestamp: Date.now(), pending: true } });
     dispatch({ type: 'SET_STREAMING', streaming: true });
 
+    const append = (content: string) => {
+      if (!abort.signal.aborted) dispatch({ type: 'APPEND_TO_LAST_MESSAGE', content });
+    };
     try {
       const response = await fetch('/api/tutor', {
-        method: 'POST',
+        method: 'POST', signal: abort.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          problemStatement,
-          chatHistory: chatHistory,
-          canvasImage,
-          modelConfig: getModelConfig(),
-          userQuestion: userContent,
-          problemImage: problemImage ?? undefined,
-          sessionType,
+          problemStatement, chatHistory: chatHistory.filter((message) => message.content.trim()),
+          canvasImage, modelConfig: getModelConfig(), userQuestion: userContent,
+          problemImage: problemImage ?? undefined, sessionType, workbookContext,
         }),
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        dispatch({ type: 'APPEND_TO_LAST_MESSAGE', content: `Error: ${errorText || response.statusText}` });
-        dispatch({ type: 'SET_STREAMING', streaming: false });
-        return false;
-      }
-
+      if (!response.ok) throw new Error(await response.text() || response.statusText);
       const reader = response.body?.getReader();
-      if (!reader) {
-        dispatch({ type: 'APPEND_TO_LAST_MESSAGE', content: 'Error: No response stream' });
-        dispatch({ type: 'SET_STREAMING', streaming: false });
-        return false;
-      }
-
+      if (!reader) throw new Error('No response stream');
       const decoder = new TextDecoder();
       let buffer = '';
-
+      let hadError = false;
+      let stopped = false;
+      const readEvent = (frame: string) => {
+        const data = frame.split(/\r?\n/).filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart()).join('\n');
+        if (!data) return;
+        const event: TutorStreamEvent = JSON.parse(data);
+        if (event.type === 'text_delta' && event.content) append(event.content);
+        else if (event.type === 'message_stop') stopped = true;
+        else if (event.type === 'error') {
+          hadError = true;
+          append(`\n\nError: ${event.error || 'Tutor request failed'}`);
+        }
+      };
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const jsonStr = line.slice(6).trim();
-          if (!jsonStr) continue;
-
-          try {
-            const event: TutorStreamEvent = JSON.parse(jsonStr);
-            if (event.type === 'text_delta' && event.content) {
-              dispatch({ type: 'APPEND_TO_LAST_MESSAGE', content: event.content });
-            } else if (event.type === 'error') {
-              dispatch({ type: 'APPEND_TO_LAST_MESSAGE', content: `\n\nError: ${event.error}` });
-            }
-          } catch {
-            // Skip malformed JSON
-          }
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        const frames = buffer.split(/\r?\n\r?\n/);
+        buffer = frames.pop() || '';
+        for (const frame of frames) readEvent(frame);
+        if (done) {
+          if (buffer.trim()) readEvent(buffer);
+          break;
         }
       }
-
-      dispatch({ type: 'SET_STREAMING', streaming: false });
-      return true;
+      if (!stopped && !hadError) throw new Error('The tutor response was interrupted. Please try again.');
+      return !hadError && !abort.signal.aborted;
     } catch (error) {
-      dispatch({
-        type: 'APPEND_TO_LAST_MESSAGE',
-        content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      });
-      dispatch({ type: 'SET_STREAMING', streaming: false });
+      append(`\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return false;
+    } finally {
+      pendingRequest.current = null;
+      if (!abort.signal.aborted) dispatch({ type: 'SET_STREAMING', streaming: false });
     }
-  }, [problemStatement, problemImage, chatHistory, isStreaming, sessionType, dispatch]);
+  }, [problemStatement, problemImage, chatHistory, isStreaming, sessionType, workbookContext, dispatch]);
 
   const sendFollowUp = useCallback(async (text: string): Promise<boolean> => {
-    if (isStreaming || !text.trim()) return false;
-
-    const userMessage: ChatMessage = {
-      id: uuidv4(),
-      role: 'user',
-      content: text.trim(),
-      timestamp: Date.now(),
-    };
-
-    const assistantMessage: ChatMessage = {
-      id: uuidv4(),
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-    };
-
-    dispatch({ type: 'ADD_MESSAGE', message: userMessage });
-    dispatch({ type: 'ADD_MESSAGE', message: assistantMessage });
-    dispatch({ type: 'SET_STREAMING', streaming: true });
-
-    try {
-      const response = await fetch('/api/tutor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          problemStatement,
-          chatHistory: chatHistory,
-          canvasImage: '',
-          modelConfig: getModelConfig(),
-          userQuestion: text.trim(),
-          problemImage: problemImage ?? undefined,
-          sessionType,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        dispatch({ type: 'APPEND_TO_LAST_MESSAGE', content: `Error: ${errorText || response.statusText}` });
-        dispatch({ type: 'SET_STREAMING', streaming: false });
-        return false;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        dispatch({ type: 'APPEND_TO_LAST_MESSAGE', content: 'Error: No response stream' });
-        dispatch({ type: 'SET_STREAMING', streaming: false });
-        return false;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const jsonStr = line.slice(6).trim();
-          if (!jsonStr) continue;
-
-          try {
-            const event: TutorStreamEvent = JSON.parse(jsonStr);
-            if (event.type === 'text_delta' && event.content) {
-              dispatch({ type: 'APPEND_TO_LAST_MESSAGE', content: event.content });
-            } else if (event.type === 'error') {
-              dispatch({ type: 'APPEND_TO_LAST_MESSAGE', content: `\n\nError: ${event.error}` });
-            }
-          } catch {
-            // Skip malformed JSON
-          }
-        }
-      }
-
-      dispatch({ type: 'SET_STREAMING', streaming: false });
-      return true;
-    } catch (error) {
-      dispatch({
-        type: 'APPEND_TO_LAST_MESSAGE',
-        content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      });
-      dispatch({ type: 'SET_STREAMING', streaming: false });
-      return false;
-    }
-  }, [problemStatement, problemImage, chatHistory, isStreaming, sessionType, dispatch]);
+    if (!text.trim()) return false;
+    return sendHelp('', text.trim());
+  }, [sendHelp]);
 
   return { sendHelp, sendFollowUp, isStreaming };
 }
