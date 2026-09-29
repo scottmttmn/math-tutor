@@ -2,12 +2,12 @@
 
 import { useState } from 'react';
 import type { ModelConfig, Provider } from '@/types';
-import { getModelConfig, saveModelConfig } from '@/lib/modelConfig';
+import { DEFAULT_ANTHROPIC_MODEL, getModelConfig, saveModelConfig } from '@/lib/modelConfig';
 import { useChatGPTConnection } from '@/hooks/useChatGPTConnection';
 import { CHATGPT_DEFAULT_MODEL_PATTERN, CHATGPT_USAGE_URL } from '@/lib/constants';
 
 const PRESETS: { label: string; provider: Provider; model: string; baseUrl: string }[] = [
-  { label: 'Anthropic (Claude)', provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', baseUrl: '' },
+  { label: 'Anthropic (Claude)', provider: 'anthropic', model: DEFAULT_ANTHROPIC_MODEL, baseUrl: '' },
   { label: 'ChatGPT plan (Sign in with ChatGPT)', provider: 'chatgpt', model: '', baseUrl: '' },
   { label: 'Google Gemini', provider: 'openai-compatible', model: 'gemini-3-flash', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/' },
   { label: 'OpenAI', provider: 'openai-compatible', model: 'gpt-4o', baseUrl: 'https://api.openai.com/v1' },

@@ -1,10 +1,11 @@
 import type { ModelConfig } from '@/types';
 
 const STORAGE_KEY = 'mathTutor_modelConfig';
+export const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-5-5';
 
 const DEFAULT_CONFIG: ModelConfig = {
   provider: 'anthropic',
-  model: 'claude-sonnet-4-5-20250929',
+  model: DEFAULT_ANTHROPIC_MODEL,
   baseUrl: '',
 };
 
@@ -13,7 +14,12 @@ export function getModelConfig(): ModelConfig {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_CONFIG;
-    return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
+    const config: ModelConfig = { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
+    // Upgrade the former default in saved settings as well as new sessions.
+    if (config.provider === 'anthropic' && config.model === 'claude-sonnet-4-5-20250929') {
+      config.model = DEFAULT_ANTHROPIC_MODEL;
+    }
+    return config;
   } catch {
     return DEFAULT_CONFIG;
   }
