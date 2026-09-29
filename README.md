@@ -19,6 +19,8 @@ The pilot adapts [Howell and Mathews, *Complex Analysis*, §1.3](https://complex
 
 Progress is saved in the browser's IndexedDB. The current exercise and reading position are saved in local storage. See [the pilot plan](docs/complex-analysis-workbook-pilot.md) for scope and behavior.
 
+See [the pen-first workbook direction](docs/pen-first-math-workbook-plan.md) for the intended writing-tablet experience, passage-linked notes, tutor interactions without a permanent chat pane, and proposed next steps.
+
 To refresh the adapted section from its source:
 
 ```bash

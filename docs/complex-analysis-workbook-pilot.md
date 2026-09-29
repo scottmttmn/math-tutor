@@ -6,6 +6,8 @@ Turn a small part of Howell and Mathews's *Complex Analysis* into a self-paced b
 
 The tutor never supplies a complete exercise solution. This pilot tests whether reading support plus persistent problem workspaces make the book more useful for independent study. It can begin with the existing whiteboard while its larger design questions are resolved later.
 
+The longer-term direction is recorded in [the pen-first workbook plan](pen-first-math-workbook-plan.md): a writing-tablet experience with passage-linked notes and a complete tutor flow that does not require a keyboard or a permanent chat pane.
+
 ## Source and scope
 
 - Book: [Howell and Mathews, *Complex Analysis*](https://complexanalysis.org/).
