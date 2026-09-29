@@ -3,3 +3,6 @@ export const CHATGPT_USAGE_URL = 'https://chatgpt.com/settings/usage';
 // Preferred default ChatGPT-plan model, matched against each model's slug and name.
 // Falls back to the first model the plan lists.
 export const CHATGPT_DEFAULT_MODEL_PATTERN = /luna/i;
+
+// Minimum interval between tutor requests, measured from their start.
+export const RATE_LIMIT_MS = 5 * 1000;

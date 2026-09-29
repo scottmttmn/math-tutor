@@ -1,6 +1,8 @@
 'use client';
 
 import { useCanvasState } from '@/context/CanvasContext';
+import { useRateLimit } from '@/hooks/useRateLimit';
+import { RATE_LIMIT_MS } from '@/lib/constants';
 import type { SessionType } from '@/types';
 
 // Drawing tools, colors and undo live in tldraw's own toolbar on the canvas.
@@ -16,7 +18,8 @@ interface Props {
 
 export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSolved, onToggleSolved, sessionType, completionLabel }: Props) {
   const { hasContent } = useCanvasState();
-  const helpDisabled = isStreaming;
+  const { isLimited } = useRateLimit(RATE_LIMIT_MS);
+  const helpDisabled = isLimited || isStreaming;
 
   return (
     <div className="flex items-center gap-3 px-4 py-2 border-t border-gray-200 bg-white flex-wrap">
@@ -52,6 +55,7 @@ export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSo
       <button
         onClick={onAskForHelp}
         disabled={helpDisabled}
+        title={isLimited ? 'Please wait a moment before asking again.' : undefined}
         className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
           helpDisabled
             ? 'bg-gray-100 text-gray-400 cursor-not-allowed'

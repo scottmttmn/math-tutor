@@ -42,7 +42,9 @@ The tutor never supplies a complete exercise solution. This pilot tests whether 
 
 ## Help cadence
 
-Reading questions bypass the current five-minute wait. Requests that submit new whiteboard work retain the existing wait for this pilot. Text follow-ups within an exercise conversation remain available while the student works.
+All tutor requests share a five-second minimum interval measured from request start, including reading questions, exercise hints, whiteboard reviews, free-form follow-ups, and the tldraw spike. Only one provider request can run at a time in the server process. Controls briefly disable without a visible countdown; a response taking longer than five seconds allows an immediate follow-up when it finishes. The limit controls request frequency, while the tutor's teaching rules control hint progression. Failed requests also consume the short interval to avoid retry bursts.
+
+The server gate covers the current single-process app, including callers bypassing the browser controls. A deployment with multiple server instances needs a shared limiter, and a hard spending budget needs separate token or cost accounting.
 
 ## Pilot acceptance check
 

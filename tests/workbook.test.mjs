@@ -7,6 +7,9 @@ const content = JSON.parse(fs.readFileSync(new URL('../src/content/complex-geome
 
 function routeHarness(providerError = false) {
   const calls = [];
+  let now = 10_000;
+  const { createTutorRequestGate } = load('src/lib/tutorRequestGate.ts');
+  const gate = createTutorRequestGate(() => now);
   class Anthropic {
     messages = { stream: (options) => {
       calls.push({ provider: 'anthropic', ...options });
@@ -30,6 +33,7 @@ function routeHarness(providerError = false) {
   const siwc = { ChatGPTError: class ChatGPTError extends Error {} };
   const { POST } = load('src/app/api/tutor/route.ts', {
     '@anthropic-ai/sdk': Anthropic, openai: OpenAI, '@/lib/chatgpt': chatgpt, '@/lib/siwc': siwc,
+    '@/lib/tutorRequestGate': { createTutorRequestGate: () => gate },
   });
   const request = (overrides = {}) => POST(new Request('http://localhost/api/tutor', {
     method: 'POST', body: JSON.stringify({
@@ -38,7 +42,7 @@ function routeHarness(providerError = false) {
       ...overrides,
     }),
   }));
-  return { calls, request };
+  return { calls, request, advanceTime: (ms = 5000) => { now += ms; } };
 }
 
 test('all adapted exercises and local figures are present; source solutions are absent', () => {
@@ -114,8 +118,9 @@ for (const provider of ['anthropic', 'openai-compatible']) {
 }
 
 test('free-form Notes retain direct explanations and Problems retain hints', async () => {
-  const { request, calls } = routeHarness();
+  const { request, calls, advanceTime } = routeHarness();
   await (await request({ sessionType: 'note' })).text();
+  advanceTime();
   await (await request({ sessionType: 'problem' })).text();
   assert.match(calls[0].system, /Give clear, direct explanations/);
   assert.match(calls[1].system, /NEVER give the full solution/);
@@ -128,6 +133,92 @@ test('unknown workbook sections, modes, and exercises are rejected before provid
   }
   assert.equal(calls.length, 0);
 });
+
+test('server blocks rapid requests across modes and providers before spending tokens', async () => {
+  const { request, calls, advanceTime } = routeHarness();
+  await (await request({ workbookContext: { kind: 'reading', sectionId: content.id } })).text();
+  const retry = await request({
+    canvasImage: 'fake-image', sessionType: 'problem',
+    modelConfig: { provider: 'openai-compatible', model: 'test', baseUrl: 'http://localhost/v1' },
+  });
+  assert.equal(retry.status, 429);
+  assert.equal(retry.headers.get('Retry-After'), '5');
+  assert.match(await retry.text(), /wait a moment/);
+  assert.equal(calls.length, 1);
+  advanceTime(4999);
+  assert.equal((await request()).status, 429);
+  advanceTime(1);
+  const next = await request();
+  assert.equal(next.status, 200);
+  await next.text();
+  assert.equal(calls.length, 2);
+});
+
+test('active requests stay locked past five seconds; finishing does not restart the wait', () => {
+  const { createTutorRequestGate } = load('src/lib/tutorRequestGate.ts');
+  let now = 10_000;
+  const gate = createTutorRequestGate(() => now);
+  const first = gate.acquire();
+  assert.equal(first.accepted, true);
+  now += 6000;
+  assert.equal(gate.acquire().accepted, false);
+  first.release();
+  const second = gate.acquire();
+  assert.equal(second.accepted, true);
+  first.release(); // A stale cleanup must not release a newer request.
+  assert.equal(gate.acquire().accepted, false);
+  second.release();
+  now += 5000;
+  assert.equal(gate.acquire().accepted, true);
+});
+
+test('browser request starts share the limit across callers, reloads, and unavailable storage', () => {
+  const values = new Map();
+  const originalNow = Date.now;
+  let now = 10_000;
+  Date.now = () => now;
+  global.window = new EventTarget();
+  global.localStorage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+  };
+  try {
+    const first = load('src/hooks/useRateLimit.ts');
+    assert.equal(first.tryStartTutorRequest(), true);
+    assert.equal(first.tryStartTutorRequest(), false);
+    const reloaded = load('src/hooks/useRateLimit.ts');
+    assert.equal(reloaded.tryStartTutorRequest(), false);
+    now += 4999;
+    assert.equal(reloaded.tryStartTutorRequest(), false);
+    now += 1;
+    assert.equal(reloaded.tryStartTutorRequest(), true);
+    global.localStorage = {
+      getItem: () => { throw new Error('Storage unavailable'); },
+      setItem: () => { throw new Error('Storage unavailable'); },
+    };
+    assert.equal(reloaded.tryStartTutorRequest(), false);
+    now += 5000;
+    assert.equal(reloaded.tryStartTutorRequest(), true);
+    assert.equal(reloaded.tryStartTutorRequest(), false);
+  } finally {
+    Date.now = originalNow;
+    delete global.window;
+    delete global.localStorage;
+  }
+});
+
+for (const provider of ['anthropic', 'openai-compatible']) {
+  test(`${provider}: provider failure releases the active request but retains the retry interval`, async () => {
+    const { request, advanceTime } = routeHarness(true);
+    const settings = { modelConfig: { provider, model: 'test', baseUrl: 'http://localhost/v1' } };
+    await (await request(settings)).text();
+    assert.equal((await request(settings)).status, 429);
+    advanceTime();
+    const retry = await request(settings);
+    assert.equal(retry.status, 200);
+    await retry.text();
+  });
+}
 
 test('recovery preserves newer unsaved work and ignores corrupt or stale copies', async () => {
   const values = new Map();

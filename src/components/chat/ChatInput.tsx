@@ -13,11 +13,11 @@ interface ChatInputProps {
 export default function ChatInput({ getCanvasImage }: ChatInputProps) {
   const [text, setText] = useState('');
   const { chatHistory, isStreaming } = useSessionState();
-  const { sendFollowUp } = useTutorChat();
+  const { sendFollowUp, isLimited } = useTutorChat();
   const { isListening, isSupported, error, startListening, stopListening, resetTranscript } =
     useSpeechRecognition(setText);
 
-  const canSend = text.trim().length > 0 && !isStreaming && chatHistory.length > 0;
+  const canSend = text.trim().length > 0 && !isStreaming && !isLimited && chatHistory.length > 0;
   const inputDisabled = isStreaming || chatHistory.length === 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -71,6 +71,7 @@ export default function ChatInput({ getCanvasImage }: ChatInputProps) {
         <button
           type="submit"
           disabled={!canSend}
+          title={isLimited ? 'Please wait a moment before asking again.' : undefined}
           className="px-3 py-1.5 text-sm font-medium bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Send

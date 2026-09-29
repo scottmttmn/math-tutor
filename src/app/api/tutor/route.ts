@@ -6,6 +6,9 @@ import { CHATGPT_USAGE_URL } from '@/lib/constants';
 import type { ResponseContentPart, ResponseInputMessage } from '@/lib/siwc';
 import type { TutorRequest, ModelConfig } from '@/types';
 import { resolveWorkbookContext } from '@/lib/workbookTutor';
+import { createTutorRequestGate } from '@/lib/tutorRequestGate';
+
+const requestGate = createTutorRequestGate();
 
 const NOTE_SYSTEM_PROMPT = `You are a helpful math tutor helping a student understand concepts they find confusing.
 The student has written notes or drawn diagrams on their canvas. They may have selected a specific region they want explained.
@@ -175,6 +178,7 @@ function streamAnthropicResponse(
   modelConfig: ModelConfig,
   messages: Anthropic.MessageParam[],
   systemPrompt: string = SYSTEM_PROMPT,
+  onFinish: () => void = () => {},
 ): ReadableStream {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -200,6 +204,7 @@ function streamAnthropicResponse(
       } catch (err) {
         if (!cancelled) controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: friendlyError(err) })}\n\n`));
       } finally {
+        onFinish();
         if (!cancelled) controller.close();
       }
     },
@@ -215,6 +220,7 @@ function streamOpenAIResponse(
   userQuestion?: string,
   problemImage?: string,
   systemPrompt: string = SYSTEM_PROMPT,
+  onFinish: () => void = () => {},
 ): ReadableStream {
   const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY ?? 'ollama',
@@ -286,6 +292,7 @@ function streamOpenAIResponse(
       } catch (err) {
         if (!cancelled) controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', error: friendlyError(err) })}\n\n`));
       } finally {
+        onFinish();
         if (!cancelled) controller.close();
       }
     },
@@ -294,6 +301,7 @@ function streamOpenAIResponse(
 }
 
 export async function POST(request: Request) {
+  let release: (() => void) | undefined;
   try {
     const body: TutorRequest = await request.json();
     const { problemStatement, chatHistory, canvasImage, modelConfig, userQuestion, problemImage, sessionType, workbookContext } = body;
@@ -310,6 +318,15 @@ export async function POST(request: Request) {
       ? READING_SYSTEM_PROMPT
       : resolvedWorkbook ? SYSTEM_PROMPT : sessionType === 'note' ? NOTE_SYSTEM_PROMPT : SYSTEM_PROMPT;
     const contextualProblemStatement = resolvedWorkbook?.text ?? problemStatement;
+
+    const permit = requestGate.acquire();
+    if (!permit.accepted) {
+      return new Response(permit.message, {
+        status: 429,
+        headers: { 'Retry-After': String(permit.retryAfterSeconds), 'Cache-Control': 'no-store' },
+      });
+    }
+    release = permit.release;
 
     let readableStream: ReadableStream;
 
@@ -332,6 +349,7 @@ export async function POST(request: Request) {
         userQuestion,
         problemImage,
         systemPrompt,
+        release,
       );
     } else {
       // Anthropic path
@@ -375,7 +393,7 @@ export async function POST(request: Request) {
       messages.push({ role: 'user', content: userContent });
 
       const cleanedMessages = cleanMessages(messages);
-      readableStream = streamAnthropicResponse(modelConfig, cleanedMessages, systemPrompt);
+      readableStream = streamAnthropicResponse(modelConfig, cleanedMessages, systemPrompt, release);
     }
 
     return new Response(readableStream, {
@@ -386,6 +404,7 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    release?.();
     return new Response(friendlyError(error), { status: 500 });
   }
 }

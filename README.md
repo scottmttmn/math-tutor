@@ -15,7 +15,7 @@ Run `npm run build` to verify a production build.
 
 ## Complex Analysis workbook pilot
 
-The pilot adapts [Howell and Mathews, *Complex Analysis*, §1.3](https://complexanalysis.org/web/sec_geometry-1.html), which is published under [CC BY 4.0](https://complexanalysis.org/). It includes the in-app reading, all 25 section exercises, and a small recommended path. The reader can ask questions without the five-minute wait. Each exercise has a separate whiteboard and tutor conversation. Submitting new whiteboard work keeps the existing wait. The tutor is instructed to give hints and explanations without complete exercise solutions; the source solutions are excluded from the imported content.
+The pilot adapts [Howell and Mathews, *Complex Analysis*, §1.3](https://complexanalysis.org/web/sec_geometry-1.html), which is published under [CC BY 4.0](https://complexanalysis.org/). It includes the in-app reading, all 25 section exercises, and a small recommended path. Each exercise has a separate whiteboard and tutor conversation. All tutor requests share a five-second safety interval, with one request at a time and no visible countdown. The tutor is instructed to give hints and explanations without complete exercise solutions; the source solutions are excluded from the imported content.
 
 Progress is saved in the browser's IndexedDB. The current exercise and reading position are saved in local storage. See [the pilot plan](docs/complex-analysis-workbook-pilot.md) for scope and behavior.
 

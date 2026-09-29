@@ -12,7 +12,8 @@ Verified against the local production build on September 27–28, 2026.
 - Equation links opened the source site, and converting math to KaTeX discarded equation IDs. Imports now preserve IDs and use local references. Clicking an exercise's equation reference returns to that exact reading passage.
 - An imported lower-bound inequality, the nested square root in Exercise 18, and Exercise 4(b)'s identity reference were incorrect in the source. The importer corrects them, and adaptation credit names these corrections.
 - Canvas selection survived changing exercises; whiteboard review ignored the selection. Restoring a board now clears selection and undo/redo history, and review sends the selected region when present. Workbook keyboard shortcuts also match the toolbar's labels.
-- Independent cooldown hooks could show inconsistent button states until the next timer tick. Successful reviews now notify all hooks immediately; reading and exercise text questions continue to bypass the review cooldown.
+- Independent cooldown hooks could show inconsistent button states until the next timer tick. Request starts now notify all hooks immediately. The former five-minute whiteboard-only cooldown has been replaced by a five-second request interval shared across all tutor modes, without a visible countdown.
+- At interval expiry, the whiteboard button could become enabled before the parent view's cooldown state updated, silently ignoring a click. The request handler now checks the current timestamp instead of relying on a second view's delayed timer state.
 - Follow-up streaming errors reported success, abrupt streams could silently leave partial replies, and Anthropic error/end handlers could close a stream twice. The shared client now handles both request types consistently, detects interrupted streams, and cancels on unmount. Both provider streams close once and cancel upstream requests on disconnect.
 - Reloading during a response could restore an empty assistant message as a permanent typing indicator. Pending replies now restore with an interruption notice and can be retried.
 - Initial load failures had no recovery action. The workbook now offers a load retry without overwriting saved work.
@@ -26,8 +27,9 @@ Verified against the local production build on September 27–28, 2026.
 | `npm run build` | Passed, including TypeScript and prerendering `/` and `/workbook` |
 | `npm run lint` | Passed |
 | `npm run dev` (Turbopack) | Fresh compilation of `/workbook` and `/` returned 200; Tailwind styles, diagrams, and controls rendered without browser errors |
-| `npm run test:workbook` | Nine focused tests passed |
+| `npm run test:workbook` | Fourteen focused tests passed, including browser/reload limits, server burst rejection, concurrent-request protection, and error recovery |
 | Production and Turbopack dev browser acceptance | Reading, selection, all exercises/diagrams, context, review images, switching, immediate reload, browser restart, completion, cooldown, equation links, streaming failures, mobile controls, and free-form modes exercised |
+| Production request-safety browser checks | Rapid direct API calls returned 429 without reaching the mock provider; an active seven-second reply rejected concurrent calls after the five-second interval; a follow-up succeeded immediately after completion; the tldraw spike enforced the same brief UI limit without a countdown |
 | Live Anthropic reading request | Explained the geometric meaning of Re(z) using the section |
 | Live Anthropic whiteboard review | Recognized a coordinate system and two student-drawn vectors; asked diagnostic questions without solving the exercise |
 | Live reload | Restored the board, exercise conversation, completion state, and separate reading conversation |
