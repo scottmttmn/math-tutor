@@ -10,9 +10,12 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@napi-rs/keyring": "^2.1.0",
     "idb": "^8.0.3",
+    "jose": "^6.2.12",
     "next": "16.1.6",
     "openai": "^6.25.0",
+    "proper-lockfile": "^4.1.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "uuid": "^13.0.0"
@@ -20,6 +23,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/proper-lockfile": "^4.1.4",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/uuid": "^10.0.0",

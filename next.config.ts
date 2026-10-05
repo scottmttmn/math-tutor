@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Native keychain binding used to encrypt saved ChatGPT tokens; load it from node_modules at runtime.
+  serverExternalPackages: ['@napi-rs/keyring'],
 };
 
 export default nextConfig;

@@ -71,12 +71,29 @@ export interface SessionMetadata {
 
 // === Model Config Types ===
 
-export type Provider = 'anthropic' | 'openai-compatible';
+export type Provider = 'anthropic' | 'openai-compatible' | 'chatgpt';
 
 export interface ModelConfig {
   provider: Provider;
   model: string;
   baseUrl: string;
+}
+
+// === Sign in with ChatGPT Types ===
+
+export interface ChatGPTModelOption {
+  slug: string;
+  displayName: string;
+}
+
+/** What /api/chatgpt reports to the browser. Never carries tokens. */
+export interface ChatGPTStatus {
+  status: 'disconnected' | 'connecting' | 'connected' | 'reauth_required';
+  /** True when the user allowed this app to use their ChatGPT plan. */
+  sharing: boolean;
+  email?: string;
+  models?: ChatGPTModelOption[];
+  error?: string;
 }
 
 // === API Types ===

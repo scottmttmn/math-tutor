@@ -17,7 +17,7 @@ It has **two session modes**, and the distinction drives much of the codebase:
 
 - **Framework:** Next.js 16 (App Router), React 19, TypeScript 5
 - **Styling:** Tailwind CSS 4
-- **AI Providers:** Anthropic Claude, OpenAI, Google Gemini, Groq, Ollama (local)
+- **AI Providers:** Anthropic Claude, OpenAI, Google Gemini, Groq, Ollama (local), and the student's own ChatGPT plan via Sign in with ChatGPT
 - **Persistence:** IndexedDB (sessions), localStorage (model config, rate limit)
 
 ---
@@ -27,7 +27,8 @@ It has **two session modes**, and the distinction drives much of the codebase:
 ```
 src/
 ├── app/
-│   ├── api/tutor/route.ts     # Streaming API endpoint (Anthropic + OpenAI-compat)
+│   ├── api/tutor/route.ts     # Streaming API endpoint (Anthropic + OpenAI-compat + ChatGPT plan)
+│   ├── api/chatgpt/route.ts   # Sign in with ChatGPT: status, sign-in, sign-out
 │   ├── page.tsx               # Root page (renders AppShell)
 │   ├── layout.tsx             # Root layout (metadata, fonts)
 │   └── globals.css            # Global Tailwind styles
@@ -57,10 +58,13 @@ src/
 │   ├── useSelection.ts        # Overlay canvas selection rectangle logic
 │   ├── useSpeechRecognition.ts# Web Speech API wrapper with error recovery
 │   ├── useTutorChat.ts        # Sends requests to /api/tutor, handles SSE stream
+│   ├── useChatGPTConnection.ts# Sign in with ChatGPT state for SettingsModal
 │   └── useRateLimit.ts        # 5-min cooldown enforcement via localStorage
 ├── lib/
 │   ├── db.ts                  # IndexedDB CRUD for sessions via `idb`
 │   ├── modelConfig.ts         # localStorage get/set for ModelConfig
+│   ├── chatgpt.ts             # Server-only Sign in with ChatGPT client + OS-keychain token encryption
+│   ├── siwc/                  # Vendored OpenAI Sign in with ChatGPT SDK (noncommercial license, see below)
 │   ├── constants.ts           # App-wide constants (colors, thicknesses, RATE_LIMIT_MS, CANVAS_HEIGHT)
 │   └── canvasUtils.ts         # canvasToBlob → Blob (for saving to IndexedDB)
 └── types/
@@ -121,6 +125,15 @@ src/
 - The API cleans message history to ensure valid alternating user/assistant turns before sending to the model (Anthropic path only).
 - Request body shape: `{ problemStatement, chatHistory, canvasImage, modelConfig, userQuestion?, problemImage?, sessionType? }` (see `TutorRequest` in `src/types/index.ts`).
 - The OpenAI path falls back to the API key string `'ollama'` when `OPENAI_API_KEY` is unset, so local Ollama works with no key.
+- A third path, `provider: 'chatgpt'`, uses Sign in with ChatGPT: the Responses API with the student's OAuth token, billed to their ChatGPT plan instead of an API key. Images go as `input_image` parts.
+
+### Sign in with ChatGPT
+- The SDK is **not on npm**; `src/lib/siwc/` is a copy of `packages/local/src` from `openai/sign-in-with-chatgpt-devkit`. Each file's header says what changed from upstream (keep doing that, the license requires it). Keep edits there minimal; app logic goes in `src/lib/chatgpt.ts`.
+- **License:** the SDK is under OpenAI's *Sign-in with ChatGPT DevKit Noncommercial License v1.0* (`src/lib/siwc/LICENSE`). Commercial use needs a separate agreement with OpenAI.
+- OAuth runs in the Next server process (which is on the student's machine) and opens their browser; the callback listens on `127.0.0.1:${CHATGPT_REDIRECT_PORT ?? 8791}`. The port is registered on first sign-in, so don't change it casually.
+- Tokens are saved under `~/.config/math-tutor/`, encrypted with a key kept in the OS keychain via `@napi-rs/keyring`. With no keychain (e.g. Linux without Secret Service, CI containers), sign-in reports that secure storage is unavailable; there is deliberately no plaintext fallback.
+- Tokens never reach the browser: `/api/chatgpt` returns only `ChatGPTStatus` (status, email, models).
+- Only for a locally run app. A hosted deployment would need OpenAI's waitlist approval and a different (non-loopback) flow.
 
 ### Session Persistence
 - Sessions are stored in IndexedDB using the `idb` library (`src/lib/db.ts`). Do not use `localStorage` for session data.
@@ -147,13 +160,14 @@ cp .env.example .env.local  # (or create manually)
 npm run dev   # http://localhost:3000
 ```
 
-**Node 20+ is required** (Next.js 16). Older Node versions fail with `Cannot find module 'node:events'`.
+**Node 22+ is required** (the Sign in with ChatGPT SDK targets 22; Next.js 16 itself needs 20+). Older Node versions fail with `Cannot find module 'node:events'`.
 
 ### Environment Variables
 | Variable | Required | Description |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | For Anthropic/Claude | Anthropic API key |
 | `OPENAI_API_KEY` | For OpenAI-compat | OpenAI / Google / Groq key (not needed for Ollama) |
+| `CHATGPT_REDIRECT_PORT` | No | Loopback port for the Sign in with ChatGPT callback (default `8791`) |
 | `NEXT_PUBLIC_OLLAMA_BASE_URL` | No | Overrides the default Ollama preset URL (`http://localhost:11434/v1`) — useful when Ollama runs on another machine |
 
 The app shows user-friendly error messages for missing/invalid keys.
@@ -214,6 +228,7 @@ Configured via `SettingsModal` and stored in `localStorage`. Provider presets ar
 | Provider | SDK Used | Default Model | Base URL |
 |---|---|---|---|
 | Anthropic (Claude) | `@anthropic-ai/sdk` | `claude-sonnet-4-5-20250929` | Default (api.anthropic.com) |
+| ChatGPT plan | vendored `src/lib/siwc` | First model the plan lists | `https://api.openai.com/v1/responses` (fixed) |
 | OpenAI | `openai` (compat) | `gpt-4o` | `https://api.openai.com/v1` |
 | Google Gemini | `openai` (compat) | `gemini-3-flash` | `https://generativelanguage.googleapis.com/v1beta/openai/` |
 | Groq | `openai` (compat) | `llama-3.3-70b-versatile` | `https://api.groq.com/openai/v1` |
