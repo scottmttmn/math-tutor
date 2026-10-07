@@ -3,23 +3,3 @@ export const CHATGPT_USAGE_URL = 'https://chatgpt.com/settings/usage';
 // Preferred default ChatGPT-plan model, matched against each model's slug and name.
 // Falls back to the first model the plan lists.
 export const CHATGPT_DEFAULT_MODEL_PATTERN = /luna/i;
-
-export const DEFAULT_PEN_COLOR = '#000000';
-export const DEFAULT_PEN_THICKNESS = 3;
-export const DEFAULT_ERASER_THICKNESS = 20;
-
-export const COLOR_PRESETS = [
-  '#000000', // black
-  '#1e40af', // blue
-  '#dc2626', // red
-  '#16a34a', // green
-  '#9333ea', // purple
-  '#ea580c', // orange
-];
-
-export const THICKNESS_MIN = 1;
-export const THICKNESS_MAX = 20;
-
-export const CANVAS_BG_COLOR = '#ffffff';
-
-export const CANVAS_HEIGHT = 3000; // logical px — enables vertical scrolling

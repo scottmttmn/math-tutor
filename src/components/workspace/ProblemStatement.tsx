@@ -4,13 +4,13 @@ import { useSessionState, useSessionDispatch } from '@/context/SessionContext';
 import { useCanvasState } from '@/context/CanvasContext';
 
 interface Props {
-  onCaptureProblemImage: () => void;
+  onCaptureProblemImage: () => Promise<void> | void;
 }
 
 export default function ProblemStatement({ onCaptureProblemImage }: Props) {
   const { problemStatement, problemImage } = useSessionState();
   const dispatch = useSessionDispatch();
-  const { strokes } = useCanvasState();
+  const { hasContent } = useCanvasState();
 
   return (
     <div className="px-3 py-2">
@@ -43,10 +43,10 @@ export default function ProblemStatement({ onCaptureProblemImage }: Props) {
           </>
         ) : (
           <button
-            onClick={onCaptureProblemImage}
-            disabled={strokes.length === 0}
+            onClick={() => void onCaptureProblemImage()}
+            disabled={!hasContent}
             className="text-xs px-2 py-1 border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-            title={strokes.length === 0 ? 'Draw on the canvas first' : 'Capture current canvas as the problem figure'}
+            title={!hasContent ? 'Draw on the canvas first' : 'Capture current canvas as the problem figure'}
           >
             Capture as Problem
           </button>

@@ -154,3 +154,27 @@ test('recovery preserves newer unsaved work and ignores corrupt or stale copies'
   assert.deepEqual(await storage.loadWorkbookSession(original.id), latest);
   delete global.localStorage;
 });
+
+test('pre-tldraw strokes convert to draw shapes with erased ink removed', () => {
+  const tldraw = {
+    createShapeId: (() => { let n = 0; return () => `shape:${++n}`; })(),
+    b64Vecs: { encodePoints2D: (points) => JSON.stringify(points) },
+  };
+  const { clipErasedInk, legacyStrokesToShapes } = load('src/lib/legacyStrokes.ts', { tldraw });
+  const line = { points: [0, 10, 20, 30, 40].map((x) => ({ x, y: 0 })), color: '#DC2626', thickness: 3, tool: 'pen' };
+  const eraser = { points: [{ x: 20, y: 0 }], color: '#fff', thickness: 6, tool: 'eraser' };
+  // An eraser drawn after the line splits it; one drawn before leaves it whole.
+  const runs = clipErasedInk([line, eraser]).map((s) => [s.points[0].x, s.points.at(-1).x]);
+  assert.deepEqual(runs, [[0, 14], [26, 40]]);
+  assert.deepEqual(clipErasedInk([eraser, line]), [line]);
+  // A fast eraser pass between two recorded points still cuts the line, and so does
+  // one crossing between two recorded pen points.
+  const swipe = { ...eraser, points: [{ x: 20, y: -50 }, { x: 20, y: 50 }] };
+  assert.equal(clipErasedInk([line, swipe]).length, 2);
+  const sparse = { ...line, points: [{ x: 0, y: 0 }, { x: 40, y: 0 }] };
+  assert.equal(clipErasedInk([sparse, swipe]).length, 2);
+  const [shape] = legacyStrokesToShapes([{ ...line, points: [{ x: 100, y: 50 }, { x: 110, y: 60 }] }]);
+  assert.equal(shape.type, 'draw');
+  assert.deepEqual([shape.x, shape.y, shape.props.color, shape.props.size], [100, 50, 'red', 'm']);
+  assert.deepEqual(JSON.parse(shape.props.segments[0].path), [{ x: 0, y: 0 }, { x: 10, y: 10 }]);
+});

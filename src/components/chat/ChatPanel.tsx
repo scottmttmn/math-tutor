@@ -5,7 +5,11 @@ import { useSessionState } from '@/context/SessionContext';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 
-export default function ChatPanel() {
+interface ChatPanelProps {
+  getCanvasImage?: () => Promise<string>;
+}
+
+export default function ChatPanel({ getCanvasImage }: ChatPanelProps) {
   const { chatHistory } = useSessionState();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -37,7 +41,7 @@ export default function ChatPanel() {
         )}
       </div>
 
-      <ChatInput />
+      <ChatInput getCanvasImage={getCanvasImage} />
     </div>
   );
 }
