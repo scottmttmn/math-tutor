@@ -52,6 +52,12 @@ test('all adapted exercises and local figures are present; source solutions are 
   const $ = cheerio.load(content.readingHtml);
   assert.equal($('.solution, .solutions, section.exercises, script').length, 0);
   assert.equal($('.katex-error').length, 0);
+  assert.doesNotMatch(content.readingHtml, /\\amp\b/);
+  assert.doesNotMatch(content.readingText, /\\amp\b/);
+  for (const id of ['sec_geometry-1-20-1-1', 'sec_geometry-1-22-1']) {
+    assert.equal($(`#${id} .katex-html .mtable`).length, 1, `Missing aligned proof in ${id}`);
+    assert.equal($(`#${id} .katex-html [style*="color:#cc0000"]`).length, 0);
+  }
   assert.equal($('img').length, 8);
   $('img').each((_, image) => {
     const src = $(image).attr('src');

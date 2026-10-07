@@ -21,6 +21,10 @@ $('#x1_3_4b a.xref').text('(1.3.4)').attr('href', 'sec_geometry-1.html#TriangleI
 const section = $('#sec_geometry-1');
 if (!section.length) throw new Error('Source section was not found');
 
+// The source defines \amp as & in a page-level MathJax preamble outside the section.
+// Preserve its alignment meaning when importing individual expressions into KaTeX.
+const normalizeBookMath = (text) => text.replace(/\\amp\b/g, '&');
+
 function clean(fragment) {
   const $part = cheerio.load(fragment, { decodeEntities: false });
   $part('.solutions, .solution, .autopermalink, script, style').remove();
@@ -49,9 +53,9 @@ function clean(fragment) {
     $part(image).removeAttr('style');
   });
   $part('.process-math').each((_, element) => {
-    const math = $part(element).text().trim().replace(/^\\\(|\\\)$/g, '').replace(/^\\\[|\\\]$/g, '');
+    const math = normalizeBookMath($part(element).text().trim().replace(/^\\\(|\\\)$/g, '').replace(/^\\\[|\\\]$/g, ''));
     const displayMode = $part(element).hasClass('displaymath');
-    const rendered = katex.renderToString(math, { displayMode, throwOnError: false, trust: false });
+    const rendered = katex.renderToString(math, { displayMode, throwOnError: true, trust: false });
     $part(element).removeClass('process-math').html(rendered);
   });
   $part('*').each((_, element) => {
@@ -71,7 +75,7 @@ const exercises = section.find('section.exercises > article.exercise').map((_, e
     id: $(element).attr('id'),
     number: $(element).children('h3.heading').first().text().trim(),
     html: clean($.html(clone)),
-    text: clone.text().replace(/\s+/g, ' ').trim(),
+    text: normalizeBookMath(clone.text()).replace(/\s+/g, ' ').trim(),
   };
 }).get();
 
@@ -88,7 +92,7 @@ const content = {
   licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
   sourceRevision: '2026-08-21',
   readingHtml: clean($.html(reading)),
-  readingText: reading.text().replace(/\s+/g, ' ').trim(),
+  readingText: normalizeBookMath(reading.text()).replace(/\s+/g, ' ').trim(),
   recommendedIds: ['x1_3_1', 'x1_3_2', 'x1_3_6', 'x1_3_8'],
   exercises,
 };
