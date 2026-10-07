@@ -1,5 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
+import { getChatGPT } from '@/lib/chatgpt';
+import { ChatGPTError } from '@/lib/siwc';
+import { CHATGPT_USAGE_URL } from '@/lib/constants';
+import type { ResponseContentPart, ResponseInputMessage } from '@/lib/siwc';
 import type { TutorRequest, ModelConfig } from '@/types';
 import { resolveWorkbookContext } from '@/lib/workbookTutor';
 
@@ -75,6 +79,96 @@ function friendlyError(error: unknown): string {
     return 'Your API credit balance is too low. Please add credits to your account.';
   }
   return message;
+}
+
+/** The text that accompanies the images in the latest help request. */
+function latestUserText(
+  problemStatement: string,
+  canvasImage: string,
+  userQuestion?: string,
+  problemImage?: string,
+): string {
+  let text = '';
+  if (problemImage) {
+    text += 'Problem figure: shown in the first image above.\n\n';
+  }
+  if (problemStatement) {
+    text += `The problem I'm working on: ${problemStatement}\n\n`;
+  }
+  if (userQuestion) {
+    text += userQuestion;
+  } else {
+    text += canvasImage
+      ? 'Here is my work so far. Can you give me a hint?'
+      : 'Can you give me a hint on what to do next?';
+  }
+  return text;
+}
+
+function friendlyChatGPTError(error: unknown): string {
+  if (error instanceof ChatGPTError && error.code === 'subscription_sharing_unsupported_capability') {
+    return 'Your ChatGPT plan connection does not accept images for this model. Try another model, or switch providers in Settings.';
+  }
+  if (error instanceof ChatGPTError && error.code === 'subscription_sharing_usage_limit_exceeded') {
+    return `You've reached a ChatGPT usage limit, either for your plan or for this app. Check your usage and limits at ${CHATGPT_USAGE_URL}`;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Streams from the Responses API on the student's own ChatGPT plan (Sign in with ChatGPT). */
+function streamChatGPTResponse(
+  modelConfig: ModelConfig,
+  chatHistory: { role: string; content: string }[],
+  canvasImage: string,
+  problemStatement: string,
+  userQuestion?: string,
+  problemImage?: string,
+  systemPrompt: string = SYSTEM_PROMPT,
+): ReadableStream {
+  const input: ResponseInputMessage[] = chatHistory
+    .filter((msg) => msg.content)
+    .map((msg) => ({ role: msg.role === 'user' ? 'user' : 'assistant', content: msg.content }));
+
+  const parts: ResponseContentPart[] = [];
+  if (problemImage) {
+    parts.push({ type: 'input_image', image_url: `data:image/png;base64,${problemImage}` });
+  }
+  if (canvasImage) {
+    parts.push({ type: 'input_image', image_url: `data:image/png;base64,${canvasImage}` });
+  }
+  parts.push({ type: 'input_text', text: latestUserText(problemStatement, canvasImage, userQuestion, problemImage) });
+  input.push({ role: 'user', content: parts });
+
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        const { usage } = await getChatGPT().streamResponse({
+          model: modelConfig.model,
+          instructions: systemPrompt,
+          input,
+          onDelta: (delta) => {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ type: 'text_delta', content: delta })}\n\n`)
+            );
+          },
+        });
+        if (usage) {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: 'usage', usage })}\n\n`)
+          );
+        }
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ type: 'message_stop' })}\n\n`)
+        );
+      } catch (err) {
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ type: 'error', error: friendlyChatGPTError(err) })}\n\n`)
+        );
+      }
+      controller.close();
+    },
+  });
 }
 
 function streamAnthropicResponse(
@@ -158,20 +252,7 @@ function streamOpenAIResponse(
     });
   }
 
-  let textContent = '';
-  if (problemImage) {
-    textContent += 'Problem figure: shown in the first image above.\n\n';
-  }
-  if (problemStatement) {
-    textContent += `The problem I'm working on: ${problemStatement}\n\n`;
-  }
-  if (userQuestion) {
-    textContent += userQuestion;
-  } else {
-    textContent += canvasImage
-      ? 'Here is my work so far. Can you give me a hint?'
-      : 'Can you give me a hint on what to do next?';
-  }
+  const textContent = latestUserText(problemStatement, canvasImage, userQuestion, problemImage);
 
   userParts.push({ type: 'text', text: textContent });
   messages.push({ role: 'user', content: userParts });
@@ -232,7 +313,17 @@ export async function POST(request: Request) {
 
     let readableStream: ReadableStream;
 
-    if (modelConfig.provider === 'openai-compatible') {
+    if (modelConfig.provider === 'chatgpt') {
+      readableStream = streamChatGPTResponse(
+        modelConfig,
+        chatHistory,
+        canvasImage,
+        contextualProblemStatement,
+        userQuestion,
+        problemImage,
+        systemPrompt,
+      );
+    } else if (modelConfig.provider === 'openai-compatible') {
       readableStream = streamOpenAIResponse(
         modelConfig,
         chatHistory,
@@ -278,20 +369,7 @@ export async function POST(request: Request) {
         });
       }
 
-      let textContent = '';
-      if (problemImage) {
-        textContent += 'Problem figure: shown in the first image above.\n\n';
-      }
-      if (contextualProblemStatement) {
-        textContent += `The problem I'm working on: ${contextualProblemStatement}\n\n`;
-      }
-      if (userQuestion) {
-        textContent += userQuestion;
-      } else {
-        textContent += canvasImage
-          ? 'Here is my work so far. Can you give me a hint?'
-          : 'Can you give me a hint on what to do next?';
-      }
+      const textContent = latestUserText(contextualProblemStatement, canvasImage, userQuestion, problemImage);
 
       userContent.push({ type: 'text', text: textContent });
       messages.push({ role: 'user', content: userContent });

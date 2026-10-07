@@ -32,6 +32,12 @@ export interface ToolSettings {
 
 export type ChatRole = 'user' | 'assistant';
 
+/** Tokens one tutor answer used, as reported by the provider. Only the ChatGPT plan path reports it today. */
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;
@@ -39,6 +45,7 @@ export interface ChatMessage {
   timestamp: number;
   imagePreview?: string;
   pending?: boolean;
+  usage?: TokenUsage;
 }
 
 // === Session Types ===
@@ -72,12 +79,29 @@ export interface SessionMetadata {
 
 // === Model Config Types ===
 
-export type Provider = 'anthropic' | 'openai-compatible';
+export type Provider = 'anthropic' | 'openai-compatible' | 'chatgpt';
 
 export interface ModelConfig {
   provider: Provider;
   model: string;
   baseUrl: string;
+}
+
+// === Sign in with ChatGPT Types ===
+
+export interface ChatGPTModelOption {
+  slug: string;
+  displayName: string;
+}
+
+/** What /api/chatgpt reports to the browser. Never carries tokens. */
+export interface ChatGPTStatus {
+  status: 'disconnected' | 'connecting' | 'connected' | 'reauth_required';
+  /** True when the user allowed this app to use their ChatGPT plan. */
+  sharing: boolean;
+  email?: string;
+  models?: ChatGPTModelOption[];
+  error?: string;
 }
 
 // === API Types ===
@@ -106,7 +130,8 @@ export type WorkbookContext =
     };
 
 export interface TutorStreamEvent {
-  type: 'text_delta' | 'message_stop' | 'error';
+  type: 'text_delta' | 'usage' | 'message_stop' | 'error';
   content?: string;
+  usage?: TokenUsage;
   error?: string;
 }
