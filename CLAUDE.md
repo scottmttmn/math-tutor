@@ -6,7 +6,7 @@ This file provides context for AI assistants working on this codebase.
 
 ## Project Overview
 
-**Math Tutor** is an AI-powered math tutoring application. It combines a freehand drawing canvas with streaming AI chat.
+**Math Tutor** is an AI-powered math tutoring application. It combines a [tldraw](https://tldraw.dev) whiteboard with streaming AI chat.
 
 It has **two session modes**, and the distinction drives much of the codebase:
 
@@ -16,6 +16,7 @@ It has **two session modes**, and the distinction drives much of the codebase:
 | **Notes** | `'note'` | Study mode. Explains concepts **directly**, including answers. |
 
 - **Framework:** Next.js 16 (App Router), React 19, TypeScript 5
+- **Canvas:** tldraw 5 (pinned together with `@tldraw/assets`)
 - **Styling:** Tailwind CSS 4
 - **AI Providers:** Anthropic Claude, OpenAI, Google Gemini, Groq, Ollama (local), and the student's own ChatGPT plan via Sign in with ChatGPT
 - **Persistence:** IndexedDB (sessions), localStorage (model config)
@@ -36,11 +37,12 @@ src/
 │   ├── layout/
 │   │   ├── AppShell.tsx       # Top-level app container; wires contexts + UI
 │   │   ├── TopBar.tsx         # Header bar (New dropdown, Save, Load, Settings, Chat toggle)
-│   │   ├── BottomToolbar.tsx  # Drawing tools (pen, eraser, select, pan), colors, undo/redo
+│   │   ├── BottomToolbar.tsx  # Clear, Mark Solved, Ask for Help (drawing tools are tldraw's own)
 │   │   ├── SettingsModal.tsx  # Model/provider configuration (defines PRESETS array)
 │   │   └── HelpQuestionModal.tsx  # Custom question input with voice
 │   ├── workspace/
-│   │   ├── DrawingCanvas.tsx  # Freehand canvas (dual-canvas: draw + overlay); exposes DrawingCanvasHandle
+│   │   ├── DrawingCanvas.tsx  # Client-only wrapper around TldrawCanvas; defines DrawingCanvasHandle
+│   │   ├── TldrawCanvas.tsx   # tldraw editor: loads documents, mirrors them to CanvasContext, exports images
 │   │   ├── ProblemStatement.tsx   # Textarea + problem-image capture (problem mode)
 │   │   └── NoteHeader.tsx     # Topic input (notes mode) — replaces ProblemStatement
 │   ├── chat/
@@ -51,11 +53,9 @@ src/
 │       ├── SessionList.tsx    # Saved sessions modal
 │       └── SessionCard.tsx    # Session preview card (📐 problem / 📝 note)
 ├── context/
-│   ├── CanvasContext.tsx      # Canvas state (tool, color, strokes, undo/redo, selection)
+│   ├── CanvasContext.tsx      # Mirror of the tldraw document + pending load requests
 │   └── SessionContext.tsx     # Session state (problem, chat history, sessionType, sessions)
 ├── hooks/
-│   ├── useCanvas.ts           # Pointer event handling, stroke recording, replay, canvas capture
-│   ├── useSelection.ts        # Overlay canvas selection rectangle logic
 │   ├── useSpeechRecognition.ts# Web Speech API wrapper with error recovery
 │   ├── useTutorChat.ts        # Sends requests to /api/tutor, handles SSE stream
 │   └── useChatGPTConnection.ts# Sign in with ChatGPT state for SettingsModal
@@ -64,8 +64,8 @@ src/
 │   ├── modelConfig.ts         # localStorage get/set for ModelConfig
 │   ├── chatgpt.ts             # Server-only Sign in with ChatGPT client + OS-keychain token encryption
 │   ├── siwc/                  # Vendored OpenAI Sign in with ChatGPT SDK (noncommercial license, see below)
-│   ├── constants.ts           # App-wide constants (colors, thicknesses, CANVAS_HEIGHT, ChatGPT usage URL)
-│   └── canvasUtils.ts         # canvasToBlob → Blob (for saving to IndexedDB)
+│   ├── constants.ts           # App-wide constants (ChatGPT usage URL, default plan model)
+│   └── legacyStrokes.ts       # Converts pre-tldraw saved strokes into tldraw draw shapes
 └── types/
     ├── index.ts               # All shared TypeScript types
     └── speech-recognition.d.ts# Web Speech API type declarations
@@ -82,12 +82,12 @@ src/
 
 ### State Management
 - Global state uses React Context + `useReducer`. Do **not** introduce external state libraries (Redux, Zustand, etc.).
-- **CanvasContext** owns all drawing state. Never manage strokes in a component.
+- **tldraw's editor** owns the live drawing, tools, selection and undo history. **CanvasContext** mirrors what the rest of the app needs (`document`, `hasContent`) and carries `LOAD` requests; don't duplicate drawing state elsewhere.
 - **SessionContext** owns all session/chat state, including `sessionType`. Components dispatch actions; they do not mutate state directly.
 
 ### Components
 - Components should be pure presentational where possible; logic belongs in hooks.
-- Custom hooks encapsulate complex behavior (`useCanvas`, `useTutorChat`, etc.). Follow this pattern for new features.
+- Custom hooks encapsulate complex behavior (`useTutorChat`, `useSpeechRecognition`, etc.). Follow this pattern for new features.
 - Modals are conditionally rendered inside `AppShell`; control their visibility with boolean state in `AppShell` or a context.
 - Anything reading `localStorage` must do so in an effect, not in `useState` initializers — that causes hydration mismatches. `AppShell` (model label) and `SettingsModal` both follow this.
 
@@ -97,22 +97,14 @@ src/
 - Buttons follow a consistent pattern: base classes + hover/disabled variants. Match existing button styles.
 
 ### Canvas
-- The drawing canvas uses **two overlapping `<canvas>` elements**: the main drawing canvas and a transparent overlay for selection UI.
-- Both canvases scale by `window.devicePixelRatio` for crisp rendering on high-DPI screens.
-- The canvas has a **fixed logical height of `CANVAS_HEIGHT` (3000px)** and lives inside an `overflow-y-auto` wrapper in `AppShell`. It is taller than the viewport by design so students can scroll for more room.
-- Always use `replayStrokes` to reconstruct canvas from stored strokes (do not cache pixel data for undo).
-- Erasing uses `globalCompositeOperation = 'destination-out'` on the canvas context.
-- `DrawingCanvas` exposes a `DrawingCanvasHandle` ref with `captureFullCanvas()`, `captureRegion(rect)`, and `getCanvas()`. These are implemented in `useCanvas.ts`.
-- `canvasUtils.ts` only contains `canvasToBlob` (for converting canvas to a `Blob` to store in IndexedDB). Do not add capture logic there.
-- **Overlay clearing:** `useSelection` repaints the overlay only from its own pointer handlers. Any code path that clears `selection` in state (e.g. `ERASE_SELECTION`) must also clear the overlay — `DrawingCanvas` has an effect that does this when `selection` becomes `null`. Keep it when touching selection logic.
-- **Gotcha:** `captureFullCanvas()` serializes the entire 3000px-tall canvas (6000px at dpr 2), so a full-canvas help request sends a large, mostly-blank PNG. Prefer `captureRegion` when a selection exists (`AppShell` already does).
-
-### Undo / Redo
-- `CanvasContext` keeps **snapshot stacks**: `past: Stroke[][]` and `future: Stroke[][]`, plus the current `strokes`.
-- Any mutating action (`ADD_STROKE`, `CLEAR`, `ERASE_SELECTION`) pushes the previous `strokes` onto `past` and empties `future`.
-- Gate undo/redo UI on `past.length` / `future.length` — **not** on `strokes.length`.
-- `LOAD_STROKES` resets both stacks.
-- `ERASE_SELECTION` splits each stroke into runs of consecutive points **outside** the selection, so strokes are clipped at the boundary rather than deleted wholesale.
+- The canvas is **tldraw**, mounted by `TldrawCanvas.tsx` through `DrawingCanvas.tsx`, which loads it with `next/dynamic` and `ssr: false`. `DrawingCanvas` fills its nearest positioned ancestor, so the wrapper in `AppShell` / `Workbook` must be `relative` with a size.
+- `DrawingCanvasHandle` (pass a ref as `handleRef`): `captureImage()` exports the selected shapes, else every shape, trimmed to their bounds (PNG, pixelRatio 2, base64 without the `data:` prefix; `''` when empty); `captureThumbnail()`, `getDocument()`, and `clear()` (one undoable step).
+- tldraw's UI supplies the tools, colors, undo/redo and their shortcuts. `MainMenu`, `PageMenu`, `HelpMenu` and debug panels are hidden and there is one page per session.
+- `CanvasContext.document` is a **debounced** (250ms) copy of the editor's document. When saving, read `getDocument()` from the handle (both `AppShell` and `Workbook` do), or the last stroke can be missed.
+- Loading: dispatch `LOAD` with `document` (tldraw format) and/or `strokes` (pre-tldraw format). The editor applies it when mounted, clears undo history, then dispatches `LOADED`. Until then `pendingLoad` holds the strokes, and saves keep them so an unconverted old session is never overwritten with an empty board.
+- Old sessions: `legacyStrokes.ts` turns strokes into draw shapes. The old canvas erased with `destination-out`, so pen points under a *later* eraser stroke are dropped.
+- **Assets:** fonts, icons and translations are copied from `@tldraw/assets` into `public/tldraw-assets` (gitignored) by the `postinstall` script, so nothing loads from tldraw's CDN. Keep `tldraw` and `@tldraw/assets` on the same exact version.
+- **License:** with no license key tldraw runs on `http://localhost` / `127.0.0.1` (any http origin counts as development) and shows a small "Get a license for production" note. A hosted deployment needs a key from tldraw.dev.
 
 ### API Route (`/api/tutor`)
 - Supports two provider paths: **Anthropic** (`@anthropic-ai/sdk`) and **OpenAI-compatible** (`openai` SDK).
@@ -138,7 +130,7 @@ src/
 ### Session Persistence
 - Sessions are stored in IndexedDB using the `idb` library (`src/lib/db.ts`). Do not use `localStorage` for session data.
 - `db.ts` exports: `saveSession`, `loadSession`, `deleteSession`, `listSessions`.
-- Session fields: `id`, `title`, `problemStatement`, `problemImage`, `canvasStrokes`, `canvasImageBlob`, `chatHistory`, `createdAt`, `updatedAt`, `isSolved?`, `sessionType?`.
+- Session fields: `id`, `title`, `problemStatement`, `problemImage`, `canvasStrokes` (pre-tldraw only), `canvasDocument?`, `canvasImageBlob`, `chatHistory`, `createdAt`, `updatedAt`, `isSolved?`, `sessionType?`.
 - `SessionMetadata` (used for session list): `id`, `title`, `problemStatement`, `createdAt`, `updatedAt`, `messageCount`, `isSolved?`, `sessionType?`.
 - `sessionType` and `isSolved` are optional for backward compatibility with sessions saved before those fields existed. Treat missing `sessionType` as `'problem'`.
 - Model configuration (provider, model ID, base URL) is stored in `localStorage` via `src/lib/modelConfig.ts`.
@@ -190,16 +182,16 @@ ESLint uses the Next.js core web vitals config. Run `npm run lint` before commit
 ### Help Request (primary user flow)
 1. User writes the problem in `ProblemStatement` (or a topic in `NoteHeader`), draws on `DrawingCanvas`.
 2. Clicks **Ask for Help** (problem mode) / **Ask About This** (notes mode) → `HelpQuestionModal` opens (optional custom question + voice).
-3. On submit: `AppShell.handleAskForHelp()` calls `canvasHandle.current.captureRegion(selection)` when a region is selected, else `captureFullCanvas()` → base64 PNG.
+3. On submit: `AppShell.handleAskForHelp()` calls `canvasHandle.current.captureImage()` → base64 PNG of the selected shapes, or of the whole drawing trimmed to its bounds.
 4. `useTutorChat.sendHelp(canvasImage, question)` POSTs to `/api/tutor` with the request body above, including `sessionType`.
 5. API selects the system prompt from `sessionType` and streams an SSE response; client appends `text_delta` events to chat in real time via `APPEND_TO_LAST_MESSAGE` dispatch.
 6. Session is **not auto-saved**; user must click **Save** manually.
 
 ### Follow-up Chat
-- `useTutorChat.sendFollowUp(text)` sends text-only follow-up messages (no image) via the same `/api/tutor` endpoint.
+- `useTutorChat.sendFollowUp(text, canvasImage?)` uses the same `/api/tutor` endpoint. `AppShell` (via `ChatPanel` → `ChatInput`) and `Workbook` attach a fresh `captureImage()` only when `CanvasContext.document` changed since the tutor last saw the board; otherwise the follow-up is text-only.
 
 ### Session Save/Load
-- **Save:** `handleSave` in `AppShell` calls `db.saveSession()` with current canvas strokes + chat + `sessionType`.
+- **Save:** `handleSave` in `AppShell` calls `db.saveSession()` with the tldraw document (`canvasDocument`), a thumbnail, chat and `sessionType`. New saves write `canvasStrokes: []`.
 - **Load:** `handleLoad` calls `db.loadSession()`, dispatches to both contexts to restore state.
 - **New:** the **New** button in `TopBar` is a dropdown — *New Problem* or *New Notes* — which passes a `SessionType` to `AppShell.handleNew()`.
 
@@ -209,11 +201,8 @@ Registered once in `AppShell` (handlers read latest values through refs):
 | Shortcut | Action |
 |---|---|
 | `Cmd/Ctrl+S` | Save session |
-| `Cmd/Ctrl+Z` | Undo |
-| `Cmd/Ctrl+Shift+Z` | Redo |
-| `Delete` / `Backspace` | Erase the selected region (when a selection exists) |
 
-Shortcuts are ignored while focus is in an `input`, `textarea`, or contenteditable element.
+Undo, redo, delete and tool keys are tldraw's own. Shortcuts are ignored while focus is in an `input`, `textarea`, or contenteditable element.
 
 ### Rate Limiting
 - There is no app-side cooldown between help requests (the old 5-minute `useRateLimit` was removed on request). Spending is bounded by the provider: API-key billing, or the ChatGPT plan's own limits and per-app weekly cap.
@@ -246,12 +235,8 @@ Default model config (when nothing is saved in localStorage): `anthropic` / `cla
 1. Add a preset entry to the `PRESETS` array in `src/components/layout/SettingsModal.tsx`.
 2. The API route auto-routes to the OpenAI SDK for any non-Anthropic provider; no route changes needed for OpenAI-compatible APIs.
 
-### Adding a new canvas tool
-1. Add the tool name to the `DrawingTool` union in `src/types/index.ts` (currently `'pen' | 'eraser' | 'select' | 'pan'`).
-2. Add handling in `useCanvas.ts` (drawing tools) or `useSelection.ts` (overlay tools). Tools that manipulate the *viewport* rather than pixels — like `pan`, which scrolls the wrapper element — are handled directly in `DrawingCanvas.tsx`.
-3. Wire the pointer handlers in `DrawingCanvas`, which dispatches to the right handler set based on `toolSettings.activeTool`.
-4. Add a button to `BottomToolbar.tsx`.
-5. Update `CanvasContext` state/reducer if new tool settings are needed.
+### Customizing the canvas
+- Tools, menus and the style panel come from tldraw. Change them through `TldrawCanvas.tsx` (`components`, `overrides`, custom shapes/tools) rather than building UI around the editor.
 
 ### Adding a new session field
 1. Update `Session` and `SessionMetadata` types in `src/types/index.ts`.
@@ -266,7 +251,7 @@ Default model config (when nothing is saved in localStorage): `anthropic` / `cla
 
 - **Do not weaken the Socratic constraint in `SYSTEM_PROMPT`.** Problem mode must never give full solutions. Note that `NOTE_SYSTEM_PROMPT` is *intentionally* direct — that is not a bug, and the two prompts must stay distinct.
 - **Do not break streaming.** The API must remain SSE-based. Don't convert to JSON responses.
-- **Do not replace the canvas architecture.** The dual-canvas + stroke-replay pattern is intentional for undo/redo and region capture.
+- **Keep tldraw as the single source of truth for the drawing.** Don't add a parallel stroke store; mirror what you need through `CanvasContext`.
 - **Do not add dark mode** unless explicitly requested.
 - **Do not introduce new state management libraries.** Use React Context + useReducer.
 </content>

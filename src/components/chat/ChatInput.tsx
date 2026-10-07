@@ -7,7 +7,7 @@ import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 
 interface ChatInputProps {
   /** Returns a snapshot to attach to the follow-up, or '' when the tutor has already seen the drawing. */
-  getCanvasImage?: () => string;
+  getCanvasImage?: () => Promise<string>;
 }
 
 export default function ChatInput({ getCanvasImage }: ChatInputProps) {
@@ -27,7 +27,7 @@ export default function ChatInput({ getCanvasImage }: ChatInputProps) {
     const msg = text;
     setText('');
     resetTranscript();
-    await sendFollowUp(msg, getCanvasImage?.() ?? '');
+    await sendFollowUp(msg, await getCanvasImage?.() ?? '');
   };
 
   const handleMicClick = () => {

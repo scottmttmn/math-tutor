@@ -1,31 +1,22 @@
+import type { TLStoreSnapshot } from 'tldraw';
+
 // === Canvas Types ===
 
+/** A tldraw document (shapes, pages, schema) as saved with a session. */
+export type CanvasDocument = TLStoreSnapshot;
+
+/** A point of a legacy stroke, from before the canvas moved to tldraw. */
 export interface Point {
   x: number;
   y: number;
 }
 
+/** A stroke drawn on the pre-tldraw canvas. Only read when loading old sessions. */
 export interface Stroke {
   points: Point[];
   color: string;
   thickness: number;
   tool: 'pen' | 'eraser';
-}
-
-export interface SelectionRect {
-  startX: number;
-  startY: number;
-  width: number;
-  height: number;
-}
-
-export type DrawingTool = 'pen' | 'eraser' | 'select' | 'pan';
-
-export interface ToolSettings {
-  activeTool: DrawingTool;
-  penColor: string;
-  penThickness: number;
-  eraserThickness: number;
 }
 
 // === Chat Types ===
@@ -57,7 +48,9 @@ export interface Session {
   title: string;
   problemStatement: string;
   problemImage: string | null;
+  /** Legacy drawing; new saves leave it empty and use canvasDocument. */
   canvasStrokes: Stroke[];
+  canvasDocument?: CanvasDocument | null;
   canvasImageBlob: Blob | null;
   chatHistory: ChatMessage[];
   createdAt: number;

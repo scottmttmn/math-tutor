@@ -8,7 +8,7 @@ import { useSessionDispatch, useSessionState } from '@/context/SessionContext';
 import { useTutorChat } from '@/hooks/useTutorChat';
 import { listSessions } from '@/lib/db';
 import { loadWorkbookSession, saveWorkbookSession, stageWorkbookSession } from '@/lib/workbookStorage';
-import type { Session, WorkbookContext } from '@/types';
+import type { CanvasDocument, Session, WorkbookContext } from '@/types';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
 import ChatMessage from '@/components/chat/ChatMessage';
@@ -41,7 +41,8 @@ function WorkbookContent() {
   const readingTargetRef = useRef<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const latestSnapshot = useRef<Session | null>(null);
-  const { strokes, selection } = useCanvasState();
+  const sentDocument = useRef<CanvasDocument | null>(null);
+  const { document: canvasDocument, pendingLoad } = useCanvasState();
   const canvasDispatch = useCanvasDispatch();
   const { chatHistory, problemStatement, isSolved, isStreaming } = useSessionState();
   const sessionDispatch = useSessionDispatch();
@@ -67,7 +68,7 @@ function WorkbookContent() {
       isSolved: saved?.isSolved ?? false,
       sessionType: nextExerciseId ? 'problem' : 'note',
     });
-    canvasDispatch({ type: 'LOAD_STROKES', strokes: saved?.canvasStrokes ?? [] });
+    canvasDispatch({ type: 'LOAD', document: saved?.canvasDocument, strokes: saved?.canvasStrokes });
     setCreatedAt(saved?.createdAt ?? Date.now());
     setExerciseId(nextExerciseId);
     setSelectedPassage('');
@@ -105,21 +106,29 @@ function WorkbookContent() {
   const currentSnapshot = useMemo<Session | null>(() => ready ? ({
     id: exerciseId ? exerciseKey(exerciseId) : READING_ID,
     title: exercise ? `Complex Analysis 1.3 · Exercise ${exercise.number}` : 'Complex Analysis 1.3 · Reading',
-    problemStatement, problemImage: null, canvasStrokes: exerciseId ? strokes : [], canvasImageBlob: null,
+    problemStatement, problemImage: null, canvasImageBlob: null,
+    // Strokes from a pre-tldraw save stay until the editor has converted them.
+    canvasStrokes: exerciseId && !canvasDocument ? pendingLoad?.strokes ?? [] : [], canvasDocument: exerciseId ? canvasDocument : null,
     chatHistory, createdAt, updatedAt: Date.now(), isSolved, sessionType: exerciseId ? 'problem' : 'note',
-  }) : null, [ready, exerciseId, exercise, problemStatement, strokes, chatHistory, createdAt, isSolved]);
+  }) : null, [ready, exerciseId, exercise, problemStatement, canvasDocument, pendingLoad, chatHistory, createdAt, isSolved]);
+
+  // The context copy of the drawing lags the pen by a moment; read the editor directly when saving.
+  const withLiveDrawing = useCallback((snapshot: Session): Session => {
+    const live = snapshot.sessionType === 'problem' ? canvasRef.current?.getDocument() : null;
+    return live ? { ...snapshot, canvasDocument: live } : snapshot;
+  }, []);
 
   const persistCurrent = useCallback(async (): Promise<boolean> => {
     if (!currentSnapshot) return true;
     try {
-      await saveWorkbookSession(currentSnapshot);
+      await saveWorkbookSession(withLiveDrawing(currentSnapshot));
       setSaveError('');
       return true;
     } catch {
       setSaveError('Progress could not be saved. Please try again before leaving.');
       return false;
     }
-  }, [currentSnapshot]);
+  }, [currentSnapshot, withLiveDrawing]);
 
   useLayoutEffect(() => {
     if (!currentSnapshot) return;
@@ -136,7 +145,7 @@ function WorkbookContent() {
 
   useEffect(() => {
     const flush = () => {
-      if (latestSnapshot.current) void saveWorkbookSession(latestSnapshot.current).catch(() => {
+      if (latestSnapshot.current) void saveWorkbookSession(withLiveDrawing(latestSnapshot.current)).catch(() => {
         setSaveError('Progress could not be saved. Please try again before leaving.');
       });
     };
@@ -148,7 +157,7 @@ function WorkbookContent() {
       document.removeEventListener('visibilitychange', onVisibility);
       flush();
     };
-  }, []);
+  }, [withLiveDrawing]);
 
   useEffect(() => {
     const element = chatScrollRef.current;
@@ -161,15 +170,11 @@ function WorkbookContent() {
       if (target.matches('input, textarea, [contenteditable="true"]')) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
         event.preventDefault(); void persistCurrent();
-      } else if (exerciseId && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
-        event.preventDefault(); canvasDispatch({ type: event.shiftKey ? 'REDO' : 'UNDO' });
-      } else if (exerciseId && selection && ['Delete', 'Backspace'].includes(event.key)) {
-        event.preventDefault(); canvasDispatch({ type: 'ERASE_SELECTION', rect: selection });
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [exerciseId, selection, canvasDispatch, persistCurrent]);
+  }, [persistCurrent]);
 
   useEffect(() => {
     if (ready && !exerciseId && readingScrollRef.current) {
@@ -205,14 +210,20 @@ function WorkbookContent() {
     if (!question || isStreaming) return;
     setDraft('');
     if (chatHistory.length === 0) await sendHelp('', question);
-    else await sendFollowUp(question);
+    else await sendFollowUp(question, await followUpImage());
+  };
+
+  // Follow-ups on an exercise attach the whiteboard only when it changed since the tutor last saw it.
+  const followUpImage = async (): Promise<string> => {
+    if (!exercise || !canvasRef.current || canvasDocument === sentDocument.current) return '';
+    sentDocument.current = canvasDocument;
+    return canvasRef.current.captureImage();
   };
 
   const reviewWhiteboard = async () => {
     if (!exercise || isStreaming) return;
-    const image = strokes.length > 0 && canvasRef.current
-      ? selection ? canvasRef.current.captureRegion(selection) : canvasRef.current.captureFullCanvas()
-      : '';
+    const image = await canvasRef.current?.captureImage() ?? '';
+    sentDocument.current = canvasDocument;
     await sendHelp(image, 'Please look at my current work and give me a hint about the next step.');
   };
 
@@ -260,11 +271,11 @@ function WorkbookContent() {
                     if (anchor) { event.preventDefault(); void openView(null, anchor); }
                   }} dangerouslySetInnerHTML={{ __html: exercise.html }} />
                 </div>
-                <div className="order-2 lg:order-none h-[60vh] min-h-[400px] flex-none lg:h-auto lg:min-h-0 lg:flex-1 overflow-y-auto pt-3">
-                  <DrawingCanvas ref={canvasRef} />
+                <div className="order-2 lg:order-none relative h-[60vh] min-h-[400px] flex-none lg:h-auto lg:min-h-0 lg:flex-1">
+                  <DrawingCanvas handleRef={canvasRef} />
                 </div>
                 <div className="order-1 lg:order-none">
-                  <BottomToolbar onAskForHelp={() => void reviewWhiteboard()} isStreaming={isStreaming} isSolved={isSolved} onToggleSolved={toggleComplete} sessionType="problem" completionLabel="attempt" />
+                  <BottomToolbar onAskForHelp={() => void reviewWhiteboard()} isStreaming={isStreaming} isSolved={isSolved} onToggleSolved={toggleComplete} onClear={() => canvasRef.current?.clear()} sessionType="problem" completionLabel="attempt" />
                 </div>
               </>
             ) : (

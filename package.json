@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "postinstall": "node scripts/copy-tldraw-assets.mjs",
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
@@ -13,6 +14,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
     "@napi-rs/keyring": "^2.1.0",
+    "@tldraw/assets": "5.4.2",
     "cheerio": "^1.2.0",
     "geist": "^1.7.2",
     "idb": "^8.0.3",
@@ -23,6 +25,7 @@
     "proper-lockfile": "^4.1.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "tldraw": "5.4.2",
     "uuid": "^13.0.0"
   },
   "devDependencies": {

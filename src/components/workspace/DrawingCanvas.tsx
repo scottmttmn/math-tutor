@@ -1,166 +1,31 @@
 'use client';
 
-import { useRef, useState, useEffect, useCallback, forwardRef, useImperativeHandle, type PointerEvent as ReactPointerEvent } from 'react';
-import { useCanvas } from '@/hooks/useCanvas';
-import { useSelection } from '@/hooks/useSelection';
-import { useCanvasState } from '@/context/CanvasContext';
-import { CANVAS_HEIGHT } from '@/lib/constants';
-import { drawingBounds } from '@/lib/drawingBounds';
-import type { SelectionRect } from '@/types';
+import dynamic from 'next/dynamic';
+import type { RefObject } from 'react';
+import type { CanvasDocument } from '@/types';
 
 export interface DrawingCanvasHandle {
-  captureFullCanvas: () => string;
-  captureRegion: (rect: SelectionRect) => string;
-  /** Captures just the inked area of the canvas; '' when nothing is drawn. */
-  captureDrawing: () => string;
-  getCanvas: () => HTMLCanvasElement | null;
+  /** PNG (base64, no data: prefix) of the selected shapes, else the whole drawing; '' when nothing is drawn. */
+  captureImage: () => Promise<string>;
+  /** Small PNG of the whole drawing for the saved session; null when nothing is drawn. */
+  captureThumbnail: () => Promise<Blob | null>;
+  /** The live document, fresher than the debounced copy in CanvasContext. */
+  getDocument: () => CanvasDocument | null;
+  /** Deletes every shape as one undoable step. */
+  clear: () => void;
 }
 
-const DrawingCanvas = forwardRef<DrawingCanvasHandle>(function DrawingCanvas(_, ref) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const overlayRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [resizeKey, setResizeKey] = useState(0);
-  const { toolSettings, strokes, selection } = useCanvasState();
-
-  const {
-    onPointerDown: drawPointerDown,
-    onPointerMove: drawPointerMove,
-    onPointerUp: drawPointerUp,
-    captureFullCanvas,
-    captureRegion,
-    replayStrokes,
-  } = useCanvas(canvasRef);
-
-  const {
-    onPointerDown: selectPointerDown,
-    onPointerMove: selectPointerMove,
-    onPointerUp: selectPointerUp,
-  } = useSelection(overlayRef);
-
-  useImperativeHandle(ref, () => ({
-    captureFullCanvas,
-    captureRegion,
-    captureDrawing: () => {
-      const width = canvasRef.current?.getBoundingClientRect().width ?? 0;
-      const bounds = drawingBounds(strokes, width, CANVAS_HEIGHT);
-      return bounds ? captureRegion(bounds) : '';
-    },
-    getCanvas: () => canvasRef.current,
-  }));
-
-  const resizeCanvas = useCallback(() => {
-    const container = containerRef.current;
-    const canvas = canvasRef.current;
-    const overlay = overlayRef.current;
-    if (!container || !canvas || !overlay) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const rect = container.getBoundingClientRect();
-
-    canvas.width = rect.width * dpr;
-    canvas.height = CANVAS_HEIGHT * dpr;
-    canvas.style.width = `${rect.width}px`;
-    canvas.style.height = `${CANVAS_HEIGHT}px`;
-
-    overlay.width = rect.width * dpr;
-    overlay.height = CANVAS_HEIGHT * dpr;
-    overlay.style.width = `${rect.width}px`;
-    overlay.style.height = `${CANVAS_HEIGHT}px`;
-
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.scale(dpr, dpr);
-      const overlayCtx = overlay.getContext('2d');
-      if (overlayCtx) overlayCtx.scale(dpr, dpr);
-    }
-
-    // Trigger replay via resizeKey change
-    setResizeKey((k) => k + 1);
-  }, []);
-
-  useEffect(() => {
-    resizeCanvas();
-    const observer = new ResizeObserver(resizeCanvas);
-    if (containerRef.current) {
-      observer.observe(containerRef.current);
-    }
-    return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Replay strokes whenever strokes change or canvas is resized
-  useEffect(() => {
-    replayStrokes(strokes);
-  }, [strokes, resizeKey, replayStrokes]);
-
-  // Clear the overlay when the selection is cleared from state (ERASE_SELECTION,
-  // Delete key). The selection pointer handlers repaint the overlay themselves,
-  // so without this the dashed rect lingers after a state-only clear.
-  useEffect(() => {
-    if (selection) return;
-    const overlay = overlayRef.current;
-    const ctx = overlay?.getContext('2d');
-    if (overlay && ctx) ctx.clearRect(0, 0, overlay.width, overlay.height);
-  }, [selection]);
-
-  const isSelectMode = toolSettings.activeTool === 'select';
-  const isPanMode = toolSettings.activeTool === 'pan';
-
-  // Pan tool: drag to scroll the overflow-y-auto container
-  const panStart = useRef<{ clientY: number; scrollTop: number } | null>(null);
-  const [isPanning, setIsPanning] = useState(false);
-
-  const handlePanPointerDown = useCallback((e: ReactPointerEvent<HTMLCanvasElement>) => {
-    const scrollEl = containerRef.current?.parentElement;
-    if (!scrollEl) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    panStart.current = { clientY: e.clientY, scrollTop: scrollEl.scrollTop };
-    setIsPanning(true);
-  }, []);
-
-  const handlePanPointerMove = useCallback((e: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (!panStart.current) return;
-    const scrollEl = containerRef.current?.parentElement;
-    if (!scrollEl) return;
-    const dy = e.clientY - panStart.current.clientY;
-    scrollEl.scrollTop = panStart.current.scrollTop - dy;
-  }, []);
-
-  const handlePanPointerUp = useCallback(() => {
-    panStart.current = null;
-    setIsPanning(false);
-  }, []);
-
-  const canvasCursor = isPanMode
-    ? (isPanning ? 'grabbing' : 'grab')
-    : isSelectMode
-    ? 'crosshair'
-    : 'crosshair'; // always crosshair for drawing precision
-
-  return (
-    <div ref={containerRef} className="relative bg-white rounded-lg border border-gray-200 mx-3 mb-2" style={{ height: CANVAS_HEIGHT }}>
-      <canvas
-        ref={canvasRef}
-        className="absolute inset-0 touch-none"
-        style={{ cursor: canvasCursor }}
-        onPointerDown={isPanMode ? handlePanPointerDown : isSelectMode ? undefined : drawPointerDown}
-        onPointerMove={isPanMode ? handlePanPointerMove : isSelectMode ? undefined : drawPointerMove}
-        onPointerUp={isPanMode ? handlePanPointerUp : isSelectMode ? undefined : drawPointerUp}
-      />
-      <canvas
-        ref={overlayRef}
-        className="absolute inset-0 touch-none"
-        style={{
-          cursor: canvasCursor,
-          pointerEvents: isSelectMode ? 'auto' : 'none',
-        }}
-        onPointerDown={isSelectMode ? selectPointerDown : undefined}
-        onPointerMove={isSelectMode ? selectPointerMove : undefined}
-        onPointerUp={isSelectMode ? selectPointerUp : undefined}
-      />
-    </div>
-  );
+// tldraw needs the browser, so it never renders on the server.
+const TldrawCanvas = dynamic(() => import('./TldrawCanvas'), {
+  ssr: false,
+  loading: () => <div className="absolute inset-0 grid place-items-center text-sm text-gray-400">Loading canvas…</div>,
 });
 
-export default DrawingCanvas;
+/** Fills its nearest positioned ancestor; give that element a size. */
+export default function DrawingCanvas({ handleRef }: { handleRef: RefObject<DrawingCanvasHandle | null> }) {
+  return (
+    <div className="absolute inset-0">
+      <TldrawCanvas handleRef={handleRef} />
+    </div>
+  );
+}

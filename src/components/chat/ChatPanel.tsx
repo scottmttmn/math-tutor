@@ -6,7 +6,7 @@ import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 
 interface ChatPanelProps {
-  getCanvasImage?: () => string;
+  getCanvasImage?: () => Promise<string>;
 }
 
 export default function ChatPanel({ getCanvasImage }: ChatPanelProps) {

@@ -54,20 +54,29 @@ async function ask(question, reply) {
   const before = requests.length;
   await page.getByRole('textbox').fill(question);
   await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  // A follow-up may export the whiteboard first, so wait for the request itself.
+  while (requests.length === before) await new Promise((resolve) => setTimeout(resolve, 50));
   await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
   await page.getByText(reply, { exact: true }).last().waitFor();
   assert.equal(requests.length, before + 1);
   return requests.at(-1);
 }
-async function draw() {
-  const canvas = page.locator('canvas').first();
-  const box = await canvas.boundingBox();
-  await page.mouse.move(box.x + 40, box.y + 40);
+const board = () => page.locator('.tl-canvas').first();
+async function draw(offset = 0) {
+  await board().waitFor();
+  const box = await board().boundingBox();
+  await page.locator('[data-testid="tools.draw"]').first().click();
+  await page.mouse.move(box.x + 40 + offset, box.y + 80);
   await page.mouse.down();
-  await page.mouse.move(box.x + 180, box.y + 120, { steps: 12 });
+  await page.mouse.move(box.x + 180 + offset, box.y + 160, { steps: 12 });
   await page.mouse.up();
   await page.waitForFunction(() => [...document.querySelectorAll('button')].some((button) => button.textContent === 'Clear' && !button.disabled));
+  await page.waitForTimeout(400); // the app mirrors tldraw's document once the pen rests
 }
+const imageOf = (request) => {
+  const content = request.messages.at(-1).content;
+  return Array.isArray(content) ? content.find((part) => part.type === 'image_url')?.image_url.url : undefined;
+};
 try {
   await openBrowser(); await waitReading();
   await page.evaluate((config) => localStorage.setItem('mathTutor_modelConfig', JSON.stringify(config)), model);
@@ -106,24 +115,31 @@ try {
   assert.ok(await page.getByText('Exercise hint.', { exact: true }).isVisible());
   console.log('PASS immediate reload preserves whiteboard, conversation, active exercise, and completion');
 
-  // Selection review sends the selected pixels and does not leak to another exercise.
-  await page.getByTitle('Select Region', { exact: true }).click();
-  const box = await page.locator('canvas').last().boundingBox();
-  await page.mouse.move(box.x + 20, box.y + 20); await page.mouse.down();
-  await page.mouse.move(box.x + 220, box.y + 160, { steps: 5 }); await page.mouse.up();
-  await page.getByText('Region selected', { exact: true }).waitFor();
+  // Selecting shapes sends just those shapes, trimmed, and does not leak to another exercise.
+  await draw(260);
+  const box = await board().boundingBox();
+  await page.locator('[data-testid="tools.select"]').first().click();
+  // Start below tldraw's undo/redo panel in the top-left corner.
+  await page.mouse.move(box.x + 20, box.y + 60); await page.mouse.down();
+  await page.mouse.move(box.x + 220, box.y + 200, { steps: 5 }); await page.mouse.up();
+  const beforeHelp = requests.length;
   await page.getByRole('button', { name: 'Ask for Help', exact: true }).click();
+  // The whiteboard export is async, so wait for the request rather than the busy flag.
+  while (requests.length === beforeHelp) await new Promise((resolve) => setTimeout(resolve, 50));
   await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
-  request = requests.at(-1);
-  const parts = request.messages.at(-1).content;
-  const image = parts.find((part) => part.type === 'image_url')?.image_url.url;
+  const image = imageOf(requests.at(-1));
   assert.ok(image?.startsWith('data:image/png;base64,'));
-  const dimensions = await page.evaluate(async (src) => {
+  const [width, height] = await page.evaluate(async (src) => {
     const image = new Image(); image.src = src; await image.decode(); return [image.naturalWidth, image.naturalHeight];
   }, image);
-  assert.deepEqual(dimensions, [200, 140]);
-  await ask('Does this approach make sense?', 'Exercise hint.');
-  console.log('PASS selected whiteboard image reaches provider; text follow-up stays available');
+  // One ~140x80 stroke at 2x with padding, not both strokes and not the whole board.
+  assert.ok(width > 200 && width < 450 && height > 120 && height < 330, `unexpected image size ${width}x${height}`);
+  request = await ask('Does this approach make sense?', 'Exercise hint.');
+  assert.equal(imageOf(request), undefined);
+  await draw(120);
+  request = await ask('What about now?', 'Exercise hint.');
+  assert.ok(imageOf(request)?.startsWith('data:image/png;base64,'));
+  console.log('PASS selected shapes reach the provider trimmed; follow-ups attach the board only after it changes');
 
   await page.getByRole('button', { name: 'Back to reading' }).click(); await waitReading();
   assert.ok(await page.getByText('Reading explanation.', { exact: true }).isVisible());
@@ -131,7 +147,6 @@ try {
   assert.match(await exerciseButton(1).innerText(), /Complete/);
   await exerciseButton(2).click(); await waitExercise();
   assert.ok(await page.getByRole('button', { name: 'Clear', exact: true }).isDisabled());
-  assert.equal(await page.getByText('Region selected', { exact: true }).count(), 0);
   assert.equal(await page.getByText('Exercise hint.', { exact: true }).count(), 0);
   request = await ask('How should I plot these vectors?', 'Exercise hint.');
   assert.match(JSON.stringify(request.messages), /Current exercise 2\./);

@@ -10,6 +10,9 @@
 !.yarn/releases
 !.yarn/versions
 
+# copied from @tldraw/assets on npm install
+/public/tldraw-assets
+
 # testing
 /coverage
 

@@ -6,11 +6,10 @@ import { CanvasProvider, useCanvasState, useCanvasDispatch } from '@/context/Can
 import { SessionProvider, useSessionState, useSessionDispatch } from '@/context/SessionContext';
 import { useTutorChat } from '@/hooks/useTutorChat';
 import { saveSession as dbSaveSession, loadSession as dbLoadSession } from '@/lib/db';
-import { canvasToBlob } from '@/lib/canvasUtils';
 
 import { getModelLabel, subscribeModelConfig } from '@/lib/modelConfig';
 
-import type { SessionType, Stroke } from '@/types';
+import type { CanvasDocument, SessionType } from '@/types';
 import TopBar from './TopBar';
 import BottomToolbar from './BottomToolbar';
 import ProblemStatement from '../workspace/ProblemStatement';
@@ -22,34 +21,37 @@ import SettingsModal from './SettingsModal';
 
 function AppContent() {
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
-  const sentStrokes = useRef<Stroke[] | null>(null);
+  // The drawing the tutor last saw, so follow-ups only attach a snapshot when it changed.
+  const sentDocument = useRef<CanvasDocument | null>(null);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const modelLabel = useSyncExternalStore(subscribeModelConfig, getModelLabel, () => '');
   const [chatOpen, setChatOpen] = useState(false);
 
-  const { strokes, selection } = useCanvasState();
+  const { document: canvasDocument, hasContent, pendingLoad } = useCanvasState();
   const canvasDispatch = useCanvasDispatch();
   const { currentSessionId, problemStatement, problemImage, chatHistory, isStreaming, isSolved, sessionType } = useSessionState();
   const sessionDispatch = useSessionDispatch();
   const { sendHelp } = useTutorChat();
 
   const handleNew = useCallback((type: SessionType = 'problem') => {
-    canvasDispatch({ type: 'CLEAR' });
+    canvasDispatch({ type: 'LOAD' });
     sessionDispatch({ type: 'NEW_SESSION', sessionType: type });
   }, [canvasDispatch, sessionDispatch]);
 
   const handleSave = useCallback(async (opts?: { isSolvedOverride?: boolean }) => {
     const id = currentSessionId || uuidv4();
-    const canvas = canvasHandle.current?.getCanvas();
-    const blob = canvas ? await canvasToBlob(canvas) : null;
+    const blob = await canvasHandle.current?.captureThumbnail() ?? null;
+    const document = canvasHandle.current?.getDocument() ?? canvasDocument;
 
     await dbSaveSession({
       id,
       title: problemStatement.slice(0, 50) || 'Untitled',
       problemStatement,
       problemImage: problemImage ?? null,
-      canvasStrokes: strokes,
+      // Strokes from a pre-tldraw save stay until the editor has converted them.
+      canvasStrokes: document ? [] : pendingLoad?.strokes ?? [],
+      canvasDocument: document,
       canvasImageBlob: blob,
       chatHistory,
       isSolved: opts?.isSolvedOverride !== undefined ? opts.isSolvedOverride : isSolved,
@@ -59,7 +61,7 @@ function AppContent() {
     });
 
     sessionDispatch({ type: 'SET_CURRENT_SESSION_ID', id });
-  }, [currentSessionId, problemStatement, problemImage, strokes, chatHistory, isSolved, sessionType, sessionDispatch]);
+  }, [currentSessionId, problemStatement, problemImage, canvasDocument, pendingLoad, chatHistory, isSolved, sessionType, sessionDispatch]);
 
   const handleLoad = useCallback(async (id: string) => {
     const session = await dbLoadSession(id);
@@ -74,35 +76,25 @@ function AppContent() {
       isSolved: session.isSolved,
       sessionType: session.sessionType,
     });
-    canvasDispatch({ type: 'LOAD_STROKES', strokes: session.canvasStrokes });
+    canvasDispatch({ type: 'LOAD', document: session.canvasDocument, strokes: session.canvasStrokes });
   }, [sessionDispatch, canvasDispatch]);
 
   const handleAskForHelp = useCallback(async () => {
-    let image = '';
-    if (strokes.length > 0) {
-      if (selection && canvasHandle.current) {
-        image = canvasHandle.current.captureRegion(selection);
-      } else if (canvasHandle.current) {
-        image = canvasHandle.current.captureDrawing();
-      }
-    }
-    sentStrokes.current = strokes;
+    const image = hasContent ? await canvasHandle.current?.captureImage() ?? '' : '';
+    sentDocument.current = canvasDocument;
     setChatOpen(true);
     await sendHelp(image);
-  }, [selection, strokes, sendHelp]);
+  }, [hasContent, canvasDocument, sendHelp]);
 
-  // Follow-ups carry a fresh snapshot only when the drawing changed since the tutor last saw it.
-  const getFollowUpImage = useCallback((): string => {
-    if (strokes === sentStrokes.current || !canvasHandle.current) return '';
-    sentStrokes.current = strokes;
-    return canvasHandle.current.captureDrawing();
-  }, [strokes]);
+  const getFollowUpImage = useCallback(async (): Promise<string> => {
+    if (canvasDocument === sentDocument.current || !canvasHandle.current) return '';
+    sentDocument.current = canvasDocument;
+    return canvasHandle.current.captureImage();
+  }, [canvasDocument]);
 
-  const handleSetProblemImage = useCallback(() => {
-    if (!canvasHandle.current) return;
-    const image = canvasHandle.current.captureDrawing();
-    if (!image) return;
-    sessionDispatch({ type: 'SET_PROBLEM_IMAGE', image });
+  const handleSetProblemImage = useCallback(async () => {
+    const image = await canvasHandle.current?.captureImage();
+    if (image) sessionDispatch({ type: 'SET_PROBLEM_IMAGE', image });
   }, [sessionDispatch]);
 
   const handleToggleSolved = useCallback(async () => {
@@ -113,9 +105,7 @@ function AppContent() {
 
   // Stable refs so the keyboard listener never needs to be re-registered
   const handleSaveRef = useRef(handleSave);
-  const selectionRef = useRef(selection);
   useEffect(() => { handleSaveRef.current = handleSave; }, [handleSave]);
-  useEffect(() => { selectionRef.current = selection; }, [selection]);
 
   // Keyboard shortcuts — registered once; refs always have the latest values
   useEffect(() => {
@@ -126,23 +116,15 @@ function AppContent() {
 
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
-      if (mod && key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        canvasDispatch({ type: 'UNDO' });
-      } else if (mod && key === 'z' && e.shiftKey) {
-        e.preventDefault();
-        canvasDispatch({ type: 'REDO' });
-      } else if (mod && key === 's') {
+      // Undo, redo and delete are tldraw's own shortcuts.
+      if (mod && key === 's') {
         e.preventDefault();
         handleSaveRef.current();
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectionRef.current) {
-        e.preventDefault();
-        canvasDispatch({ type: 'ERASE_SELECTION', rect: selectionRef.current });
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [canvasDispatch]); // canvasDispatch is stable (from useReducer) — listener registered once
+  }, []);
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
@@ -162,11 +144,12 @@ function AppContent() {
           {sessionType === 'note'
             ? <NoteHeader />
             : <ProblemStatement onCaptureProblemImage={handleSetProblemImage} />}
-          <div className="flex-1 overflow-y-auto bg-gray-50">
-            <DrawingCanvas ref={canvasHandle} />
+          <div className="flex-1 relative min-h-0">
+            <DrawingCanvas handleRef={canvasHandle} />
           </div>
           <BottomToolbar
             onAskForHelp={handleAskForHelp}
+            onClear={() => canvasHandle.current?.clear()}
             isStreaming={isStreaming}
             isSolved={isSolved}
             onToggleSolved={handleToggleSolved}

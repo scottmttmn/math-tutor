@@ -1,11 +1,12 @@
 'use client';
 
-import { useCanvasState, useCanvasDispatch } from '@/context/CanvasContext';
-import { COLOR_PRESETS, THICKNESS_MIN, THICKNESS_MAX } from '@/lib/constants';
-import type { DrawingTool, SessionType } from '@/types';
+import { useCanvasState } from '@/context/CanvasContext';
+import type { SessionType } from '@/types';
 
+// Drawing tools, colors and undo live in tldraw's own toolbar on the canvas.
 interface Props {
   onAskForHelp: () => void;
+  onClear: () => void;
   isStreaming: boolean;
   isSolved: boolean;
   onToggleSolved: () => void;
@@ -13,132 +14,23 @@ interface Props {
   completionLabel?: 'attempt';
 }
 
-export default function BottomToolbar({ onAskForHelp, isStreaming, isSolved, onToggleSolved, sessionType, completionLabel }: Props) {
-  const { toolSettings, strokes, past, future, selection } = useCanvasState();
-  const dispatch = useCanvasDispatch();
-
-  const setTool = (tool: DrawingTool) => dispatch({ type: 'SET_TOOL', tool });
-
-  const currentThickness =
-    toolSettings.activeTool === 'eraser'
-      ? toolSettings.eraserThickness
-      : toolSettings.penThickness;
-
+export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSolved, onToggleSolved, sessionType, completionLabel }: Props) {
+  const { hasContent } = useCanvasState();
   const helpDisabled = isStreaming;
 
   return (
     <div className="flex items-center gap-3 px-4 py-2 border-t border-gray-200 bg-white flex-wrap">
-      {/* Drawing tools */}
-      <div className="flex items-center gap-1">
-        <ToolButton
-          active={toolSettings.activeTool === 'pen'}
-          onClick={() => setTool('pen')}
-          title="Pen"
-        >
-          <PenIcon />
-        </ToolButton>
-        <ToolButton
-          active={toolSettings.activeTool === 'eraser'}
-          onClick={() => setTool('eraser')}
-          title="Eraser"
-        >
-          <EraserIcon />
-        </ToolButton>
-        <ToolButton
-          active={toolSettings.activeTool === 'select'}
-          onClick={() => setTool('select')}
-          title="Select Region"
-        >
-          <SelectIcon />
-        </ToolButton>
-        <ToolButton
-          active={toolSettings.activeTool === 'pan'}
-          onClick={() => setTool('pan')}
-          title="Pan / Scroll (drag to scroll the canvas)"
-        >
-          <HandIcon />
-        </ToolButton>
-      </div>
-
-      <div className="w-px h-6 bg-gray-200" />
-
-      {/* Colors */}
-      <div className="flex items-center gap-1">
-        {COLOR_PRESETS.map((color) => (
-          <button
-            key={color}
-            onClick={() => dispatch({ type: 'SET_COLOR', color })}
-            className={`w-5 h-5 rounded-full border-2 transition-transform ${
-              toolSettings.penColor === color ? 'border-blue-500 scale-110' : 'border-gray-300'
-            }`}
-            style={{ backgroundColor: color }}
-            title={color}
-          />
-        ))}
-      </div>
-
-      <div className="w-px h-6 bg-gray-200" />
-
-      {/* Thickness */}
-      <div className="flex items-center gap-1.5">
-        <span className="text-xs text-gray-500">Size</span>
-        <input
-          type="range"
-          min={THICKNESS_MIN}
-          max={THICKNESS_MAX}
-          value={currentThickness}
-          onChange={(e) => dispatch({ type: 'SET_THICKNESS', thickness: Number(e.target.value) })}
-          className="w-20 h-1 accent-blue-500"
-        />
-      </div>
-
-      <div className="w-px h-6 bg-gray-200" />
-
-      {/* Undo / Redo / Clear */}
-      <div className="flex items-center gap-1">
-        <button
-          onClick={() => dispatch({ type: 'UNDO' })}
-          disabled={past.length === 0}
-          className="px-2 py-1 text-xs text-gray-600 rounded hover:bg-gray-100 disabled:opacity-30"
-          title="Undo (Ctrl+Z)"
-        >
-          Undo
-        </button>
-        <button
-          onClick={() => dispatch({ type: 'REDO' })}
-          disabled={future.length === 0}
-          className="px-2 py-1 text-xs text-gray-600 rounded hover:bg-gray-100 disabled:opacity-30"
-          title="Redo (Ctrl+Shift+Z)"
-        >
-          Redo
-        </button>
-        <button
-          onClick={() => dispatch({ type: 'CLEAR' })}
-          disabled={strokes.length === 0}
-          className="px-2 py-1 text-xs text-gray-600 rounded hover:bg-gray-100 disabled:opacity-30"
-        >
-          Clear
-        </button>
-      </div>
-
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Selection indicator + erase button */}
-      {selection && (
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-            Region selected
-          </span>
-          <button
-            onClick={() => dispatch({ type: 'ERASE_SELECTION', rect: selection })}
-            className="px-2 py-0.5 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100"
-            title="Erase strokes inside selected region (Delete)"
-          >
-            Erase
-          </button>
-        </div>
-      )}
+      <button
+        onClick={onClear}
+        disabled={!hasContent}
+        className="px-2 py-1 text-xs text-gray-600 rounded hover:bg-gray-100 disabled:opacity-30"
+        title="Erase the whole canvas (undo with Ctrl+Z)"
+      >
+        Clear
+      </button>
 
       {/* Mark Solved — only for problem sessions */}
       {sessionType === 'problem' && (
@@ -173,63 +65,6 @@ export default function BottomToolbar({ onAskForHelp, isStreaming, isSolved, onT
           : 'Ask for Help'}
       </button>
     </div>
-  );
-}
-
-function ToolButton({
-  active,
-  onClick,
-  title,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      title={title}
-      className={`p-1.5 rounded-lg transition-colors ${
-        active ? 'bg-blue-100 text-blue-600' : 'text-gray-500 hover:bg-gray-100'
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function PenIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M11.5 1.5l3 3-9 9H2.5v-3l9-9z" />
-    </svg>
-  );
-}
-
-function EraserIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 14H6.5l-4-4 7.5-7.5 6 6-4 4z" />
-      <path d="M6.5 14L2.5 10" />
-    </svg>
-  );
-}
-
-function SelectIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="3 2">
-      <rect x="2" y="2" width="12" height="12" rx="1" />
-    </svg>
-  );
-}
-
-function HandIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M6 1.5v6M4 4v3M2 5.5v3a4 4 0 0 0 4 4h2a4 4 0 0 0 4-4V6.5a1 1 0 0 0-2 0V8M8 1.5v7M10 4v3" />
-    </svg>
   );
 }
 

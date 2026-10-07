@@ -155,16 +155,19 @@ test('recovery preserves newer unsaved work and ignores corrupt or stale copies'
   delete global.localStorage;
 });
 
-test('canvas snapshots are trimmed to the inked area, ignoring eraser strokes', () => {
-  const { drawingBounds } = load('src/lib/drawingBounds.ts');
-  const pen = (points, thickness = 4) => ({ points, color: '#000', thickness, tool: 'pen' });
-  const eraser = { points: [{ x: 0, y: 0 }, { x: 900, y: 2900 }], color: '#fff', thickness: 20, tool: 'eraser' };
-  assert.equal(drawingBounds([], 800, 3000), null);
-  assert.equal(drawingBounds([eraser], 800, 3000), null);
-  assert.deepEqual(
-    drawingBounds([pen([{ x: 100, y: 200 }, { x: 300, y: 260 }]), eraser], 800, 3000),
-    { startX: 74, startY: 174, width: 252, height: 112 },
-  );
-  // Ink near the edge is clamped to the canvas.
-  assert.deepEqual(drawingBounds([pen([{ x: 5, y: 2990 }])], 800, 3000), { startX: 0, startY: 2964, width: 31, height: 36 });
+test('pre-tldraw strokes convert to draw shapes with erased ink removed', () => {
+  const tldraw = {
+    createShapeId: (() => { let n = 0; return () => `shape:${++n}`; })(),
+    b64Vecs: { encodePoints2D: (points) => JSON.stringify(points) },
+  };
+  const { clipErasedInk, legacyStrokesToShapes } = load('src/lib/legacyStrokes.ts', { tldraw });
+  const line = { points: [0, 10, 20, 30, 40].map((x) => ({ x, y: 0 })), color: '#DC2626', thickness: 3, tool: 'pen' };
+  const eraser = { points: [{ x: 20, y: 0 }], color: '#fff', thickness: 6, tool: 'eraser' };
+  // An eraser drawn after the line splits it; one drawn before leaves it whole.
+  assert.deepEqual(clipErasedInk([line, eraser]).map((s) => s.points.map((p) => p.x)), [[0, 10], [30, 40]]);
+  assert.deepEqual(clipErasedInk([eraser, line]).map((s) => s.points.length), [5]);
+  const [shape] = legacyStrokesToShapes([{ ...line, points: [{ x: 100, y: 50 }, { x: 110, y: 60 }] }]);
+  assert.equal(shape.type, 'draw');
+  assert.deepEqual([shape.x, shape.y, shape.props.color, shape.props.size], [100, 50, 'red', 'm']);
+  assert.deepEqual(JSON.parse(shape.props.segments[0].path), [{ x: 0, y: 0 }, { x: 10, y: 10 }]);
 });
