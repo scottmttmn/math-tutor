@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useSessionState } from '@/context/SessionContext';
 import { useTutorChat } from '@/hooks/useTutorChat';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
@@ -9,15 +9,8 @@ export default function ChatInput() {
   const [text, setText] = useState('');
   const { chatHistory, isStreaming } = useSessionState();
   const { sendFollowUp } = useTutorChat();
-  const { isListening, transcript, isSupported, error, startListening, stopListening, resetTranscript } =
-    useSpeechRecognition();
-
-  // Sync live transcript into the text field while listening
-  useEffect(() => {
-    if (isListening && transcript) {
-      setText(transcript);
-    }
-  }, [transcript, isListening]);
+  const { isListening, isSupported, error, startListening, stopListening, resetTranscript } =
+    useSpeechRecognition(setText);
 
   const canSend = text.trim().length > 0 && !isStreaming && chatHistory.length > 0;
   const inputDisabled = isStreaming || chatHistory.length === 0;

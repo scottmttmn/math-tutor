@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
 import type { SessionType } from '@/types';
 
 interface Props {
@@ -48,6 +49,9 @@ export default function TopBar({
         <span className="text-xs text-gray-400 hidden sm:inline">{modelLabel}</span>
       </div>
       <div className="flex items-center gap-2">
+        <Link href="/workbook" className="px-3 py-1.5 text-xs font-medium text-blue-700 border border-blue-200 bg-blue-50 rounded-lg hover:bg-blue-100">
+          Workbook
+        </Link>
         {/* Chat panel toggle */}
         <button
           onClick={onToggleChat}

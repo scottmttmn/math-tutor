@@ -14,6 +14,7 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Vendored from OpenAI's Sign in with ChatGPT DevKit; kept close to upstream.
     "src/lib/siwc/**",
+    ".claude/**",
   ]),
 ]);
 

@@ -96,7 +96,7 @@ function canvasReducer(state: CanvasState, action: CanvasAction): CanvasState {
         future: [],
       };
     case 'LOAD_STROKES':
-      return { ...state, strokes: action.strokes, past: [], future: [] };
+      return { ...state, strokes: action.strokes, past: [], future: [], selection: null };
     case 'SET_SELECTION':
       return { ...state, selection: action.rect };
     case 'ERASE_SELECTION': {

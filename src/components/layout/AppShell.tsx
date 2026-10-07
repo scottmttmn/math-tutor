@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, useSyncExternalStore } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { CanvasProvider, useCanvasState, useCanvasDispatch } from '@/context/CanvasContext';
 import { SessionProvider, useSessionState, useSessionDispatch } from '@/context/SessionContext';
@@ -10,7 +10,7 @@ import { saveSession as dbSaveSession, loadSession as dbLoadSession } from '@/li
 import { canvasToBlob } from '@/lib/canvasUtils';
 import { RATE_LIMIT_MS } from '@/lib/constants';
 
-import { getModelConfig } from '@/lib/modelConfig';
+import { getModelLabel, subscribeModelConfig } from '@/lib/modelConfig';
 
 import type { SessionType } from '@/types';
 import TopBar from './TopBar';
@@ -26,8 +26,7 @@ function AppContent() {
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [modelLabel, setModelLabel] = useState('');
-  useEffect(() => { setModelLabel(getModelConfig().model); }, []);
+  const modelLabel = useSyncExternalStore(subscribeModelConfig, getModelLabel, () => '');
   const [chatOpen, setChatOpen] = useState(false);
 
   const { strokes, selection } = useCanvasState();
@@ -187,7 +186,6 @@ function AppContent() {
         isOpen={settingsOpen}
         onClose={() => {
           setSettingsOpen(false);
-          setModelLabel(getModelConfig().model);
         }}
       />
     </div>

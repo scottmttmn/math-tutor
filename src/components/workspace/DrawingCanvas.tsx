@@ -33,7 +33,7 @@ const DrawingCanvas = forwardRef<DrawingCanvasHandle>(function DrawingCanvas(_, 
     onPointerDown: selectPointerDown,
     onPointerMove: selectPointerMove,
     onPointerUp: selectPointerUp,
-  } = useSelection(overlayRef, canvasRef);
+  } = useSelection(overlayRef);
 
   useImperativeHandle(ref, () => ({
     captureFullCanvas,

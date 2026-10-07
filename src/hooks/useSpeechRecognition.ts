@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useSyncExternalStore } from 'react';
 
 interface UseSpeechRecognitionReturn {
   isListening: boolean;
@@ -12,17 +12,19 @@ interface UseSpeechRecognitionReturn {
   resetTranscript: () => void;
 }
 
-export function useSpeechRecognition(): UseSpeechRecognitionReturn {
+const subscribeSupport = () => () => {};
+const getSupport = () => !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+
+export function useSpeechRecognition(onTranscript?: (text: string) => void): UseSpeechRecognitionReturn {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
-  const [isSupported, setIsSupported] = useState(false);
+  const isSupported = useSyncExternalStore(subscribeSupport, getSupport, () => false);
+  const onTranscriptRef = useRef(onTranscript);
   const [error, setError] = useState('');
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const acceptTranscript = useRef(false);
 
-  useEffect(() => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    setIsSupported(!!SR);
-  }, []);
+  useEffect(() => { onTranscriptRef.current = onTranscript; }, [onTranscript]);
 
   const startListening = useCallback(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -36,14 +38,17 @@ export function useSpeechRecognition(): UseSpeechRecognitionReturn {
     recognition.lang = 'en-US';
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
+      if (!acceptTranscript.current || recognitionRef.current !== recognition) return;
       let text = '';
       for (let i = 0; i < event.results.length; i++) {
         text += event.results[i][0].transcript;
       }
       setTranscript(text);
+      onTranscriptRef.current?.(text);
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      acceptTranscript.current = false;
       setIsListening(false);
       if (event.error === 'not-allowed') {
         setError('Microphone access denied. Allow microphone in your browser settings.');
@@ -57,21 +62,25 @@ export function useSpeechRecognition(): UseSpeechRecognitionReturn {
     };
 
     recognition.onend = () => {
+      acceptTranscript.current = false;
       setIsListening(false);
     };
 
     recognitionRef.current = recognition;
 
     try {
+      acceptTranscript.current = true;
       recognition.start();
       setIsListening(true);
     } catch (err) {
+      acceptTranscript.current = false;
       setError(`Could not start speech recognition: ${err instanceof Error ? err.message : String(err)}`);
       setIsListening(false);
     }
   }, []);
 
   const stopListening = useCallback(() => {
+    acceptTranscript.current = false;
     recognitionRef.current?.stop();
     setIsListening(false);
   }, []);
@@ -83,6 +92,7 @@ export function useSpeechRecognition(): UseSpeechRecognitionReturn {
 
   useEffect(() => {
     return () => {
+      acceptTranscript.current = false;
       recognitionRef.current?.stop();
     };
   }, []);

@@ -11,9 +11,10 @@ interface Props {
   isSolved: boolean;
   onToggleSolved: () => void;
   sessionType: SessionType;
+  completionLabel?: 'attempt';
 }
 
-export default function BottomToolbar({ onAskForHelp, isStreaming, isSolved, onToggleSolved, sessionType }: Props) {
+export default function BottomToolbar({ onAskForHelp, isStreaming, isSolved, onToggleSolved, sessionType, completionLabel }: Props) {
   const { toolSettings, strokes, past, future, selection } = useCanvasState();
   const dispatch = useCanvasDispatch();
   const { isLimited, formatRemaining } = useRateLimit(RATE_LIMIT_MS);
@@ -150,10 +151,10 @@ export default function BottomToolbar({ onAskForHelp, isStreaming, isSolved, onT
               ? 'bg-green-500 text-white border-green-500 hover:bg-green-600'
               : 'text-gray-600 border-gray-300 hover:bg-gray-50'
           }`}
-          title={isSolved ? 'Click to un-mark as solved' : 'Mark this problem as solved'}
+          title={completionLabel ? 'Toggle attempt completion' : isSolved ? 'Click to un-mark as solved' : 'Mark this problem as solved'}
         >
           <CheckIcon solved={isSolved} />
-          {isSolved ? 'Solved!' : 'Mark Solved'}
+          {completionLabel ? isSolved ? 'Attempt complete' : 'Mark attempt complete' : isSolved ? 'Solved!' : 'Mark Solved'}
         </button>
       )}
 

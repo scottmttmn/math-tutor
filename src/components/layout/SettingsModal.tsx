@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import type { ModelConfig, Provider } from '@/types';
 import { getModelConfig, saveModelConfig } from '@/lib/modelConfig';
 import { useChatGPTConnection } from '@/hooks/useChatGPTConnection';
@@ -28,25 +28,20 @@ interface Props {
 }
 
 export default function SettingsModal({ isOpen, onClose }: Props) {
-  const [config, setConfig] = useState<ModelConfig>({ provider: 'anthropic', model: '', baseUrl: '' });
-  const [presetIdx, setPresetIdx] = useState(0);
+  if (!isOpen) return null;
+  return <SettingsForm onClose={onClose} />;
+}
+
+function SettingsForm({ onClose }: Pick<Props, 'onClose'>) {
+  const [config, setConfig] = useState<ModelConfig>(getModelConfig);
+  const [presetIdx, setPresetIdx] = useState(() => findPresetIndex(getModelConfig()));
   const isChatGPT = PRESETS[presetIdx]?.provider === 'chatgpt';
-  const chatgpt = useChatGPTConnection(isOpen && isChatGPT);
+  const chatgpt = useChatGPTConnection(isChatGPT);
   const chatgptModels = chatgpt.status.models;
   // Default to the first model the student's plan offers.
   const chatgptModel = chatgptModels?.some((m) => m.slug === config.model)
     ? config.model
     : chatgptModels?.[0]?.slug ?? config.model;
-
-  useEffect(() => {
-    if (isOpen) {
-      const cfg = getModelConfig();
-      setConfig(cfg);
-      setPresetIdx(findPresetIndex(cfg));
-    }
-  }, [isOpen]);
-
-  if (!isOpen) return null;
 
   const handlePresetChange = (idx: number) => {
     setPresetIdx(idx);
