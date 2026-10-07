@@ -4,7 +4,7 @@ import { useState } from 'react';
 import type { ModelConfig, Provider } from '@/types';
 import { getModelConfig, saveModelConfig } from '@/lib/modelConfig';
 import { useChatGPTConnection } from '@/hooks/useChatGPTConnection';
-import { CHATGPT_USAGE_URL } from '@/lib/constants';
+import { CHATGPT_DEFAULT_MODEL_PATTERN, CHATGPT_USAGE_URL } from '@/lib/constants';
 
 const PRESETS: { label: string; provider: Provider; model: string; baseUrl: string }[] = [
   { label: 'Anthropic (Claude)', provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', baseUrl: '' },
@@ -39,10 +39,11 @@ function SettingsForm({ onClose }: Pick<Props, 'onClose'>) {
   const isChatGPT = PRESETS[presetIdx]?.provider === 'chatgpt';
   const chatgpt = useChatGPTConnection(isChatGPT);
   const chatgptModels = chatgpt.status.models;
-  // Default to the first model the student's plan offers.
+  // Default to the lightest model the plan offers; hints don't need a frontier model.
   const chatgptModel = chatgptModels?.some((m) => m.slug === config.model)
     ? config.model
-    : chatgptModels?.[0]?.slug ?? config.model;
+    : (chatgptModels?.find((m) => CHATGPT_DEFAULT_MODEL_PATTERN.test(`${m.slug} ${m.displayName}`)) ?? chatgptModels?.[0])?.slug
+      ?? config.model;
 
   const handlePresetChange = (idx: number) => {
     setPresetIdx(idx);
