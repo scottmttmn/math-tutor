@@ -9,6 +9,8 @@ export interface DrawingCanvasHandle {
   captureImage: () => Promise<string>;
   /** Small PNG of the whole drawing for the saved session; null when nothing is drawn. */
   captureThumbnail: () => Promise<Blob | null>;
+  /** Changes whenever the drawing changes; compare it to know whether a new capture is needed. */
+  getRevision: () => number;
   /** The live document, fresher than the debounced copy in CanvasContext. */
   getDocument: () => CanvasDocument | null;
   /** Deletes every shape as one undoable step. */

@@ -8,7 +8,7 @@ import { useSessionDispatch, useSessionState } from '@/context/SessionContext';
 import { useTutorChat } from '@/hooks/useTutorChat';
 import { listSessions } from '@/lib/db';
 import { loadWorkbookSession, saveWorkbookSession, stageWorkbookSession } from '@/lib/workbookStorage';
-import type { CanvasDocument, Session, WorkbookContext } from '@/types';
+import type { Session, WorkbookContext } from '@/types';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
 import ChatMessage from '@/components/chat/ChatMessage';
@@ -41,7 +41,7 @@ function WorkbookContent() {
   const readingTargetRef = useRef<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const latestSnapshot = useRef<Session | null>(null);
-  const sentDocument = useRef<CanvasDocument | null>(null);
+  const sentRevision = useRef<number | null>(null);
   const { document: canvasDocument, pendingLoad } = useCanvasState();
   const canvasDispatch = useCanvasDispatch();
   const { chatHistory, problemStatement, isSolved, isStreaming } = useSessionState();
@@ -215,15 +215,16 @@ function WorkbookContent() {
 
   // Follow-ups on an exercise attach the whiteboard only when it changed since the tutor last saw it.
   const followUpImage = async (): Promise<string> => {
-    if (!exercise || !canvasRef.current || canvasDocument === sentDocument.current) return '';
-    sentDocument.current = canvasDocument;
-    return canvasRef.current.captureImage();
+    const handle = canvasRef.current;
+    if (!exercise || !handle || handle.getRevision() === sentRevision.current) return '';
+    sentRevision.current = handle.getRevision();
+    return handle.captureImage();
   };
 
   const reviewWhiteboard = async () => {
     if (!exercise || isStreaming) return;
+    sentRevision.current = canvasRef.current?.getRevision() ?? null;
     const image = await canvasRef.current?.captureImage() ?? '';
-    sentDocument.current = canvasDocument;
     await sendHelp(image, 'Please look at my current work and give me a hint about the next step.');
   };
 

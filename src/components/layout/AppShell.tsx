@@ -9,7 +9,7 @@ import { saveSession as dbSaveSession, loadSession as dbLoadSession } from '@/li
 
 import { getModelLabel, subscribeModelConfig } from '@/lib/modelConfig';
 
-import type { CanvasDocument, SessionType } from '@/types';
+import type { SessionType } from '@/types';
 import TopBar from './TopBar';
 import BottomToolbar from './BottomToolbar';
 import ProblemStatement from '../workspace/ProblemStatement';
@@ -21,14 +21,14 @@ import SettingsModal from './SettingsModal';
 
 function AppContent() {
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
-  // The drawing the tutor last saw, so follow-ups only attach a snapshot when it changed.
-  const sentDocument = useRef<CanvasDocument | null>(null);
+  // The board revision the tutor last saw, so follow-ups only attach a snapshot when it changed.
+  const sentRevision = useRef<number | null>(null);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const modelLabel = useSyncExternalStore(subscribeModelConfig, getModelLabel, () => '');
   const [chatOpen, setChatOpen] = useState(false);
 
-  const { document: canvasDocument, hasContent, pendingLoad } = useCanvasState();
+  const { document: canvasDocument, pendingLoad } = useCanvasState();
   const canvasDispatch = useCanvasDispatch();
   const { currentSessionId, problemStatement, problemImage, chatHistory, isStreaming, isSolved, sessionType } = useSessionState();
   const sessionDispatch = useSessionDispatch();
@@ -80,17 +80,20 @@ function AppContent() {
   }, [sessionDispatch, canvasDispatch]);
 
   const handleAskForHelp = useCallback(async () => {
-    const image = hasContent ? await canvasHandle.current?.captureImage() ?? '' : '';
-    sentDocument.current = canvasDocument;
+    // Read the editor directly: the context mirror lags a just-finished stroke.
+    const handle = canvasHandle.current;
+    sentRevision.current = handle?.getRevision() ?? null;
+    const image = await handle?.captureImage() ?? '';
     setChatOpen(true);
     await sendHelp(image);
-  }, [hasContent, canvasDocument, sendHelp]);
+  }, [sendHelp]);
 
   const getFollowUpImage = useCallback(async (): Promise<string> => {
-    if (canvasDocument === sentDocument.current || !canvasHandle.current) return '';
-    sentDocument.current = canvasDocument;
-    return canvasHandle.current.captureImage();
-  }, [canvasDocument]);
+    const handle = canvasHandle.current;
+    if (!handle || handle.getRevision() === sentRevision.current) return '';
+    sentRevision.current = handle.getRevision();
+    return handle.captureImage();
+  }, []);
 
   const handleSetProblemImage = useCallback(async () => {
     const image = await canvasHandle.current?.captureImage();

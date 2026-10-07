@@ -21,6 +21,11 @@ const components: TLComponents = {
 // Served from public/tldraw-assets (copied on npm install) so nothing loads from tldraw's CDN.
 const assetUrls = getAssetUrls({ baseUrl: '/tldraw-assets' });
 
+// Bumped synchronously on every document change, unlike the debounced mirror, so callers can
+// tell whether the board changed since they last captured it. Module-level so it never repeats
+// across remounts (the workbook remounts the canvas per exercise).
+let documentRevision = 0;
+
 // Drawing changes the store on every pointer move; mirror it once the pen rests.
 const MIRROR_DELAY_MS = 250;
 
@@ -79,6 +84,7 @@ export default function TldrawCanvas({ handleRef }: { handleRef: RefObject<Drawi
       });
     };
     const stop = editor.store.listen(() => {
+      documentRevision += 1;
       clearTimeout(timer);
       timer = setTimeout(mirror, MIRROR_DELAY_MS);
     }, { scope: 'document', source: 'all' });
@@ -103,6 +109,7 @@ export default function TldrawCanvas({ handleRef }: { handleRef: RefObject<Drawi
       const { blob } = await editor.toImage(ids, { format: 'png', background: true, pixelRatio: 1 });
       return blob;
     },
+    getRevision: () => documentRevision,
     getDocument: () => (editor && !loadPending.current ? editor.getSnapshot().document : null),
     clear: () => {
       if (!editor) return;

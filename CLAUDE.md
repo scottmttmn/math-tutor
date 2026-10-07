@@ -98,11 +98,11 @@ src/
 
 ### Canvas
 - The canvas is **tldraw**, mounted by `TldrawCanvas.tsx` through `DrawingCanvas.tsx`, which loads it with `next/dynamic` and `ssr: false`. `DrawingCanvas` fills its nearest positioned ancestor, so the wrapper in `AppShell` / `Workbook` must be `relative` with a size.
-- `DrawingCanvasHandle` (pass a ref as `handleRef`): `captureImage()` exports the selected shapes, else every shape, trimmed to their bounds (PNG, pixelRatio 2, base64 without the `data:` prefix; `''` when empty); `captureThumbnail()`, `getDocument()`, and `clear()` (one undoable step).
+- `DrawingCanvasHandle` (pass a ref as `handleRef`): `captureImage()` exports the selected shapes, else every shape, trimmed to their bounds (PNG, pixelRatio 2, base64 without the `data:` prefix; `''` when empty); `captureThumbnail()`, `getDocument()`, `getRevision()` (bumped synchronously on every document change), and `clear()` (one undoable step).
 - tldraw's UI supplies the tools, colors, undo/redo and their shortcuts. `MainMenu`, `PageMenu`, `HelpMenu` and debug panels are hidden and there is one page per session.
 - `CanvasContext.document` is a **debounced** (250ms) copy of the editor's document. When saving, read `getDocument()` from the handle (both `AppShell` and `Workbook` do), or the last stroke can be missed.
 - Loading: dispatch `LOAD` with `document` (tldraw format) and/or `strokes` (pre-tldraw format). The editor applies it when mounted, clears undo history, then dispatches `LOADED`. Until then `pendingLoad` holds the strokes, and saves keep them so an unconverted old session is never overwritten with an empty board.
-- Old sessions: `legacyStrokes.ts` turns strokes into draw shapes. The old canvas erased with `destination-out`, so pen points under a *later* eraser stroke are dropped.
+- Old sessions: `legacyStrokes.ts` turns strokes into draw shapes. The old canvas erased with `destination-out`, so pen ink under a *later* eraser stroke's swept path (its segments, not just its sampled points) is dropped.
 - **Assets:** fonts, icons and translations are copied from `@tldraw/assets` into `public/tldraw-assets` (gitignored) by the `postinstall` script, so nothing loads from tldraw's CDN. Keep `tldraw` and `@tldraw/assets` on the same exact version.
 - **License:** with no license key tldraw runs on `http://localhost` / `127.0.0.1` (any http origin counts as development) and shows a small "Get a license for production" note. A hosted deployment needs a key from tldraw.dev.
 
@@ -188,7 +188,7 @@ ESLint uses the Next.js core web vitals config. Run `npm run lint` before commit
 6. Session is **not auto-saved**; user must click **Save** manually.
 
 ### Follow-up Chat
-- `useTutorChat.sendFollowUp(text, canvasImage?)` uses the same `/api/tutor` endpoint. `AppShell` (via `ChatPanel` → `ChatInput`) and `Workbook` attach a fresh `captureImage()` only when `CanvasContext.document` changed since the tutor last saw the board; otherwise the follow-up is text-only.
+- `useTutorChat.sendFollowUp(text, canvasImage?)` uses the same `/api/tutor` endpoint. `AppShell` (via `ChatPanel` → `ChatInput`) and `Workbook` attach a fresh `captureImage()` only when the handle's `getRevision()` changed since the tutor last saw the board; otherwise the follow-up is text-only. Don't use the debounced `CanvasContext.document` for this: it misses a stroke finished just before sending.
 
 ### Session Save/Load
 - **Save:** `handleSave` in `AppShell` calls `db.saveSession()` with the tldraw document (`canvasDocument`), a thumbnail, chat and `sessionType`. New saves write `canvasStrokes: []`.
