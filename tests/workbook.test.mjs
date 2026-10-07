@@ -5,8 +5,66 @@ import * as cheerio from 'cheerio';
 import load from './load-typescript.mjs';
 const content = JSON.parse(fs.readFileSync(new URL('../src/content/complex-geometry.json', import.meta.url)));
 
-function routeHarness(providerError = false) {
+test('Gemini quotas skip blocked models and reset daily quotas at Pacific midnight', () => {
+  const { createGeminiFallback } = load('src/lib/geminiFallback.ts');
+  let now = Date.parse('2026-09-30T06:59:00Z'); // 11:59pm Pacific.
+  const router = createGeminiFallback(() => now);
+  router.exhausted('gemini-3.8-flash', new Error('GenerateRequestsPerDayPerProjectPerModel'));
+  assert.equal(router.candidates('gemini-3.8-flash')[0], 'gemini-3.7-flash');
+  now += 60_000;
+  assert.equal(router.candidates('gemini-3.8-flash')[0], 'gemini-3.8-flash');
+  router.exhausted('gemini-3.8-flash', new Error('minute quota'));
+  now += 59_999;
+  assert.equal(router.candidates('gemini-3.8-flash')[0], 'gemini-3.7-flash');
+  now += 1;
+  assert.equal(router.candidates('gemini-3.8-flash')[0], 'gemini-3.8-flash');
+  assert.deepEqual(router.candidates('my-custom-model'), ['my-custom-model']);
+});
+
+for (const scenario of ['quota', 'all exhausted', 'authentication', 'partial']) {
+  test(`Gemini fallback: ${scenario}`, async () => {
+    const previous = process.env.GEMINI_API_KEY;
+    process.env.GEMINI_API_KEY = 'test-key';
+    const failure = (status) => Object.assign(new Error('Provider error'), { status });
+    try {
+      const { request, calls, clients, advanceTime } = routeHarness(false, (options, attempt) => (async function* () {
+        if (scenario === 'authentication') throw failure(401);
+        if (scenario === 'partial') { yield { choices: [{ delta: { content: 'Partial' } }] }; throw failure(429); }
+        if (scenario === 'all exhausted' || attempt === 1) throw failure(429);
+        yield { choices: [{ delta: { content: 'Fallback hint.' } }] };
+      })());
+      const settings = { modelConfig: { provider: 'openai-compatible', model: 'gemini-3.8-flash', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/' }, workbookContext: { kind: 'exercise', sectionId: content.id, exerciseId: 'x1_3_8' }, canvasImage: 'fake-image' };
+      const text = await (await request(settings)).text();
+      assert.equal(clients[0].maxRetries, 0);
+      if (scenario === 'quota') {
+        assert.deepEqual(calls.map((call) => call.model), ['gemini-3.8-flash', 'gemini-3.7-flash']);
+        assert.match(text, /"type":"model","model":"gemini-3.7-flash"/);
+        assert.match(text, /message_stop/);
+        assert.deepEqual(calls[0].messages, calls[1].messages);
+        assert.match(calls[1].messages[0].content, /NEVER give the full solution/);
+        advanceTime();
+        await (await request(settings)).text();
+        assert.equal(calls[2].model, 'gemini-3.7-flash');
+      } else if (scenario === 'all exhausted') {
+        assert.equal(calls.length, 6);
+        assert.match(text, /Gemini quota is exhausted/);
+        advanceTime();
+        await (await request(settings)).text();
+        assert.equal(calls.length, 6);
+      } else {
+        assert.equal(calls.length, 1);
+        assert.match(text, /"type":"error"/);
+        assert.doesNotMatch(text, /message_stop/);
+      }
+    } finally {
+      if (previous === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = previous;
+    }
+  });
+}
+
+function routeHarness(providerError = false, openAIStream) {
   const calls = [];
+  const clients = [];
   let now = 10_000;
   const { createTutorRequestGate } = load('src/lib/tutorRequestGate.ts');
   const gate = createTutorRequestGate(() => now);
@@ -20,8 +78,10 @@ function routeHarness(providerError = false) {
     } };
   }
   class OpenAI {
+    constructor(options) { clients.push(options); }
     chat = { completions: { create: async (options) => {
       calls.push({ provider: 'openai', ...options });
+      if (openAIStream) return openAIStream(options, calls.length);
       return (async function* () {
         if (providerError) throw new Error('401 authentication failure');
         yield { choices: [{ delta: { content: 'A hint.' } }] };
@@ -42,8 +102,90 @@ function routeHarness(providerError = false) {
       ...overrides,
     }),
   }));
-  return { calls, request, advanceTime: (ms = 5000) => { now += ms; } };
+  return { calls, clients, request, advanceTime: (ms = 5000) => { now += ms; } };
 }
+
+test('saved Gemini preset moves to the current model without changing custom choices', () => {
+  const values = new Map();
+  global.window = new EventTarget();
+  global.localStorage = {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+  };
+  try {
+    const { getModelConfig, isGeminiEndpoint, GEMINI_BASE_URL } = load('src/lib/modelConfig.ts');
+    const saved = { provider: 'openai-compatible', model: 'gemini-3-flash', baseUrl: GEMINI_BASE_URL };
+    values.set('mathTutor_modelConfig', JSON.stringify(saved));
+    assert.equal(getModelConfig().model, 'gemini-3.8-flash');
+    values.set('mathTutor_modelConfig', JSON.stringify({ ...saved, model: 'gemini-custom' }));
+    assert.equal(getModelConfig().model, 'gemini-custom');
+    values.set('mathTutor_modelConfig', JSON.stringify({ ...saved, baseUrl: 'https://generativelanguage.googleapis.com.evil.test/v1beta/openai/' }));
+    assert.equal(getModelConfig().model, 'gemini-3-flash');
+    assert.equal(isGeminiEndpoint(GEMINI_BASE_URL), true);
+  } finally {
+    delete global.window;
+    delete global.localStorage;
+  }
+});
+
+test('Gemini uses its own key and request options; another compatible provider keeps its settings', async () => {
+  const previousGemini = process.env.GEMINI_API_KEY;
+  const previousGoogle = process.env.GOOGLE_API_KEY;
+  const previousOpenAI = process.env.OPENAI_API_KEY;
+  process.env.GEMINI_API_KEY = 'gemini-test-key';
+  delete process.env.GOOGLE_API_KEY;
+  process.env.OPENAI_API_KEY = 'openai-test-key';
+  try {
+    const { request, calls, clients, advanceTime } = routeHarness();
+    const response = await request({
+      modelConfig: { provider: 'openai-compatible', model: 'gemini-3.8-flash', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/' },
+      canvasImage: 'fake-image',
+    });
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /message_stop/);
+    assert.equal(clients[0].apiKey, 'gemini-test-key');
+    assert.equal(calls[0].model, 'gemini-3.8-flash');
+    assert.equal(calls[0].reasoning_effort, 'low');
+    assert.equal(calls[0].max_tokens, 2048);
+    assert.match(JSON.stringify(calls[0].messages), /data:image\/png;base64,fake-image/);
+
+    process.env.GOOGLE_API_KEY = 'google-test-key';
+    advanceTime();
+    await (await request({ modelConfig: { provider: 'openai-compatible', model: 'gemini-3.8-flash', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/' } })).text();
+    assert.equal(clients[1].apiKey, 'google-test-key');
+
+    advanceTime();
+    await (await request({ modelConfig: { provider: 'openai-compatible', model: 'test', baseUrl: 'http://localhost/v1' } })).text();
+    assert.equal(clients[2].apiKey, 'openai-test-key');
+    assert.equal(calls[2].reasoning_effort, undefined);
+    assert.equal(calls[2].max_tokens, 1024);
+  } finally {
+    if (previousGemini === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = previousGemini;
+    if (previousGoogle === undefined) delete process.env.GOOGLE_API_KEY; else process.env.GOOGLE_API_KEY = previousGoogle;
+    if (previousOpenAI === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = previousOpenAI;
+  }
+});
+
+test('Gemini reports a missing key instead of sending the OpenAI key', async () => {
+  const previousGemini = process.env.GEMINI_API_KEY;
+  const previousGoogle = process.env.GOOGLE_API_KEY;
+  const previousOpenAI = process.env.OPENAI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
+  delete process.env.GOOGLE_API_KEY;
+  process.env.OPENAI_API_KEY = 'openai-test-key';
+  try {
+    const { request, calls, clients } = routeHarness();
+    const response = await request({ modelConfig: { provider: 'openai-compatible', model: 'gemini-3.8-flash', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/' } });
+    assert.equal(response.status, 500);
+    assert.match(await response.text(), /GEMINI_API_KEY/);
+    assert.equal(clients.length, 0);
+    assert.equal(calls.length, 0);
+  } finally {
+    if (previousGemini === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = previousGemini;
+    if (previousGoogle === undefined) delete process.env.GOOGLE_API_KEY; else process.env.GOOGLE_API_KEY = previousGoogle;
+    if (previousOpenAI === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = previousOpenAI;
+  }
+});
 
 test('all adapted exercises and local figures are present; source solutions are absent', () => {
   assert.equal(content.exercises.length, 25);
@@ -274,4 +416,14 @@ test('pre-tldraw strokes convert to draw shapes with erased ink removed', () => 
   assert.equal(shape.type, 'draw');
   assert.deepEqual([shape.x, shape.y, shape.props.color, shape.props.size], [100, 50, 'red', 'm']);
   assert.deepEqual(JSON.parse(shape.props.segments[0].path), [{ x: 0, y: 0 }, { x: 10, y: 10 }]);
+});
+
+test('a ChatGPT-plan request releases the server gate when it ends', async () => {
+  const { request, advanceTime } = routeHarness();
+  const chatgptConfig = { modelConfig: { provider: 'chatgpt', model: 'test', baseUrl: '' } };
+  const first = await request(chatgptConfig);
+  assert.equal(first.status, 200);
+  await first.text();
+  advanceTime();
+  assert.equal((await request(chatgptConfig)).status, 200);
 });

@@ -1,7 +1,7 @@
 'use client';
 
 import type { ChatMessage as ChatMessageType } from '@/types';
-import { renderInlineMarkdown } from '@/lib/inlineMarkdown';
+import TutorContent from './TutorContent';
 import { CHATGPT_USAGE_URL } from '@/lib/constants';
 
 interface Props {
@@ -14,7 +14,7 @@ export default function ChatMessage({ message }: Props) {
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`}>
       <div
-        className={`max-w-[85%] px-3 py-2 rounded-lg text-sm leading-relaxed ${
+        className={`min-w-0 max-w-[85%] overflow-x-auto px-3 py-2 rounded-lg text-sm leading-relaxed ${
           isUser
             ? 'bg-blue-500 text-white rounded-br-sm'
             : 'bg-gray-100 text-gray-800 rounded-bl-sm'
@@ -25,9 +25,8 @@ export default function ChatMessage({ message }: Props) {
             [Canvas snapshot sent]
           </div>
         )}
-        <div className="whitespace-pre-wrap">
-          {isUser ? message.content : renderInlineMarkdown(message.content)}
-        </div>
+        {message.model && <div className="mb-1 text-xs text-gray-500">Answered with {message.model} after a quota limit</div>}
+        <TutorContent content={message.content} markdown={!isUser} />
         {message.usage && (
           <div className="mt-1.5 pt-1.5 border-t border-gray-200 text-xs text-gray-500">
             {(message.usage.inputTokens + message.usage.outputTokens).toLocaleString()} tokens on your ChatGPT plan ·{' '}

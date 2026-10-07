@@ -9,6 +9,7 @@ type SessionAction =
   | { type: 'ADD_MESSAGE'; message: ChatMessage }
   | { type: 'APPEND_TO_LAST_MESSAGE'; content: string }
   | { type: 'SET_LAST_MESSAGE_USAGE'; usage: TokenUsage }
+  | { type: 'SET_LAST_MESSAGE_MODEL'; model: string }
   | { type: 'SET_STREAMING'; streaming: boolean }
   | { type: 'LOAD_SESSION'; sessionId: string; problemStatement: string; chatHistory: ChatMessage[]; problemImage: string | null; isSolved?: boolean; sessionType?: SessionType }
   | { type: 'NEW_SESSION'; sessionType?: SessionType }
@@ -66,6 +67,9 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         chatHistory: action.streaming ? state.chatHistory : state.chatHistory.map((message) =>
           message.pending ? { ...message, pending: false } : message),
       };
+    case 'SET_LAST_MESSAGE_MODEL':
+      return { ...state, chatHistory: state.chatHistory.map((message, index) =>
+        index === state.chatHistory.length - 1 ? { ...message, model: action.model } : message) };
     case 'LOAD_SESSION':
       return {
         ...state,

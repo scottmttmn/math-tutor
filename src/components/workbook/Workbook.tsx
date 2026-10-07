@@ -6,6 +6,7 @@ import content from '@/content/complex-geometry.json';
 import { useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
 import { useSessionDispatch, useSessionState } from '@/context/SessionContext';
 import { useTutorChat } from '@/hooks/useTutorChat';
+import { getTutorWaitMs } from '@/hooks/useRateLimit';
 import { listSessions } from '@/lib/db';
 import { loadRecoveredSession, saveRecoverableSession, settleInterruptedReplies, stageSession } from '@/lib/sessionRecovery';
 import type { Session, WorkbookContext } from '@/types';
@@ -220,7 +221,8 @@ function WorkbookContent() {
   };
 
   const reviewWhiteboard = async () => {
-    if (!exercise || isStreaming || isLimited) return;
+    // Check the clock, not isLimited: the toolbar's own timer can re-enable the button first.
+    if (!exercise || isStreaming || getTutorWaitMs() > 0) return;
     sentRevision.current = canvasRef.current?.getRevision() ?? null;
     const image = await canvasRef.current?.captureImage() ?? '';
     await sendHelp(image, 'Please look at my current work and give me a hint about the next step.');

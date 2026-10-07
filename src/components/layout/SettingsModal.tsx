@@ -2,14 +2,14 @@
 
 import { useState } from 'react';
 import type { ModelConfig, Provider } from '@/types';
-import { DEFAULT_ANTHROPIC_MODEL, getModelConfig, saveModelConfig } from '@/lib/modelConfig';
+import { DEFAULT_ANTHROPIC_MODEL, DEFAULT_GEMINI_MODEL, GEMINI_BASE_URL, getModelConfig, isGeminiEndpoint, saveModelConfig } from '@/lib/modelConfig';
 import { useChatGPTConnection } from '@/hooks/useChatGPTConnection';
 import { CHATGPT_DEFAULT_MODEL_PATTERN, CHATGPT_USAGE_URL } from '@/lib/constants';
 
 const PRESETS: { label: string; provider: Provider; model: string; baseUrl: string }[] = [
   { label: 'Anthropic (Claude)', provider: 'anthropic', model: DEFAULT_ANTHROPIC_MODEL, baseUrl: '' },
   { label: 'ChatGPT plan (Sign in with ChatGPT)', provider: 'chatgpt', model: '', baseUrl: '' },
-  { label: 'Google Gemini', provider: 'openai-compatible', model: 'gemini-3-flash', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/' },
+  { label: 'Google Gemini', provider: 'openai-compatible', model: DEFAULT_GEMINI_MODEL, baseUrl: GEMINI_BASE_URL },
   { label: 'OpenAI', provider: 'openai-compatible', model: 'gpt-4o', baseUrl: 'https://api.openai.com/v1' },
   { label: 'Groq', provider: 'openai-compatible', model: 'llama-3.3-70b-versatile', baseUrl: 'https://api.groq.com/openai/v1' },
   { label: 'Ollama', provider: 'openai-compatible', model: 'llama3.2-vision', baseUrl: process.env.NEXT_PUBLIC_OLLAMA_BASE_URL ?? 'http://localhost:11434/v1' },
@@ -170,8 +170,13 @@ function SettingsForm({ onClose }: Pick<Props, 'onClose'>) {
             ? 'API key read from .env.local (ANTHROPIC_API_KEY)'
             : config.provider === 'chatgpt'
               ? 'No API key needed. Requests count against your ChatGPT plan limits.'
-              : 'API key read from .env.local (OPENAI_API_KEY). Ollama does not need one.'}
+              : isGeminiEndpoint(config.baseUrl)
+                ? 'Gemini API key read from .env.local (GEMINI_API_KEY or GOOGLE_API_KEY)'
+                : 'API key read from .env.local (OPENAI_API_KEY). Ollama does not need one.'}
         </p>
+        {config.provider !== 'chatgpt' && isGeminiEndpoint(config.baseUrl) && <p className="text-xs text-gray-500 mb-4">
+          Flash models automatically fall back through older Flash models, then Flash-Lite, when a quota is exhausted. Replies identify any fallback used.
+        </p>}
 
         <div className="flex justify-end gap-2 mt-2">
           <button

@@ -57,6 +57,7 @@ export function useTutorChat(workbookContext?: WorkbookContext) {
         if (!data) return;
         const event: TutorStreamEvent = JSON.parse(data);
         if (event.type === 'text_delta' && event.content) append(event.content);
+        else if (event.type === 'model' && event.model && !abort.signal.aborted) dispatch({ type: 'SET_LAST_MESSAGE_MODEL', model: event.model });
         else if (event.type === 'usage' && event.usage) {
           if (!abort.signal.aborted) dispatch({ type: 'SET_LAST_MESSAGE_USAGE', usage: event.usage });
         }
