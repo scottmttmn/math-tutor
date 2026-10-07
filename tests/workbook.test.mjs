@@ -25,7 +25,12 @@ function routeHarness(providerError = false) {
       })();
     } } };
   }
-  const { POST } = load('src/app/api/tutor/route.ts', { '@anthropic-ai/sdk': Anthropic, openai: OpenAI });
+  // The ChatGPT-plan path needs the OS keychain and a signed-in account, so stub it out.
+  const chatgpt = { getChatGPT: () => { throw new Error('ChatGPT plan is not used in these tests'); } };
+  const siwc = { ChatGPTError: class ChatGPTError extends Error {} };
+  const { POST } = load('src/app/api/tutor/route.ts', {
+    '@anthropic-ai/sdk': Anthropic, openai: OpenAI, '@/lib/chatgpt': chatgpt, '@/lib/siwc': siwc,
+  });
   const request = (overrides = {}) => POST(new Request('http://localhost/api/tutor', {
     method: 'POST', body: JSON.stringify({
       problemStatement: 'Untrusted client text', chatHistory: [], canvasImage: '',

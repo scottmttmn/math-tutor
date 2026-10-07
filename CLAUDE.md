@@ -18,7 +18,7 @@ It has **two session modes**, and the distinction drives much of the codebase:
 - **Framework:** Next.js 16 (App Router), React 19, TypeScript 5
 - **Styling:** Tailwind CSS 4
 - **AI Providers:** Anthropic Claude, OpenAI, Google Gemini, Groq, Ollama (local), and the student's own ChatGPT plan via Sign in with ChatGPT
-- **Persistence:** IndexedDB (sessions), localStorage (model config, rate limit)
+- **Persistence:** IndexedDB (sessions), localStorage (model config)
 
 ---
 
@@ -58,14 +58,13 @@ src/
 │   ├── useSelection.ts        # Overlay canvas selection rectangle logic
 │   ├── useSpeechRecognition.ts# Web Speech API wrapper with error recovery
 │   ├── useTutorChat.ts        # Sends requests to /api/tutor, handles SSE stream
-│   ├── useChatGPTConnection.ts# Sign in with ChatGPT state for SettingsModal
-│   └── useRateLimit.ts        # 5-min cooldown enforcement via localStorage
+│   └── useChatGPTConnection.ts# Sign in with ChatGPT state for SettingsModal
 ├── lib/
 │   ├── db.ts                  # IndexedDB CRUD for sessions via `idb`
 │   ├── modelConfig.ts         # localStorage get/set for ModelConfig
 │   ├── chatgpt.ts             # Server-only Sign in with ChatGPT client + OS-keychain token encryption
 │   ├── siwc/                  # Vendored OpenAI Sign in with ChatGPT SDK (noncommercial license, see below)
-│   ├── constants.ts           # App-wide constants (colors, thicknesses, RATE_LIMIT_MS, CANVAS_HEIGHT)
+│   ├── constants.ts           # App-wide constants (colors, thicknesses, CANVAS_HEIGHT, ChatGPT usage URL)
 │   └── canvasUtils.ts         # canvasToBlob → Blob (for saving to IndexedDB)
 └── types/
     ├── index.ts               # All shared TypeScript types
@@ -217,8 +216,7 @@ Registered once in `AppShell` (handlers read latest values through refs):
 Shortcuts are ignored while focus is in an `input`, `textarea`, or contenteditable element.
 
 ### Rate Limiting
-- `useRateLimit` enforces a 5-minute cooldown (`RATE_LIMIT_MS = 300000` in `constants.ts`) between help requests.
-- Timestamp persisted to `localStorage`; returns `{ isLimited, remainingMs, recordUsage, formatRemaining }`.
+- There is no app-side cooldown between help requests (the old 5-minute `useRateLimit` was removed on request). Spending is bounded by the provider: API-key billing, or the ChatGPT plan's own limits and per-app weekly cap.
 
 ---
 
@@ -271,5 +269,4 @@ Default model config (when nothing is saved in localStorage): `anthropic` / `cla
 - **Do not replace the canvas architecture.** The dual-canvas + stroke-replay pattern is intentional for undo/redo and region capture.
 - **Do not add dark mode** unless explicitly requested.
 - **Do not introduce new state management libraries.** Use React Context + useReducer.
-- **Rate limiting is intentional.** Do not remove or reduce the 5-minute cooldown without explicit direction.
 </content>

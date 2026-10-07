@@ -6,8 +6,6 @@ import content from '@/content/complex-geometry.json';
 import { useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
 import { useSessionDispatch, useSessionState } from '@/context/SessionContext';
 import { useTutorChat } from '@/hooks/useTutorChat';
-import { useRateLimit } from '@/hooks/useRateLimit';
-import { RATE_LIMIT_MS } from '@/lib/constants';
 import { listSessions } from '@/lib/db';
 import { loadWorkbookSession, saveWorkbookSession, stageWorkbookSession } from '@/lib/workbookStorage';
 import type { Session, WorkbookContext } from '@/types';
@@ -47,7 +45,6 @@ function WorkbookContent() {
   const canvasDispatch = useCanvasDispatch();
   const { chatHistory, problemStatement, isSolved, isStreaming } = useSessionState();
   const sessionDispatch = useSessionDispatch();
-  const { isLimited, formatRemaining, recordUsage } = useRateLimit(RATE_LIMIT_MS);
 
   const exercise = content.exercises.find((item) => item.id === exerciseId) ?? null;
   const workbookContext: WorkbookContext = useMemo(() => exercise
@@ -212,12 +209,11 @@ function WorkbookContent() {
   };
 
   const reviewWhiteboard = async () => {
-    if (!exercise || isLimited || isStreaming) return;
+    if (!exercise || isStreaming) return;
     const image = strokes.length > 0 && canvasRef.current
       ? selection ? canvasRef.current.captureRegion(selection) : canvasRef.current.captureFullCanvas()
       : '';
-    const success = await sendHelp(image, 'Please look at my current work and give me a hint about the next step.');
-    if (success) recordUsage();
+    await sendHelp(image, 'Please look at my current work and give me a hint about the next step.');
   };
 
   const toggleComplete = () => {
@@ -309,7 +305,6 @@ function WorkbookContent() {
               <input aria-label={exercise ? `Question about exercise ${exercise.number}` : 'Question about the reading'} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={isStreaming} placeholder={exercise ? 'Ask about this problem…' : 'Ask about the reading…'} className="flex-1 min-w-0 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
               <button type="submit" disabled={!draft.trim() || isStreaming} className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-40">Ask</button>
             </form>
-            {exercise && isLimited && <p className="px-3 pb-2 text-xs text-gray-500">Whiteboard review available in {formatRemaining()}. Text questions are available now.</p>}
           </aside>
         </div>
       )}

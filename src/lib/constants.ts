@@ -4,8 +4,6 @@ export const CHATGPT_USAGE_URL = 'https://chatgpt.com/settings/usage';
 // Falls back to the first model the plan lists.
 export const CHATGPT_DEFAULT_MODEL_PATTERN = /luna/i;
 
-export const RATE_LIMIT_MS = 5 * 60 * 1000; // 5 minutes
-
 export const DEFAULT_PEN_COLOR = '#000000';
 export const DEFAULT_PEN_THICKNESS = 3;
 export const DEFAULT_ERASER_THICKNESS = 20;

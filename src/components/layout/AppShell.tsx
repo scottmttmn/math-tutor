@@ -5,10 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { CanvasProvider, useCanvasState, useCanvasDispatch } from '@/context/CanvasContext';
 import { SessionProvider, useSessionState, useSessionDispatch } from '@/context/SessionContext';
 import { useTutorChat } from '@/hooks/useTutorChat';
-import { useRateLimit } from '@/hooks/useRateLimit';
 import { saveSession as dbSaveSession, loadSession as dbLoadSession } from '@/lib/db';
 import { canvasToBlob } from '@/lib/canvasUtils';
-import { RATE_LIMIT_MS } from '@/lib/constants';
 
 import { getModelLabel, subscribeModelConfig } from '@/lib/modelConfig';
 
@@ -34,7 +32,6 @@ function AppContent() {
   const { currentSessionId, problemStatement, problemImage, chatHistory, isStreaming, isSolved, sessionType } = useSessionState();
   const sessionDispatch = useSessionDispatch();
   const { sendHelp } = useTutorChat();
-  const { recordUsage } = useRateLimit(RATE_LIMIT_MS);
 
   const handleNew = useCallback((type: SessionType = 'problem') => {
     canvasDispatch({ type: 'CLEAR' });
@@ -89,9 +86,8 @@ function AppContent() {
       }
     }
     setChatOpen(true);
-    const success = await sendHelp(image);
-    if (success) recordUsage();
-  }, [selection, strokes.length, sendHelp, recordUsage]);
+    await sendHelp(image);
+  }, [selection, strokes.length, sendHelp]);
 
   const handleSetProblemImage = useCallback(() => {
     if (!canvasHandle.current) return;

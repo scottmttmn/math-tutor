@@ -68,10 +68,6 @@ async function draw() {
   await page.mouse.up();
   await page.waitForFunction(() => [...document.querySelectorAll('button')].some((button) => button.textContent === 'Clear' && !button.disabled));
 }
-async function clearCooldown() {
-  await page.evaluate(() => { localStorage.removeItem('lastHelpTimestamp'); window.dispatchEvent(new Event('mathTutor:helpUsage')); });
-  await page.getByRole('button', { name: /^(Ask for Help|Ask About This)$/ }).waitFor();
-}
 try {
   await openBrowser(); await waitReading();
   await page.evaluate((config) => localStorage.setItem('mathTutor_modelConfig', JSON.stringify(config)), model);
@@ -116,7 +112,6 @@ try {
   await page.mouse.move(box.x + 20, box.y + 20); await page.mouse.down();
   await page.mouse.move(box.x + 220, box.y + 160, { steps: 5 }); await page.mouse.up();
   await page.getByText('Region selected', { exact: true }).waitFor();
-  await clearCooldown();
   await page.getByRole('button', { name: 'Ask for Help', exact: true }).click();
   await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
   request = requests.at(-1);
@@ -127,10 +122,8 @@ try {
     const image = new Image(); image.src = src; await image.decode(); return [image.naturalWidth, image.naturalHeight];
   }, image);
   assert.deepEqual(dimensions, [200, 140]);
-  await page.getByRole('button', { name: /^Wait / }).waitFor();
-  assert.ok(await page.getByRole('button', { name: /^Wait / }).isDisabled());
   await ask('Does this approach make sense?', 'Exercise hint.');
-  console.log('PASS selected whiteboard image reaches provider; review cooldown and text follow-up availability');
+  console.log('PASS selected whiteboard image reaches provider; text follow-up stays available');
 
   await page.getByRole('button', { name: 'Back to reading' }).click(); await waitReading();
   assert.ok(await page.getByText('Reading explanation.', { exact: true }).isVisible());
@@ -157,7 +150,7 @@ try {
   assert.doesNotMatch(await exerciseButton(1).innerText(), /Complete/);
   assert.ok(await page.getByText('Reading explanation.', { exact: true }).isVisible());
   await ask('Explain the modulus definition again.', 'Reading explanation.');
-  console.log('PASS browser close/reopen, completion reversal, and reading questions during cooldown');
+  console.log('PASS browser close/reopen, completion reversal,, and reading questions');
 
   await exerciseButton(4).click(); await waitExercise();
   await page.getByRole('link', { name: '(1.3.4)', exact: true }).click(); await waitReading();
@@ -168,12 +161,10 @@ try {
   console.log('PASS exercise identity links return to their reading passage');
 
   await exerciseButton(8).click(); await waitExercise();
-  // Stream errors are visible and do not spend the review wait.
-  await clearCooldown();
+  // Stream errors are visible.
   await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: 'data: {"type":"error","error":"Simulated provider failure"}\n\n' }), { times: 1 });
   await page.getByRole('button', { name: 'Ask for Help', exact: true }).click();
   await page.getByText('Error: Simulated provider failure', { exact: true }).waitFor();
-  assert.equal(await page.evaluate(() => localStorage.getItem('lastHelpTimestamp')), null);
   await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: 'data: {"type":"text_delta","content":"Partial reply"}\n\n' }), { times: 1 });
   await page.getByRole('textbox').fill('Follow up after the error.'); await page.getByRole('button', { name: 'Ask', exact: true }).click();
   await page.getByText(/The tutor response was interrupted/).waitFor();
@@ -189,14 +180,14 @@ try {
   await page.getByPlaceholder("Type the math problem you're working on...").waitFor();
   await page.getByPlaceholder("Type the math problem you're working on...").fill('Find a strategy for a quadratic.');
   await draw();
-  await clearCooldown(); await page.getByRole('button', { name: 'Ask for Help', exact: true }).click();
+  await page.getByRole('button', { name: 'Ask for Help', exact: true }).click();
   await page.getByText('Exercise hint.', { exact: true }).waitFor();
   assert.match(requests.at(-1).messages[0].content, /NEVER give the full solution/);
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await page.getByRole('button', { name: 'New', exact: true }).click();
   await page.getByRole('button', { name: /New Notes/ }).click();
   await page.getByPlaceholder("Topic or concept you're studying...").fill('Complex modulus');
-  await clearCooldown(); await page.getByRole('button', { name: 'Ask About This', exact: true }).click();
+  await page.getByRole('button', { name: 'Ask About This', exact: true }).click();
   await page.getByText('Notes explanation.', { exact: true }).waitFor();
   assert.match(requests.at(-1).messages[0].content, /Give clear, direct explanations/);
   assert.doesNotMatch(JSON.stringify(requests.at(-1).messages), /Current exercise/);

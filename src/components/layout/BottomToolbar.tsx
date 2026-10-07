@@ -1,8 +1,7 @@
 'use client';
 
 import { useCanvasState, useCanvasDispatch } from '@/context/CanvasContext';
-import { useRateLimit } from '@/hooks/useRateLimit';
-import { COLOR_PRESETS, THICKNESS_MIN, THICKNESS_MAX, RATE_LIMIT_MS } from '@/lib/constants';
+import { COLOR_PRESETS, THICKNESS_MIN, THICKNESS_MAX } from '@/lib/constants';
 import type { DrawingTool, SessionType } from '@/types';
 
 interface Props {
@@ -17,7 +16,6 @@ interface Props {
 export default function BottomToolbar({ onAskForHelp, isStreaming, isSolved, onToggleSolved, sessionType, completionLabel }: Props) {
   const { toolSettings, strokes, past, future, selection } = useCanvasState();
   const dispatch = useCanvasDispatch();
-  const { isLimited, formatRemaining } = useRateLimit(RATE_LIMIT_MS);
 
   const setTool = (tool: DrawingTool) => dispatch({ type: 'SET_TOOL', tool });
 
@@ -26,7 +24,7 @@ export default function BottomToolbar({ onAskForHelp, isStreaming, isSolved, onT
       ? toolSettings.eraserThickness
       : toolSettings.penThickness;
 
-  const helpDisabled = isLimited || isStreaming;
+  const helpDisabled = isStreaming;
 
   return (
     <div className="flex items-center gap-3 px-4 py-2 border-t border-gray-200 bg-white flex-wrap">
@@ -170,9 +168,7 @@ export default function BottomToolbar({ onAskForHelp, isStreaming, isSolved, onT
             : 'bg-green-500 text-white hover:bg-green-600'
         }`}
       >
-        {isLimited
-          ? `Wait ${formatRemaining()}`
-          : sessionType === 'note'
+        {sessionType === 'note'
           ? 'Ask About This'
           : 'Ask for Help'}
       </button>
