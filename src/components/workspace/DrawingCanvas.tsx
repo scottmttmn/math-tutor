@@ -5,11 +5,14 @@ import { useCanvas } from '@/hooks/useCanvas';
 import { useSelection } from '@/hooks/useSelection';
 import { useCanvasState } from '@/context/CanvasContext';
 import { CANVAS_HEIGHT } from '@/lib/constants';
+import { drawingBounds } from '@/lib/drawingBounds';
 import type { SelectionRect } from '@/types';
 
 export interface DrawingCanvasHandle {
   captureFullCanvas: () => string;
   captureRegion: (rect: SelectionRect) => string;
+  /** Captures just the inked area of the canvas; '' when nothing is drawn. */
+  captureDrawing: () => string;
   getCanvas: () => HTMLCanvasElement | null;
 }
 
@@ -38,6 +41,11 @@ const DrawingCanvas = forwardRef<DrawingCanvasHandle>(function DrawingCanvas(_, 
   useImperativeHandle(ref, () => ({
     captureFullCanvas,
     captureRegion,
+    captureDrawing: () => {
+      const width = canvasRef.current?.getBoundingClientRect().width ?? 0;
+      const bounds = drawingBounds(strokes, width, CANVAS_HEIGHT);
+      return bounds ? captureRegion(bounds) : '';
+    },
     getCanvas: () => canvasRef.current,
   }));
 

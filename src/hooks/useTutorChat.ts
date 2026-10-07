@@ -82,9 +82,9 @@ export function useTutorChat(workbookContext?: WorkbookContext) {
     }
   }, [problemStatement, problemImage, chatHistory, isStreaming, sessionType, workbookContext, dispatch]);
 
-  const sendFollowUp = useCallback(async (text: string): Promise<boolean> => {
+  const sendFollowUp = useCallback(async (text: string, canvasImage = ''): Promise<boolean> => {
     if (!text.trim()) return false;
-    return sendHelp('', text.trim());
+    return sendHelp(canvasImage, text.trim());
   }, [sendHelp]);
 
   return { sendHelp, sendFollowUp, isStreaming };

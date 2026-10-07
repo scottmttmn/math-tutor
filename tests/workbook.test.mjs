@@ -154,3 +154,17 @@ test('recovery preserves newer unsaved work and ignores corrupt or stale copies'
   assert.deepEqual(await storage.loadWorkbookSession(original.id), latest);
   delete global.localStorage;
 });
+
+test('canvas snapshots are trimmed to the inked area, ignoring eraser strokes', () => {
+  const { drawingBounds } = load('src/lib/drawingBounds.ts');
+  const pen = (points, thickness = 4) => ({ points, color: '#000', thickness, tool: 'pen' });
+  const eraser = { points: [{ x: 0, y: 0 }, { x: 900, y: 2900 }], color: '#fff', thickness: 20, tool: 'eraser' };
+  assert.equal(drawingBounds([], 800, 3000), null);
+  assert.equal(drawingBounds([eraser], 800, 3000), null);
+  assert.deepEqual(
+    drawingBounds([pen([{ x: 100, y: 200 }, { x: 300, y: 260 }]), eraser], 800, 3000),
+    { startX: 74, startY: 174, width: 252, height: 112 },
+  );
+  // Ink near the edge is clamped to the canvas.
+  assert.deepEqual(drawingBounds([pen([{ x: 5, y: 2990 }])], 800, 3000), { startX: 0, startY: 2964, width: 31, height: 36 });
+});

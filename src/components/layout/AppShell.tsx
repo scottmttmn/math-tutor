@@ -10,7 +10,7 @@ import { canvasToBlob } from '@/lib/canvasUtils';
 
 import { getModelLabel, subscribeModelConfig } from '@/lib/modelConfig';
 
-import type { SessionType } from '@/types';
+import type { SessionType, Stroke } from '@/types';
 import TopBar from './TopBar';
 import BottomToolbar from './BottomToolbar';
 import ProblemStatement from '../workspace/ProblemStatement';
@@ -22,6 +22,7 @@ import SettingsModal from './SettingsModal';
 
 function AppContent() {
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
+  const sentStrokes = useRef<Stroke[] | null>(null);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const modelLabel = useSyncExternalStore(subscribeModelConfig, getModelLabel, () => '');
@@ -82,16 +83,25 @@ function AppContent() {
       if (selection && canvasHandle.current) {
         image = canvasHandle.current.captureRegion(selection);
       } else if (canvasHandle.current) {
-        image = canvasHandle.current.captureFullCanvas();
+        image = canvasHandle.current.captureDrawing();
       }
     }
+    sentStrokes.current = strokes;
     setChatOpen(true);
     await sendHelp(image);
-  }, [selection, strokes.length, sendHelp]);
+  }, [selection, strokes, sendHelp]);
+
+  // Follow-ups carry a fresh snapshot only when the drawing changed since the tutor last saw it.
+  const getFollowUpImage = useCallback((): string => {
+    if (strokes === sentStrokes.current || !canvasHandle.current) return '';
+    sentStrokes.current = strokes;
+    return canvasHandle.current.captureDrawing();
+  }, [strokes]);
 
   const handleSetProblemImage = useCallback(() => {
     if (!canvasHandle.current) return;
-    const image = canvasHandle.current.captureFullCanvas();
+    const image = canvasHandle.current.captureDrawing();
+    if (!image) return;
     sessionDispatch({ type: 'SET_PROBLEM_IMAGE', image });
   }, [sessionDispatch]);
 
@@ -167,7 +177,7 @@ function AppContent() {
         {/* Right panel: chat (collapsible) */}
         {chatOpen && (
           <div className="flex-[2] min-w-[300px] border-l border-gray-200">
-            <ChatPanel />
+            <ChatPanel getCanvasImage={getFollowUpImage} />
           </div>
         )}
       </div>

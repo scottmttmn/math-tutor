@@ -5,7 +5,12 @@ import { useSessionState } from '@/context/SessionContext';
 import { useTutorChat } from '@/hooks/useTutorChat';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 
-export default function ChatInput() {
+interface ChatInputProps {
+  /** Returns a snapshot to attach to the follow-up, or '' when the tutor has already seen the drawing. */
+  getCanvasImage?: () => string;
+}
+
+export default function ChatInput({ getCanvasImage }: ChatInputProps) {
   const [text, setText] = useState('');
   const { chatHistory, isStreaming } = useSessionState();
   const { sendFollowUp } = useTutorChat();
@@ -22,7 +27,7 @@ export default function ChatInput() {
     const msg = text;
     setText('');
     resetTranscript();
-    await sendFollowUp(msg);
+    await sendFollowUp(msg, getCanvasImage?.() ?? '');
   };
 
   const handleMicClick = () => {
