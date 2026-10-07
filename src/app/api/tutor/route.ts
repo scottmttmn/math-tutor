@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { getChatGPT } from '@/lib/chatgpt';
 import { ChatGPTError } from '@/lib/siwc';
+import { CHATGPT_USAGE_URL } from '@/lib/constants';
 import type { ResponseContentPart, ResponseInputMessage } from '@/lib/siwc';
 import type { TutorRequest, ModelConfig } from '@/types';
 import { resolveWorkbookContext } from '@/lib/workbookTutor';
@@ -108,6 +109,9 @@ function friendlyChatGPTError(error: unknown): string {
   if (error instanceof ChatGPTError && error.code === 'subscription_sharing_unsupported_capability') {
     return 'Your ChatGPT plan connection does not accept images for this model. Try another model, or switch providers in Settings.';
   }
+  if (error instanceof ChatGPTError && error.code === 'subscription_sharing_usage_limit_exceeded') {
+    return `You've reached a ChatGPT usage limit, either for your plan or for this app. Check your usage and limits at ${CHATGPT_USAGE_URL}`;
+  }
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -139,7 +143,7 @@ function streamChatGPTResponse(
   return new ReadableStream({
     async start(controller) {
       try {
-        await getChatGPT().streamResponse({
+        const { usage } = await getChatGPT().streamResponse({
           model: modelConfig.model,
           instructions: systemPrompt,
           input,
@@ -149,6 +153,11 @@ function streamChatGPTResponse(
             );
           },
         });
+        if (usage) {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: 'usage', usage })}\n\n`)
+          );
+        }
         controller.enqueue(
           encoder.encode(`data: ${JSON.stringify({ type: 'message_stop' })}\n\n`)
         );

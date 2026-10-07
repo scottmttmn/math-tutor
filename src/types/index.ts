@@ -32,6 +32,12 @@ export interface ToolSettings {
 
 export type ChatRole = 'user' | 'assistant';
 
+/** Tokens one tutor answer used, as reported by the provider. Only the ChatGPT plan path reports it today. */
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;
@@ -39,6 +45,7 @@ export interface ChatMessage {
   timestamp: number;
   imagePreview?: string;
   pending?: boolean;
+  usage?: TokenUsage;
 }
 
 // === Session Types ===
@@ -123,7 +130,8 @@ export type WorkbookContext =
     };
 
 export interface TutorStreamEvent {
-  type: 'text_delta' | 'message_stop' | 'error';
+  type: 'text_delta' | 'usage' | 'message_stop' | 'error';
   content?: string;
+  usage?: TokenUsage;
   error?: string;
 }

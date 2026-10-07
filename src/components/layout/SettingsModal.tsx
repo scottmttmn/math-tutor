@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { ModelConfig, Provider } from '@/types';
 import { getModelConfig, saveModelConfig } from '@/lib/modelConfig';
 import { useChatGPTConnection } from '@/hooks/useChatGPTConnection';
+import { CHATGPT_USAGE_URL } from '@/lib/constants';
 
 const PRESETS: { label: string; provider: Provider; model: string; baseUrl: string }[] = [
   { label: 'Anthropic (Claude)', provider: 'anthropic', model: 'claude-sonnet-4-5-20250929', baseUrl: '' },
@@ -97,6 +98,14 @@ function SettingsForm({ onClose }: Pick<Props, 'onClose'>) {
                 <p className="text-gray-700">
                   Signed in{chatgpt.status.email ? ` as ${chatgpt.status.email}` : ''}.
                   {!chatgpt.status.sharing && ' Plan usage is not enabled for this app yet.'}
+                  {chatgpt.status.sharing && (
+                    <>
+                      {' '}
+                      <a href={CHATGPT_USAGE_URL} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline hover:text-blue-700">
+                        Manage usage
+                      </a>
+                    </>
+                  )}
                 </p>
                 <button
                   onClick={chatgpt.status.sharing ? chatgpt.disconnect : chatgpt.signIn}

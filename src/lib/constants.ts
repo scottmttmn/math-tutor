@@ -1,3 +1,6 @@
+// Where students see and cap how much of their ChatGPT plan this app uses.
+export const CHATGPT_USAGE_URL = 'https://chatgpt.com/settings/usage';
+
 export const RATE_LIMIT_MS = 5 * 60 * 1000; // 5 minutes
 
 export const DEFAULT_PEN_COLOR = '#000000';

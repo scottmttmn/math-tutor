@@ -1,13 +1,14 @@
 'use client';
 
 import React, { createContext, useContext, useReducer, type Dispatch } from 'react';
-import type { ChatMessage, SessionMetadata, SessionType } from '@/types';
+import type { ChatMessage, SessionMetadata, SessionType, TokenUsage } from '@/types';
 
 type SessionAction =
   | { type: 'SET_PROBLEM'; text: string }
   | { type: 'SET_PROBLEM_IMAGE'; image: string | null }
   | { type: 'ADD_MESSAGE'; message: ChatMessage }
   | { type: 'APPEND_TO_LAST_MESSAGE'; content: string }
+  | { type: 'SET_LAST_MESSAGE_USAGE'; usage: TokenUsage }
   | { type: 'SET_STREAMING'; streaming: boolean }
   | { type: 'LOAD_SESSION'; sessionId: string; problemStatement: string; chatHistory: ChatMessage[]; problemImage: string | null; isSolved?: boolean; sessionType?: SessionType }
   | { type: 'NEW_SESSION'; sessionType?: SessionType }
@@ -50,6 +51,12 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       const updated = [...state.chatHistory];
       const last = updated[updated.length - 1];
       updated[updated.length - 1] = { ...last, content: last.content + action.content };
+      return { ...state, chatHistory: updated };
+    }
+    case 'SET_LAST_MESSAGE_USAGE': {
+      if (state.chatHistory.length === 0) return state;
+      const updated = [...state.chatHistory];
+      updated[updated.length - 1] = { ...updated[updated.length - 1], usage: action.usage };
       return { ...state, chatHistory: updated };
     }
     case 'SET_STREAMING':

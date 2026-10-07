@@ -133,6 +133,7 @@ src/
 - OAuth runs in the Next server process (which is on the student's machine) and opens their browser; the callback listens on `127.0.0.1:${CHATGPT_REDIRECT_PORT ?? 8791}`. The port is registered on first sign-in, so don't change it casually.
 - Tokens are saved under `~/.config/math-tutor/`, encrypted with a key kept in the OS keychain via `@napi-rs/keyring`. With no keychain (e.g. Linux without Secret Service, CI containers), sign-in reports that secure storage is unavailable; there is deliberately no plaintext fallback.
 - Tokens never reach the browser: `/api/chatgpt` returns only `ChatGPTStatus` (status, email, models).
+- There is no API for remaining plan quota. The ChatGPT path streams a `usage` SSE event (input/output tokens from `response.completed`) that is stored on the assistant `ChatMessage` and shown under it with a **Manage usage** link to `CHATGPT_USAGE_URL` (`chatgpt.com/settings/usage`, where students see per-app usage and set a weekly cap).
 - Only for a locally run app. A hosted deployment would need OpenAI's waitlist approval and a different (non-loopback) flow.
 
 ### Session Persistence

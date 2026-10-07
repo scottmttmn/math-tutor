@@ -1,11 +1,12 @@
 // Modified for Math Tutor from OpenAI's Sign in with ChatGPT DevKit
 // (github.com/openai/sign-in-with-chatgpt-devkit @ f723814, packages/local/src).
 // Changes: relative imports drop the .js suffix so Next's bundler resolves them;
-// streamResponse validates and forwards input_image parts.
+// streamResponse validates and forwards input_image parts, and returns the token
+// usage reported in response.completed.
 // Licensed under the Sign-in with ChatGPT DevKit Noncommercial License v1.0; see ./LICENSE.
 
 import { apiError, ChatGPTError, fetchRemote, isObject, jsonResponse } from "./errors";
-import type { StreamResponseOptions } from "./types";
+import type { ResponseUsage, StreamResponseOptions } from "./types";
 
 // Math Tutor: user messages may carry input_text and input_image parts so the
 // tutor can send canvas captures. Assistant and developer messages stay text-only.
@@ -22,7 +23,7 @@ export async function streamResponse(
   accessToken: string,
   options: StreamResponseOptions,
   signal: AbortSignal,
-): Promise<{ text: string }> {
+): Promise<{ text: string; usage?: ResponseUsage }> {
   const input = typeof options.input === "string" ? [{ role: "user", content: options.input }] : options.input;
   if (!Array.isArray(input) || input.some((message) =>
     !isObject(message) || !["user", "assistant", "developer"].includes(String(message.role)) || !validContent(message.content)
@@ -61,6 +62,7 @@ export async function streamResponse(
   let eventSize = 0;
   let completed = false;
   let text = "";
+  let usage: ResponseUsage | undefined;
 
   const dispatch = () => {
     const data = dataLines.join("\n");
@@ -82,6 +84,10 @@ export async function streamResponse(
       throw new ChatGPTError("response_incomplete", "ChatGPT stopped before completing the response. You can keep the partial text or try again.", true);
     } else if (event.type === "response.completed") {
       completed = true;
+      const reported = isObject(event.response) && isObject(event.response.usage) ? event.response.usage : undefined;
+      if (reported && typeof reported.input_tokens === "number" && typeof reported.output_tokens === "number") {
+        usage = { inputTokens: reported.input_tokens, outputTokens: reported.output_tokens };
+      }
     }
   };
 
@@ -120,7 +126,7 @@ export async function streamResponse(
       if (completed) break;
     }
     if (!completed) throw new ChatGPTError("stream_interrupted", "The response ended before completion. You can keep the partial text or try again.", true);
-    return { text };
+    return { text, ...(usage ? { usage } : {}) };
   } catch (error) {
     if (signal.aborted) throw new ChatGPTError("cancelled", "The response was cancelled.");
     if (error instanceof ChatGPTError) throw error;

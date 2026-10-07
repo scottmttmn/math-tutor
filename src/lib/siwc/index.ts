@@ -1,7 +1,7 @@
 // Modified for Math Tutor from OpenAI's Sign in with ChatGPT DevKit
 // (github.com/openai/sign-in-with-chatgpt-devkit @ f723814, packages/local/src).
 // Changes: relative imports drop the .js suffix so Next's bundler resolves them;
-// re-exports the ResponseContentPart type.
+// re-exports the ResponseContentPart and ResponseUsage types.
 // Licensed under the Sign-in with ChatGPT DevKit Noncommercial License v1.0; see ./LICENSE.
 
 import { randomUUID } from "node:crypto";
@@ -15,7 +15,7 @@ import { ConnectionStore } from "./storage";
 import type { ChatGPTClient, ChatGPTConfig, LoginProfile, PendingRegistration, SessionState, StoredConnection, StoredProfile, StoredState } from "./types";
 
 export { ChatGPTError } from "./errors";
-export type { ChatGPTClient, ChatGPTConfig, ChatGPTModel, CredentialEncryption, LoginProfile, ResponseContentPart, ResponseInputMessage, SessionError, SessionIdentity, SessionState, SignInOptions, StreamResponseOptions } from "./types";
+export type { ChatGPTClient, ChatGPTConfig, ChatGPTModel, CredentialEncryption, LoginProfile, ResponseContentPart, ResponseInputMessage, ResponseUsage, SessionError, SessionIdentity, SessionState, SignInOptions, StreamResponseOptions } from "./types";
 export const CHATGPT_USAGE_URL = "https://chatgpt.com/settings/usage";
 
 const SHARING_SCOPE = "chatgpt.tokens.use.direct";

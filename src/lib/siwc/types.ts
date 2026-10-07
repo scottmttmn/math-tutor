@@ -1,7 +1,8 @@
 // Modified for Math Tutor from OpenAI's Sign in with ChatGPT DevKit
 // (github.com/openai/sign-in-with-chatgpt-devkit @ f723814, packages/local/src).
 // Changes: relative imports drop the .js suffix so Next's bundler resolves them;
-// ResponseInputMessage.content also accepts input_text / input_image parts.
+// ResponseInputMessage.content also accepts input_text / input_image parts;
+// streamResponse also returns token usage (ResponseUsage).
 // Licensed under the Sign-in with ChatGPT DevKit Noncommercial License v1.0; see ./LICENSE.
 
 export interface SessionIdentity {
@@ -82,6 +83,11 @@ export interface ResponseInputMessage {
   content: string | ResponseContentPart[];
 }
 
+export interface ResponseUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface StreamResponseOptions {
   model: string;
   input: string | ResponseInputMessage[];
@@ -110,7 +116,7 @@ export interface ChatGPTClient {
   subscribe(listener: (session: SessionState) => void): () => void;
   /** Sign out of the selected profile. Its registration and identity remain saved. */
   disconnect(): Promise<void>;
-  streamResponse(options: StreamResponseOptions): Promise<{ text: string }>;
+  streamResponse(options: StreamResponseOptions): Promise<{ text: string; usage?: ResponseUsage }>;
 }
 
 export interface StoredCredentials {
