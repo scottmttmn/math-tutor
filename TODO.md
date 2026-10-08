@@ -2,36 +2,48 @@
 
 Goal: make Math Tutor a great math notebook on its own, even for someone who never uses the AI tutor. The primary audience is the self-motivated learner who enjoys math, at any skill level.
 
-Ranked; work top to bottom unless priorities change. Done: autosave on the main page.
+Direction: pen-first and keyboard-free. The end state is an Android app on an e-ink tablet (BOOX in mind), with the web app in a thin shell plus the tablet's pen SDK, and no laptop needed. The shell waits until there is a device to test on; until then, check that every feature works pen-only at tablet size. See `docs/pen-first-math-workbook-plan.md`.
 
-## 1. Handwriting to TeX write-up
+Work top to bottom unless priorities change. Every change goes through a branch and a PR (see CLAUDE.md, "Workflow and CI").
 
-- Flow: work the problem by hand, write a neat version on its own board, then **Convert to TeX**.
-- The result opens as an editable LaTeX document with the source next to a live preview (KaTeX is already a dependency), so misreadings can be fixed.
-- Download the `.tex` file. Drawings that can't be TeX are exported as images and referenced from the document. Print the preview to PDF for a copy without a TeX install.
-- Converting just a selection of ink in place is a smaller version of the same feature.
-- Recognition needs a vision model (the provider configured in Settings, including local Ollama). It's a tool, not the tutor. Fully offline recognition is a later option.
+Done: autosave on the main page, the 5-second request limit, CI on every PR, thinner default pen.
 
-## 2. Bring your own material
+## MVP
 
-- Drop in PDFs, such as assignments from a MOOC. Each page becomes a locked background you can write on, or opens beside a fresh board per problem.
-- No AI needed; works offline.
-- Longer term: more openly licensed workbook sections at different levels (today there is one section of one book).
+### 1. Handwriting test set
 
-## 3. Notebook library
+- Pages of real handwriting (written on a Wacom in the app) with a LaTeX answer key, kept outside the repo.
+- A script sends each page to every configured model and scores the transcription against the key, so we know which models read handwritten math well enough before building on recognition.
 
-- Replace the small **Load** popup with a grid of saved notebooks.
-- Thumbnails are already saved with every session (`canvasImageBlob`) but never shown.
+### 2. Problem history
+
+- A record of every problem worked: free-form boards, workbook exercises and Shelf items in one place.
+- Replaces the small **Load** popup with a grid. Thumbnails are already saved with every session (`canvasImageBlob`) but never shown.
 - Search, rename, sort, and filter by solved.
 
-## 4. Export and backup
+### 3. PDF Shelf
+
+- Drop in PDFs (books, MOOC assignments). They land on a Shelf.
+- Mark exercises as you read (a book) or all at once (an assignment); each opens on its own board beside the page. Single problems drop straight onto a board.
+- No AI needed; works offline.
+
+### 4. Export and auto-backup
 
 - Export a page as PNG or PDF.
-- Export and import every notebook as one file. All work currently lives only in one browser's IndexedDB.
+- Export and import every notebook as one file, and back up automatically to a folder the user picks (e.g. a Dropbox folder). No server or account.
+- Ask the browser for persistent storage so IndexedDB isn't evicted.
 
-## 5. Keep the AI out of the way
+### 5. Tutor memory
 
-- For learners the tutor is a feature, so it doesn't need to be hidden. Make **Ask for Help** less prominent, and consider a setting that hides chat, the model label and the workbook's tutor panel.
+- A local, user-editable learner profile, summarized after each session and sent with tutor requests (not the raw history).
+- Kept in app storage, so it moves with the app to the tablet.
+
+## After the MVP
+
+- **Handwriting to TeX write-up.** Work by hand, write a neat version, then **Convert to TeX**: an editable LaTeX document with a live KaTeX preview, downloadable as `.tex` (drawings exported as images). Converting a selection in place is a smaller version. Depends on the handwriting test results.
+- **Replace the chat pane.** Pen-only actions on a selection (Explain this, Give me a hint, Review my work), with replies as cards beside the work. The tutor waits until invited.
+- **Android shell** for the tablet, once there is a device to test pen latency on. Sign in with ChatGPT won't carry over there; API keys will.
+- More openly licensed workbook sections at different levels (today there is one section of one book).
 
 ## Later
 
@@ -41,5 +53,5 @@ Ranked; work top to bottom unless priorities change. Done: autosave on the main 
 
 ## Down the road (not now)
 
-- Mark a problem as **interesting**. A star on saved problems is cheap once the library exists.
+- Mark a problem as **interesting**. A star on saved problems is cheap once problem history exists.
 - Eventually: a crowdsourced network of problems. Solve one, mark it interesting, and get recommendations for others.
