@@ -171,7 +171,7 @@ The app shows user-friendly error messages for missing/invalid keys.
 
 ### Scripts
 ```bash
-npm run dev    # Development server (port 3000)
+npm run dev    # Development server (port 3000; webpack, like build — Turbopack + turbopack.root on Next 16.1.6 resolves Tailwind one folder up)
 npm run build  # Production build
 npm run start  # Production server
 npm run lint   # ESLint
