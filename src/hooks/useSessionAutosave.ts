@@ -49,16 +49,19 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
   const awaitingEditor = useRef(false);
   // A session restored from its recovery copy still needs its durable save.
   const loadedUnsaved = useRef(false);
+  // Set once the student opens or starts a session, so a slow reload restore can't replace it.
+  const switched = useRef(false);
   const queue = useRef<Promise<boolean>>(Promise.resolve(true));
 
   const snapshot = useCallback((): Session | null => {
+    if (loading.current) return null;
     const s = latest.current;
-    const isEmpty = !s.currentSessionId && !s.problemStatement.trim() && !s.problemImage && s.chatHistory.length === 0 && !s.hasContent;
-    if (loading.current || isEmpty) return null;
-    if (!s.currentSessionId && !draftId.current) draftId.current = uuidv4();
-    if (!createdAt.current) createdAt.current = Date.now();
     // Read the editor directly: the context mirror lags a just-finished stroke.
     const document = canvasHandle.current?.getDocument() ?? s.canvasDocument;
+    const hasDrawing = s.hasContent || Object.keys(document?.store ?? {}).some((key) => key.startsWith('shape:'));
+    if (!s.currentSessionId && !s.problemStatement.trim() && !s.problemImage && s.chatHistory.length === 0 && !hasDrawing) return null;
+    if (!s.currentSessionId && !draftId.current) draftId.current = uuidv4();
+    if (!createdAt.current) createdAt.current = Date.now();
     return {
       id: s.currentSessionId ?? draftId.current!,
       title: s.problemStatement.slice(0, 50) || 'Untitled',
@@ -84,7 +87,9 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
       if (key === savedKey.current) return true;
       setStatus('saving');
       try {
-        thumbnail.current = await canvasHandle.current?.captureThumbnail() ?? null;
+        // After the page unmounts there is no editor; keep the last thumbnail.
+        const handle = canvasHandle.current;
+        if (handle) thumbnail.current = await handle.captureThumbnail();
         await saveRecoverableSession({ ...session, canvasImageBlob: thumbnail.current });
         // The student may have moved to another session while this one was saving.
         const { currentSessionId } = latest.current;
@@ -137,6 +142,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
 
   /** Saves the current session, then opens a saved one. False when the current one couldn't be saved. */
   const openSession = useCallback(async (id: string): Promise<boolean> => {
+    switched.current = true;
     if (!await persist()) return false;
     const session = await loadRecoveredSession(id).catch(() => undefined);
     if (!session) return false;
@@ -146,6 +152,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
 
   /** Saves the current session (unless it was just deleted), then starts an empty one. */
   const startNew = useCallback(async (type: SessionType, opts?: { discardCurrent?: boolean }): Promise<boolean> => {
+    switched.current = true;
     if (!opts?.discardCurrent && !await persist()) return false;
     applyLoad(undefined, type);
     return true;
@@ -158,8 +165,8 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
     try { id = localStorage.getItem(CURRENT_SESSION_KEY); } catch { /* Start fresh. */ }
     if (!id) { loading.current = false; return; }
     loadRecoveredSession(id)
-      .then((session) => { if (active) applyLoad(session); })
-      .catch(() => { if (active) loading.current = false; });
+      .then((session) => { if (active && !switched.current) applyLoad(session); })
+      .catch(() => { if (active && !switched.current) loading.current = false; });
     return () => { active = false; };
   }, [applyLoad]);
 
@@ -179,13 +186,14 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
   }, [state.problemStatement, state.problemImage, state.chatHistory, state.isSolved, state.sessionType, canvasDocument, persist]);
 
   // A reload or closed tab can't wait for IndexedDB; keep a synchronous copy for the next load.
+  const flush = useCallback(() => {
+    const session = snapshot();
+    if (!session || contentKey(session) === savedKey.current) return;
+    try { stageSession(session); rememberCurrent(session.id); } catch { /* The save below may still finish. */ }
+    void persist();
+  }, [snapshot, persist]);
+
   useEffect(() => {
-    const flush = () => {
-      const session = snapshot();
-      if (!session || contentKey(session) === savedKey.current) return;
-      try { stageSession(session); rememberCurrent(session.id); } catch { /* The save below may still finish. */ }
-      void persist();
-    };
     const onVisibility = () => { if (document.visibilityState === 'hidden') flush(); };
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', onVisibility);
@@ -193,7 +201,11 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
       window.removeEventListener('pagehide', flush);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [snapshot, persist]);
+  }, [flush]);
+
+  // Leaving through a link (e.g. to the workbook) unmounts the page without a pagehide. A layout
+  // cleanup runs while the editor handle is still attached, so the last stroke is included.
+  useLayoutEffect(() => () => flush(), [flush]);
 
   return { status, saveNow: persist, openSession, startNew };
 }
