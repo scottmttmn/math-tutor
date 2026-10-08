@@ -6,6 +6,7 @@ import content from '@/content/complex-geometry.json';
 import { useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
 import { useSessionDispatch, useSessionState } from '@/context/SessionContext';
 import { useTutorChat } from '@/hooks/useTutorChat';
+import { getTutorWaitMs } from '@/hooks/useRateLimit';
 import { listSessions } from '@/lib/db';
 import { loadRecoveredSession, saveRecoverableSession, settleInterruptedReplies, stageSession } from '@/lib/sessionRecovery';
 import type { Session, WorkbookContext } from '@/types';
@@ -52,7 +53,7 @@ function WorkbookContent() {
     ? { kind: 'exercise', sectionId: content.id, exerciseId: exercise.id }
     : { kind: 'reading', sectionId: content.id, selectedPassage },
   [exercise, selectedPassage]);
-  const { sendHelp, sendFollowUp } = useTutorChat(workbookContext);
+  const { sendHelp, sendFollowUp, isLimited } = useTutorChat(workbookContext);
 
   const restore = useCallback((nextExerciseId: string | null, saved: Awaited<ReturnType<typeof loadRecoveredSession>>) => {
     const nextExercise = content.exercises.find((item) => item.id === nextExerciseId);
@@ -205,7 +206,7 @@ function WorkbookContent() {
   const sendQuestion = async (event: React.FormEvent) => {
     event.preventDefault();
     const question = draft.trim();
-    if (!question || isStreaming) return;
+    if (!question || isStreaming || isLimited) return;
     setDraft('');
     if (chatHistory.length === 0) await sendHelp('', question);
     else await sendFollowUp(question, await followUpImage());
@@ -220,7 +221,8 @@ function WorkbookContent() {
   };
 
   const reviewWhiteboard = async () => {
-    if (!exercise || isStreaming) return;
+    // Check the clock, not isLimited: the toolbar's own timer can re-enable the button first.
+    if (!exercise || isStreaming || getTutorWaitMs() > 0) return;
     sentRevision.current = canvasRef.current?.getRevision() ?? null;
     const image = await canvasRef.current?.captureImage() ?? '';
     await sendHelp(image, 'Please look at my current work and give me a hint about the next step.');
@@ -305,7 +307,7 @@ function WorkbookContent() {
           <aside className={`${exercise ? 'h-[320px]' : 'h-[38vh]'} lg:h-auto lg:w-[380px] lg:border-l border-t lg:border-t-0 border-gray-200 bg-white flex flex-col shrink-0`}>
             <div className="px-4 py-3 border-b border-gray-200">
               <h2 className="font-semibold text-gray-900">{exercise ? 'Problem tutor' : 'Reading tutor'}</h2>
-              <p className="text-xs text-gray-500">{exercise ? 'Ask about your approach or submit your whiteboard for a hint. The tutor will not give a complete solution.' : 'Ask about the text as you read. Reading questions have no wait.'}</p>
+              <p className="text-xs text-gray-500">{exercise ? 'Ask about your approach or submit your whiteboard for a hint. The tutor will not give a complete solution.' : 'Ask about the text or a selected passage as you read.'}</p>
             </div>
             <div ref={chatScrollRef} aria-live="polite" aria-busy={isStreaming} className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
               {chatHistory.length === 0 ? <p className="text-sm text-gray-400 text-center mt-6">{exercise ? 'Your conversation for this exercise starts here.' : 'What would you like to understand better?'}</p> : chatHistory.map((message) => <ChatMessage key={message.id} message={message} />)}
@@ -313,8 +315,9 @@ function WorkbookContent() {
             {selectedPassage && !exercise && <div className="mx-3 mb-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-800 flex gap-2"><span className="line-clamp-2 flex-1">Selected: {selectedPassage}</span><button onClick={() => setSelectedPassage('')} aria-label="Clear selected passage">×</button></div>}
             <form onSubmit={sendQuestion} className="p-3 border-t border-gray-200 flex gap-2">
               <input aria-label={exercise ? `Question about exercise ${exercise.number}` : 'Question about the reading'} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={isStreaming} placeholder={exercise ? 'Ask about this problem…' : 'Ask about the reading…'} className="flex-1 min-w-0 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              <button type="submit" disabled={!draft.trim() || isStreaming} className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-40">Ask</button>
+              <button type="submit" disabled={!draft.trim() || isStreaming || isLimited} title={isLimited ? 'Please wait a moment before asking again.' : undefined} className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-40">Ask</button>
             </form>
+            {isLimited && !isStreaming && <p className="px-3 pb-2 text-xs text-gray-500">Please wait a moment before asking again.</p>}
           </aside>
         </div>
       )}

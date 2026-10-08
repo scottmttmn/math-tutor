@@ -4,12 +4,13 @@
   "private": true,
   "scripts": {
     "postinstall": "node scripts/copy-tldraw-assets.mjs",
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "test:workbook": "node --test tests/workbook.test.mjs",
-    "test:workbook:e2e": "node tests/workbook.e2e.mjs"
+    "test:workbook": "node --test tests/workbook.test.mjs tests/tutorContent.test.mjs",
+    "test:workbook:e2e": "node tests/workbook.e2e.mjs",
+    "test:tutor:e2e": "node tests/tutorChat.e2e.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

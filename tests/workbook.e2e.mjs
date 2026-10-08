@@ -18,6 +18,13 @@ const provider = createServer(async (req, res) => {
   const reply = system.includes('accompanying a student') ? 'Reading explanation.'
     : system.includes('Give clear, direct explanations') ? 'Notes explanation.' : 'Exercise hint.';
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+  if (JSON.stringify(body.messages.at(-1)).includes('Long response safety check')) {
+    setTimeout(() => {
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: reply } }] })}\n\n`);
+      res.end('data: [DONE]\n\n');
+    }, 7000);
+    return;
+  }
   if (JSON.stringify(body.messages.at(-1)).includes('Hold this reply')) {
     res.write(': pending\n\n');
     setTimeout(() => res.end('data: [DONE]\n\n'), 1500);
@@ -53,9 +60,11 @@ const exerciseButton = (number) => page.getByRole('button', { name: new RegExp(`
 async function ask(question, reply) {
   const before = requests.length;
   await page.getByRole('textbox').fill(question);
+  const responseReady = page.waitForResponse((response) => response.url() === `${origin}/api/tutor`);
   await page.getByRole('button', { name: 'Ask', exact: true }).click();
-  // A follow-up may export the whiteboard first, so wait for the request itself.
-  while (requests.length === before) await new Promise((resolve) => setTimeout(resolve, 50));
+  const response = await responseReady;
+  assert.equal(response.status(), 200, await response.text());
+  await response.finished();
   await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
   await page.getByText(reply, { exact: true }).last().waitFor();
   assert.equal(requests.length, before + 1);
@@ -77,6 +86,10 @@ const imageOf = (request) => {
   const content = request.messages.at(-1).content;
   return Array.isArray(content) ? content.find((part) => part.type === 'image_url')?.image_url.url : undefined;
 };
+async function waitForTutorReady() {
+  await page.waitForFunction(() => [...document.querySelectorAll('button')].some((button) =>
+    /^(Ask for Help|Ask About This)$/.test(button.textContent) && !button.disabled));
+}
 try {
   await openBrowser(); await waitReading();
   await page.evaluate((config) => localStorage.setItem('mathTutor_modelConfig', JSON.stringify(config)), model);
@@ -102,6 +115,27 @@ try {
   const readingPosition = await page.locator('main > div').evaluate((reader) => reader.scrollTop);
   console.log('PASS selected passage and server-resolved reading/exercise context');
 
+  await page.getByRole('textbox').fill('Long response safety check');
+  const longResponseReady = page.waitForResponse((response) => response.url() === `${origin}/api/tutor`);
+  await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  await page.waitForFunction(() => !!document.querySelector('[aria-busy="true"]'));
+  await page.waitForTimeout(5500); // Exercise the active-request lock after the five-second interval expires.
+  const duringStream = await page.evaluate(async (modelConfig) => {
+    const response = await fetch('/api/tutor', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modelConfig, chatHistory: [], problemStatement: '', canvasImage: '', userQuestion: 'Concurrent request' }),
+    });
+    return { status: response.status, message: await response.text() };
+  }, model);
+  assert.equal(duringStream.status, 429);
+  assert.match(duringStream.message, /already answering/);
+  await (await longResponseReady).finished();
+  await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
+  await page.getByRole('textbox').fill('Follow up immediately after the long reply');
+  assert.ok(await page.getByRole('button', { name: 'Ask', exact: true }).isEnabled());
+  await ask('Follow up immediately after the long reply', 'Reading explanation.');
+  console.log('PASS active stream blocks concurrent calls after five seconds, then allows an immediate follow-up');
+
   await exerciseButton(1).click(); await waitExercise();
   request = await ask('Where should I start?', 'Exercise hint.');
   assert.match(JSON.stringify(request.messages), /Current exercise 1\./);
@@ -122,6 +156,7 @@ try {
   // Start below tldraw's undo/redo panel in the top-left corner.
   await page.mouse.move(box.x + 20, box.y + 60); await page.mouse.down();
   await page.mouse.move(box.x + 220, box.y + 200, { steps: 5 }); await page.mouse.up();
+  await waitForTutorReady();
   const beforeHelp = requests.length;
   await page.getByRole('button', { name: 'Ask for Help', exact: true }).click();
   // The whiteboard export is async, so wait for the request rather than the busy flag.
@@ -134,15 +169,29 @@ try {
   }, image);
   // One ~140x80 stroke at 2x with padding, not both strokes and not the whole board.
   assert.ok(width > 200 && width < 450 && height > 120 && height < 330, `unexpected image size ${width}x${height}`);
+  // The shared five-second limit: no countdown, and direct API bursts never reach the provider.
+  assert.ok(await page.getByRole('button', { name: 'Ask for Help', exact: true }).isDisabled());
+  assert.equal(await page.getByRole('button', { name: /^Wait / }).count(), 0);
+  const beforeBurst = requests.length;
+  const rejected = await page.evaluate(async (modelConfig) => {
+    const response = await fetch('/api/tutor', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modelConfig, chatHistory: [], problemStatement: '', canvasImage: '', userQuestion: 'Rapid follow-up' }),
+    });
+    return { status: response.status, retryAfter: response.headers.get('Retry-After') };
+  }, model);
+  assert.equal(rejected.status, 429);
+  assert.ok(Number(rejected.retryAfter) > 0);
+  assert.equal(requests.length, beforeBurst);
   request = await ask('Does this approach make sense?', 'Exercise hint.');
   assert.equal(imageOf(request), undefined);
   await draw(120);
   request = await ask('What about now?', 'Exercise hint.');
   assert.ok(imageOf(request)?.startsWith('data:image/png;base64,'));
-  console.log('PASS selected shapes reach the provider trimmed; follow-ups attach the board only after it changes');
+  console.log('PASS selected shapes reach the provider trimmed; follow-ups attach the board only after it changes; five-second limit rejects bursts');
 
   await page.getByRole('button', { name: 'Back to reading' }).click(); await waitReading();
-  assert.ok(await page.getByText('Reading explanation.', { exact: true }).isVisible());
+  assert.ok(await page.getByText('Reading explanation.', { exact: true }).last().isVisible());
   assert.equal(await page.locator('main > div').evaluate((reader) => reader.scrollTop), readingPosition);
   assert.match(await exerciseButton(1).innerText(), /Complete/);
   await exerciseButton(2).click(); await waitExercise();
@@ -163,9 +212,9 @@ try {
   assert.ok(await page.getByRole('button', { name: 'Clear', exact: true }).isEnabled());
   await page.getByRole('button', { name: 'Back to reading' }).click(); await waitReading();
   assert.doesNotMatch(await exerciseButton(1).innerText(), /Complete/);
-  assert.ok(await page.getByText('Reading explanation.', { exact: true }).isVisible());
+  assert.ok(await page.getByText('Reading explanation.', { exact: true }).last().isVisible());
   await ask('Explain the modulus definition again.', 'Reading explanation.');
-  console.log('PASS browser close/reopen, completion reversal,, and reading questions');
+  console.log('PASS browser close/reopen, completion reversal, and reading follow-ups after the short request interval');
 
   await exerciseButton(4).click(); await waitExercise();
   await page.getByRole('link', { name: '(1.3.4)', exact: true }).click(); await waitReading();
@@ -176,10 +225,12 @@ try {
   console.log('PASS exercise identity links return to their reading passage');
 
   await exerciseButton(8).click(); await waitExercise();
-  // Stream errors are visible.
+  // Stream errors are visible and still consume the short request interval.
+  await waitForTutorReady();
   await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: 'data: {"type":"error","error":"Simulated provider failure"}\n\n' }), { times: 1 });
   await page.getByRole('button', { name: 'Ask for Help', exact: true }).click();
   await page.getByText('Error: Simulated provider failure', { exact: true }).waitFor();
+  assert.ok(await page.evaluate(() => Number(localStorage.getItem('lastHelpTimestamp')) > 0));
   await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: 'data: {"type":"text_delta","content":"Partial reply"}\n\n' }), { times: 1 });
   await page.getByRole('textbox').fill('Follow up after the error.'); await page.getByRole('button', { name: 'Ask', exact: true }).click();
   await page.getByText(/The tutor response was interrupted/).waitFor();
@@ -195,7 +246,7 @@ try {
   await page.getByPlaceholder("Type the math problem you're working on...").waitFor();
   await page.getByPlaceholder("Type the math problem you're working on...").fill('Find a strategy for a quadratic.');
   await draw();
-  await page.getByRole('button', { name: 'Ask for Help', exact: true }).click();
+  await waitForTutorReady(); await page.getByRole('button', { name: 'Ask for Help', exact: true }).click();
   await page.getByText('Exercise hint.', { exact: true }).waitFor();
   assert.match(requests.at(-1).messages[0].content, /NEVER give the full solution/);
   // Free-form sessions save themselves and come back after a reload.
@@ -208,7 +259,7 @@ try {
   await page.getByRole('button', { name: 'New', exact: true }).click();
   await page.getByRole('button', { name: /New Notes/ }).click();
   await page.getByPlaceholder("Topic or concept you're studying...").fill('Complex modulus');
-  await page.getByRole('button', { name: 'Ask About This', exact: true }).click();
+  await waitForTutorReady(); await page.getByRole('button', { name: 'Ask About This', exact: true }).click();
   await page.getByText('Notes explanation.', { exact: true }).waitFor();
   assert.match(requests.at(-1).messages[0].content, /Give clear, direct explanations/);
   assert.doesNotMatch(JSON.stringify(requests.at(-1).messages), /Current exercise/);

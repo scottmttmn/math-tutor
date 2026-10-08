@@ -37,6 +37,7 @@ export interface ChatMessage {
   imagePreview?: string;
   pending?: boolean;
   usage?: TokenUsage;
+  model?: string;
 }
 
 // === Session Types ===
@@ -126,7 +127,8 @@ export type WorkbookContext =
     };
 
 export interface TutorStreamEvent {
-  type: 'text_delta' | 'usage' | 'message_stop' | 'error';
+  type: 'text_delta' | 'usage' | 'message_stop' | 'error' | 'model';
+  model?: string;
   content?: string;
   usage?: TokenUsage;
   error?: string;

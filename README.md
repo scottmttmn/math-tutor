@@ -11,13 +11,21 @@ npm run dev
 
 Open the address printed by Next.js. The home screen has a **Workbook** link; the workbook is also at `/workbook`. Tutor responses require the API key for the provider selected in the app settings.
 
+Put the selected provider's key in `.env.local` and restart the server: `ANTHROPIC_API_KEY` for Anthropic, `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) for Google Gemini, and `OPENAI_API_KEY` for other OpenAI-compatible services. The Gemini preset uses `gemini-3.8-flash`; switching to it does not reuse an OpenAI key.
+
 Run `npm run build` to verify a production build.
+
+Gemini quota failures automatically fall back from 3.8 Flash through 3.7, 3.6, 3.5 Flash, 3.5 Flash-Lite, and 3.1 Flash-Lite. Each model is tried at most once per question; daily quota failures are skipped until midnight Pacific, other quota failures for one minute (held in server memory). Replies identify the fallback model. Authentication errors and failures after text begins do not retry. The same tutor context, images, and five-second request safeguard apply throughout. Google's project-wide quotas can still limit all models; see your project's limits in AI Studio.
+
+All tutor chat views render inline and display LaTeX with KaTeX (`\(…\)`, `\[…\]`, `$…$`, and `$$…$$`). Incomplete or invalid expressions remain visible as text while streaming; code spans stay literal.
 
 ## Complex Analysis workbook pilot
 
-The pilot adapts [Howell and Mathews, *Complex Analysis*, §1.3](https://complexanalysis.org/web/sec_geometry-1.html), which is published under [CC BY 4.0](https://complexanalysis.org/). It includes the in-app reading, all 25 section exercises, and a small recommended path. The reader can ask questions without the five-minute wait. Each exercise has a separate whiteboard and tutor conversation. Submitting new whiteboard work keeps the existing wait. The tutor is instructed to give hints and explanations without complete exercise solutions; the source solutions are excluded from the imported content.
+The pilot adapts [Howell and Mathews, *Complex Analysis*, §1.3](https://complexanalysis.org/web/sec_geometry-1.html), which is published under [CC BY 4.0](https://complexanalysis.org/). It includes the in-app reading, all 25 section exercises, and a small recommended path. Each exercise has a separate whiteboard and tutor conversation. All tutor requests share a five-second safety interval, with one request at a time and no visible countdown. The tutor is instructed to give hints and explanations without complete exercise solutions; the source solutions are excluded from the imported content.
 
 Progress is saved in the browser's IndexedDB. The current exercise and reading position are saved in local storage. See [the pilot plan](docs/complex-analysis-workbook-pilot.md) for scope and behavior.
+
+See [the pen-first workbook direction](docs/pen-first-math-workbook-plan.md) for the intended writing-tablet experience, passage-linked notes, tutor interactions without a permanent chat pane, and proposed next steps.
 
 To refresh the adapted section from its source:
 

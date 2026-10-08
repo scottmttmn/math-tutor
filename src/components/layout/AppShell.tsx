@@ -4,6 +4,7 @@ import { useRef, useState, useCallback, useEffect, useSyncExternalStore } from '
 import { CanvasProvider } from '@/context/CanvasContext';
 import { SessionProvider, useSessionState, useSessionDispatch } from '@/context/SessionContext';
 import { useTutorChat } from '@/hooks/useTutorChat';
+import { getTutorWaitMs } from '@/hooks/useRateLimit';
 import { useSessionAutosave } from '@/hooks/useSessionAutosave';
 
 import { getModelLabel, subscribeModelConfig } from '@/lib/modelConfig';
@@ -40,6 +41,7 @@ function AppContent() {
   }, [currentSessionId, sessionType, startNew]);
 
   const handleAskForHelp = useCallback(async () => {
+    if (getTutorWaitMs() > 0) return;
     // Read the editor directly: the context mirror lags a just-finished stroke.
     const handle = canvasHandle.current;
     sentRevision.current = handle?.getRevision() ?? null;

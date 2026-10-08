@@ -4,17 +4,20 @@ import { useCallback, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useSessionState, useSessionDispatch } from '@/context/SessionContext';
 import { getModelConfig } from '@/lib/modelConfig';
+import { recordTutorUsage, tryStartTutorRequest, useRateLimit } from '@/hooks/useRateLimit';
+import { RATE_LIMIT_MS } from '@/lib/constants';
 import type { ChatMessage, TutorStreamEvent, WorkbookContext } from '@/types';
 
 export function useTutorChat(workbookContext?: WorkbookContext) {
   const { problemStatement, problemImage, chatHistory, isStreaming, sessionType } = useSessionState();
   const dispatch = useSessionDispatch();
+  const { isLimited } = useRateLimit(RATE_LIMIT_MS);
   const pendingRequest = useRef<AbortController | null>(null);
 
   useEffect(() => () => { pendingRequest.current?.abort(); }, []);
 
   const sendHelp = useCallback(async (canvasImage: string, question?: string): Promise<boolean> => {
-    if (isStreaming || pendingRequest.current) return false;
+    if (isStreaming || pendingRequest.current || !tryStartTutorRequest()) return false;
     const abort = new AbortController();
     pendingRequest.current = abort;
     const userContent = question || 'I need help with this part of my work.';
@@ -39,7 +42,10 @@ export function useTutorChat(workbookContext?: WorkbookContext) {
           problemImage: problemImage ?? undefined, sessionType, workbookContext,
         }),
       });
-      if (!response.ok) throw new Error(await response.text() || response.statusText);
+      if (!response.ok) {
+        if (response.status === 429) recordTutorUsage();
+        throw new Error(await response.text() || response.statusText);
+      }
       const reader = response.body?.getReader();
       if (!reader) throw new Error('No response stream');
       const decoder = new TextDecoder();
@@ -51,6 +57,7 @@ export function useTutorChat(workbookContext?: WorkbookContext) {
         if (!data) return;
         const event: TutorStreamEvent = JSON.parse(data);
         if (event.type === 'text_delta' && event.content) append(event.content);
+        else if (event.type === 'model' && event.model && !abort.signal.aborted) dispatch({ type: 'SET_LAST_MESSAGE_MODEL', model: event.model });
         else if (event.type === 'usage' && event.usage) {
           if (!abort.signal.aborted) dispatch({ type: 'SET_LAST_MESSAGE_USAGE', usage: event.usage });
         }
@@ -87,5 +94,5 @@ export function useTutorChat(workbookContext?: WorkbookContext) {
     return sendHelp(canvasImage, text.trim());
   }, [sendHelp]);
 
-  return { sendHelp, sendFollowUp, isStreaming };
+  return { sendHelp, sendFollowUp, isStreaming, isLimited };
 }

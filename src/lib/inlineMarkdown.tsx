@@ -26,12 +26,17 @@ function buildPattern(): RegExp {
   );
 }
 
-export function renderInlineMarkdown(text: string, depth = 0): ReactNode[] {
+// Plain-text runs go through `expand`, so callers can swap in nodes (such as typeset math) that
+// emphasis is allowed to wrap.
+type Expand = (text: string) => ReactNode[];
+const plain: Expand = (text) => [text];
+
+export function renderInlineMarkdown(text: string, depth = 0, expand: Expand = plain): ReactNode[] {
   const nodes: ReactNode[] = [];
   if (!text) return nodes;
 
   if (depth >= MAX_DEPTH) {
-    nodes.push(text);
+    nodes.push(...expand(text));
     return nodes;
   }
 
@@ -44,7 +49,7 @@ export function renderInlineMarkdown(text: string, depth = 0): ReactNode[] {
     const [, code, bold, starItalic, underscoreItalic] = match;
 
     if (match.index > lastIndex) {
-      nodes.push(text.slice(lastIndex, match.index));
+      nodes.push(...expand(text.slice(lastIndex, match.index)));
     }
 
     if (code !== undefined) {
@@ -59,14 +64,14 @@ export function renderInlineMarkdown(text: string, depth = 0): ReactNode[] {
     } else if (bold !== undefined) {
       nodes.push(
         <strong key={key++} className="font-semibold">
-          {renderInlineMarkdown(bold, depth + 1)}
+          {renderInlineMarkdown(bold, depth + 1, expand)}
         </strong>
       );
     } else {
       const italic = starItalic ?? underscoreItalic;
       nodes.push(
         <em key={key++} className="italic">
-          {renderInlineMarkdown(italic, depth + 1)}
+          {renderInlineMarkdown(italic, depth + 1, expand)}
         </em>
       );
     }
@@ -75,7 +80,7 @@ export function renderInlineMarkdown(text: string, depth = 0): ReactNode[] {
   }
 
   if (lastIndex < text.length) {
-    nodes.push(text.slice(lastIndex));
+    nodes.push(...expand(text.slice(lastIndex)));
   }
 
   return nodes;

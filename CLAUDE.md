@@ -65,7 +65,10 @@ src/
 │   ├── modelConfig.ts         # localStorage get/set for ModelConfig
 │   ├── chatgpt.ts             # Server-only Sign in with ChatGPT client + OS-keychain token encryption
 │   ├── siwc/                  # Vendored OpenAI Sign in with ChatGPT SDK (noncommercial license, see below)
-│   ├── constants.ts           # App-wide constants (ChatGPT usage URL, default plan model)
+│   ├── constants.ts           # App-wide constants (ChatGPT usage URL, default plan model, RATE_LIMIT_MS)
+│   ├── tutorRequestGate.ts    # Server-side five-second / one-at-a-time tutor request gate
+│   ├── geminiFallback.ts      # Gemini Flash quota fallback chain
+│   ├── tutorContent.ts        # Splits tutor replies into text and LaTeX for KaTeX rendering
 │   └── legacyStrokes.ts       # Converts pre-tldraw saved strokes into tldraw draw shapes
 └── types/
     ├── index.ts               # All shared TypeScript types
@@ -116,7 +119,7 @@ src/
 - Images are passed as base64 PNG. When `problemImage` is present it is sent **first** and described to the model as the problem figure; the canvas image follows as the student's work.
 - The API cleans message history to ensure valid alternating user/assistant turns before sending to the model (Anthropic path only).
 - Request body shape: `{ problemStatement, chatHistory, canvasImage, modelConfig, userQuestion?, problemImage?, sessionType? }` (see `TutorRequest` in `src/types/index.ts`).
-- The OpenAI path falls back to the API key string `'ollama'` when `OPENAI_API_KEY` is unset, so local Ollama works with no key.
+- Google Gemini uses `GOOGLE_API_KEY` or `GEMINI_API_KEY` at its OpenAI-compatible endpoint. Other OpenAI-compatible providers use `OPENAI_API_KEY` and fall back to `'ollama'` when it is unset, so local Ollama works with no key.
 - A third path, `provider: 'chatgpt'`, uses Sign in with ChatGPT: the Responses API with the student's OAuth token, billed to their ChatGPT plan instead of an API key. Images go as `input_image` parts.
 
 ### Sign in with ChatGPT
@@ -159,7 +162,8 @@ npm run dev   # http://localhost:3000
 | Variable | Required | Description |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | For Anthropic/Claude | Anthropic API key |
-| `OPENAI_API_KEY` | For OpenAI-compat | OpenAI / Google / Groq key (not needed for Ollama) |
+| `GEMINI_API_KEY` or `GOOGLE_API_KEY` | For Gemini | Gemini API key |
+| `OPENAI_API_KEY` | For other OpenAI-compat providers | OpenAI / Groq key (not needed for Ollama) |
 | `CHATGPT_REDIRECT_PORT` | No | Loopback port for the Sign in with ChatGPT callback (default `8791`) |
 | `NEXT_PUBLIC_OLLAMA_BASE_URL` | No | Overrides the default Ollama preset URL (`http://localhost:11434/v1`) — useful when Ollama runs on another machine |
 
@@ -167,7 +171,7 @@ The app shows user-friendly error messages for missing/invalid keys.
 
 ### Scripts
 ```bash
-npm run dev    # Development server (port 3000)
+npm run dev    # Development server (port 3000; webpack, like build — Turbopack + turbopack.root on Next 16.1.6 resolves Tailwind one folder up)
 npm run build  # Production build
 npm run start  # Production server
 npm run lint   # ESLint
@@ -207,7 +211,9 @@ Registered once in `AppShell` (handlers read latest values through refs):
 Undo, redo, delete and tool keys are tldraw's own. Shortcuts are ignored while focus is in an `input`, `textarea`, or contenteditable element.
 
 ### Rate Limiting
-- There is no app-side cooldown between help requests (the old 5-minute `useRateLimit` was removed on request). Spending is bounded by the provider: API-key billing, or the ChatGPT plan's own limits and per-app weekly cap.
+- All tutor requests share a **five-second** minimum interval (`RATE_LIMIT_MS`, measured from request start) with no visible countdown, and only one request runs at a time. The old 5-minute cooldown is gone; Scott chose to keep the 5-second one.
+- The server enforces it in `src/lib/tutorRequestGate.ts` (429 with `Retry-After`); every provider path must call the gate's `release` when its stream ends. The browser mirrors it in `useRateLimit` (`tryStartTutorRequest`, `getTutorWaitMs`). Click handlers check `getTutorWaitMs()` rather than a component's `isLimited`, which can lag by one timer tick.
+- Spending is otherwise bounded by the provider: API-key billing, or the ChatGPT plan's own limits and per-app weekly cap.
 
 ---
 
@@ -217,17 +223,17 @@ Configured via `SettingsModal` and stored in `localStorage`. Provider presets ar
 
 | Provider | SDK Used | Default Model | Base URL |
 |---|---|---|---|
-| Anthropic (Claude) | `@anthropic-ai/sdk` | `claude-sonnet-4-5-20250929` | Default (api.anthropic.com) |
+| Anthropic (Claude) | `@anthropic-ai/sdk` | `claude-sonnet-5-5` | Default (api.anthropic.com) |
 | ChatGPT plan | vendored `src/lib/siwc` | First listed model matching `CHATGPT_DEFAULT_MODEL_PATTERN` (Luna), else the first listed | `https://api.openai.com/v1/responses` (fixed) |
 | OpenAI | `openai` (compat) | `gpt-4o` | `https://api.openai.com/v1` |
-| Google Gemini | `openai` (compat) | `gemini-3-flash` | `https://generativelanguage.googleapis.com/v1beta/openai/` |
+| Google Gemini | `openai` (compat) | `gemini-3.8-flash` | `https://generativelanguage.googleapis.com/v1beta/openai/` |
 | Groq | `openai` (compat) | `llama-3.3-70b-versatile` | `https://api.groq.com/openai/v1` |
 | Ollama | `openai` (compat) | `llama3.2-vision` | `NEXT_PUBLIC_OLLAMA_BASE_URL` ?? `http://localhost:11434/v1` |
 | Custom | `openai` (compat) | User-specified | User-specified |
 
 The Base URL field is editable for **every** OpenAI-compatible provider (not just Custom), so a remote Ollama or a proxy can be pointed at without picking Custom.
 
-Default model config (when nothing is saved in localStorage): `anthropic` / `claude-sonnet-4-5-20250929`.
+Default model config (when nothing is saved in localStorage): `anthropic` / `claude-sonnet-5-5`.
 
 ---
 
