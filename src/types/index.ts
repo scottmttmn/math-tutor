@@ -59,6 +59,9 @@ export interface Session {
   sessionType?: SessionType;
 }
 
+/** Main-page autosave: nothing to save yet, writing, written, or the last write failed. */
+export type AutosaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
 export interface SessionMetadata {
   id: string;
   title: string;

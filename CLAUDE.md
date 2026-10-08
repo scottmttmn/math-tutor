@@ -36,7 +36,7 @@ src/
 ├── components/
 │   ├── layout/
 │   │   ├── AppShell.tsx       # Top-level app container; wires contexts + UI
-│   │   ├── TopBar.tsx         # Header bar (New dropdown, Save, Load, Settings, Chat toggle)
+│   │   ├── TopBar.tsx         # Header bar (New dropdown, save status, Load, Settings, Chat toggle)
 │   │   ├── BottomToolbar.tsx  # Clear, Mark Solved, Ask for Help (drawing tools are tldraw's own)
 │   │   ├── SettingsModal.tsx  # Model/provider configuration (defines PRESETS array)
 │   │   └── HelpQuestionModal.tsx  # Custom question input with voice
@@ -58,6 +58,7 @@ src/
 ├── hooks/
 │   ├── useSpeechRecognition.ts# Web Speech API wrapper with error recovery
 │   ├── useTutorChat.ts        # Sends requests to /api/tutor, handles SSE stream
+│   ├── useSessionAutosave.ts  # Main-page autosave, reload restore, New/Load switching
 │   └── useChatGPTConnection.ts# Sign in with ChatGPT state for SettingsModal
 ├── lib/
 │   ├── db.ts                  # IndexedDB CRUD for sessions via `idb`
@@ -185,14 +186,15 @@ ESLint uses the Next.js core web vitals config. Run `npm run lint` before commit
 3. On submit: `AppShell.handleAskForHelp()` calls `canvasHandle.current.captureImage()` → base64 PNG of the selected shapes, or of the whole drawing trimmed to its bounds.
 4. `useTutorChat.sendHelp(canvasImage, question)` POSTs to `/api/tutor` with the request body above, including `sessionType`.
 5. API selects the system prompt from `sessionType` and streams an SSE response; client appends `text_delta` events to chat in real time via `APPEND_TO_LAST_MESSAGE` dispatch.
-6. Session is **not auto-saved**; user must click **Save** manually.
+6. The session **autosaves** (see below); there is no Save button.
 
 ### Follow-up Chat
 - `useTutorChat.sendFollowUp(text, canvasImage?)` uses the same `/api/tutor` endpoint. `AppShell` (via `ChatPanel` → `ChatInput`) and `Workbook` attach a fresh `captureImage()` only when the handle's `getRevision()` changed since the tutor last saw the board; otherwise the follow-up is text-only. Don't use the debounced `CanvasContext.document` for this: it misses a stroke finished just before sending.
 
 ### Session Save/Load
-- **Save:** `handleSave` in `AppShell` calls `db.saveSession()` with the tldraw document (`canvasDocument`), a thumbnail, chat and `sessionType`. New saves write `canvasStrokes: []`.
-- **Load:** `handleLoad` calls `db.loadSession()`, dispatches to both contexts to restore state.
+- **Autosave:** `useSessionAutosave` saves 800ms after the last change (problem, image, chat, solved, type, drawing), reading the live document from the handle. It skips an untouched new session and a session that was only opened (it compares content, not timestamps), keeps `createdAt`, and serializes saves. The top bar shows Saving…/Saved, or a Retry button after a failure. New saves write `canvasStrokes: []`.
+- **Reload:** the open session's id is kept in `localStorage` (`math-tutor:currentSession`) and reopened on load. On `pagehide`/hidden it stages a synchronous recovery copy via `src/lib/sessionRecovery.ts` (shared with the workbook); a session reopened from that copy is written back to IndexedDB.
+- **Load / New:** `openSession` / `startNew` save the current session first, then load. Deleting the open session starts a new one without saving it again.
 - **New:** the **New** button in `TopBar` is a dropdown — *New Problem* or *New Notes* — which passes a `SessionType` to `AppShell.handleNew()`.
 
 ### Keyboard Shortcuts
@@ -200,7 +202,7 @@ Registered once in `AppShell` (handlers read latest values through refs):
 
 | Shortcut | Action |
 |---|---|
-| `Cmd/Ctrl+S` | Save session |
+| `Cmd/Ctrl+S` | Save now (sessions also autosave) |
 
 Undo, redo, delete and tool keys are tldraw's own. Shortcuts are ignored while focus is in an `input`, `textarea`, or contenteditable element.
 
@@ -242,7 +244,7 @@ Default model config (when nothing is saved in localStorage): `anthropic` / `cla
 1. Update `Session` and `SessionMetadata` types in `src/types/index.ts`.
 2. Update the `MathTutorDB` schema and read/write logic in `db.ts`.
 3. Update `LOAD_SESSION` / `NEW_SESSION` actions in `SessionContext.tsx`.
-4. Pass it through `handleSave` / `handleLoad` in `AppShell.tsx`.
+4. Pass it through `snapshot` / `applyLoad` in `src/hooks/useSessionAutosave.ts` (and add it to `contentKey` if editing it should trigger a save).
 5. Make it optional (`field?:`) so previously saved sessions still load.
 
 ---

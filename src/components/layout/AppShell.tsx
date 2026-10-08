@@ -1,11 +1,10 @@
 'use client';
 
 import { useRef, useState, useCallback, useEffect, useSyncExternalStore } from 'react';
-import { v4 as uuidv4 } from 'uuid';
-import { CanvasProvider, useCanvasState, useCanvasDispatch } from '@/context/CanvasContext';
+import { CanvasProvider } from '@/context/CanvasContext';
 import { SessionProvider, useSessionState, useSessionDispatch } from '@/context/SessionContext';
 import { useTutorChat } from '@/hooks/useTutorChat';
-import { saveSession as dbSaveSession, loadSession as dbLoadSession } from '@/lib/db';
+import { useSessionAutosave } from '@/hooks/useSessionAutosave';
 
 import { getModelLabel, subscribeModelConfig } from '@/lib/modelConfig';
 
@@ -28,56 +27,17 @@ function AppContent() {
   const modelLabel = useSyncExternalStore(subscribeModelConfig, getModelLabel, () => '');
   const [chatOpen, setChatOpen] = useState(false);
 
-  const { document: canvasDocument, pendingLoad } = useCanvasState();
-  const canvasDispatch = useCanvasDispatch();
-  const { currentSessionId, problemStatement, problemImage, chatHistory, isStreaming, isSolved, sessionType } = useSessionState();
+  const { currentSessionId, isStreaming, isSolved, sessionType } = useSessionState();
   const sessionDispatch = useSessionDispatch();
   const { sendHelp } = useTutorChat();
+  const { status: saveStatus, saveNow, openSession, startNew } = useSessionAutosave(canvasHandle);
 
-  const handleNew = useCallback((type: SessionType = 'problem') => {
-    canvasDispatch({ type: 'LOAD' });
-    sessionDispatch({ type: 'NEW_SESSION', sessionType: type });
-  }, [canvasDispatch, sessionDispatch]);
-
-  const handleSave = useCallback(async (opts?: { isSolvedOverride?: boolean }) => {
-    const id = currentSessionId || uuidv4();
-    const blob = await canvasHandle.current?.captureThumbnail() ?? null;
-    const document = canvasHandle.current?.getDocument() ?? canvasDocument;
-
-    await dbSaveSession({
-      id,
-      title: problemStatement.slice(0, 50) || 'Untitled',
-      problemStatement,
-      problemImage: problemImage ?? null,
-      // Strokes from a pre-tldraw save stay until the editor has converted them.
-      canvasStrokes: document ? [] : pendingLoad?.strokes ?? [],
-      canvasDocument: document,
-      canvasImageBlob: blob,
-      chatHistory,
-      isSolved: opts?.isSolvedOverride !== undefined ? opts.isSolvedOverride : isSolved,
-      sessionType,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-
-    sessionDispatch({ type: 'SET_CURRENT_SESSION_ID', id });
-  }, [currentSessionId, problemStatement, problemImage, canvasDocument, pendingLoad, chatHistory, isSolved, sessionType, sessionDispatch]);
-
-  const handleLoad = useCallback(async (id: string) => {
-    const session = await dbLoadSession(id);
-    if (!session) return;
-
-    sessionDispatch({
-      type: 'LOAD_SESSION',
-      sessionId: session.id,
-      problemStatement: session.problemStatement,
-      problemImage: session.problemImage ?? null,
-      chatHistory: session.chatHistory,
-      isSolved: session.isSolved,
-      sessionType: session.sessionType,
-    });
-    canvasDispatch({ type: 'LOAD', document: session.canvasDocument, strokes: session.canvasStrokes });
-  }, [sessionDispatch, canvasDispatch]);
+  const handleNew = useCallback((type: SessionType = 'problem') => { void startNew(type); }, [startNew]);
+  const handleLoad = useCallback((id: string) => { void openSession(id); }, [openSession]);
+  // A deleted session must not be saved again by the next autosave.
+  const handleDeleted = useCallback((id: string) => {
+    if (id === currentSessionId) void startNew(sessionType, { discardCurrent: true });
+  }, [currentSessionId, sessionType, startNew]);
 
   const handleAskForHelp = useCallback(async () => {
     // Read the editor directly: the context mirror lags a just-finished stroke.
@@ -100,15 +60,9 @@ function AppContent() {
     if (image) sessionDispatch({ type: 'SET_PROBLEM_IMAGE', image });
   }, [sessionDispatch]);
 
-  const handleToggleSolved = useCallback(async () => {
-    const newSolved = !isSolved;
-    sessionDispatch({ type: 'TOGGLE_SOLVED' });
-    await handleSave({ isSolvedOverride: newSolved });
-  }, [isSolved, sessionDispatch, handleSave]);
-
   // Stable refs so the keyboard listener never needs to be re-registered
-  const handleSaveRef = useRef(handleSave);
-  useEffect(() => { handleSaveRef.current = handleSave; }, [handleSave]);
+  const saveNowRef = useRef(saveNow);
+  useEffect(() => { saveNowRef.current = saveNow; }, [saveNow]);
 
   // Keyboard shortcuts — registered once; refs always have the latest values
   useEffect(() => {
@@ -122,7 +76,7 @@ function AppContent() {
       // Undo, redo and delete are tldraw's own shortcuts.
       if (mod && key === 's') {
         e.preventDefault();
-        handleSaveRef.current();
+        void saveNowRef.current();
       }
     };
     window.addEventListener('keydown', handler);
@@ -133,8 +87,10 @@ function AppContent() {
     <div className="h-screen flex flex-col bg-gray-50">
       <TopBar
         onNew={handleNew}
-        onSave={handleSave}
-        onOpenSessions={() => setSessionsOpen(true)}
+        saveStatus={saveStatus}
+        onSave={() => void saveNow()}
+        // Save first so the list includes the latest changes.
+        onOpenSessions={() => { void saveNow().then(() => setSessionsOpen(true)); }}
         onOpenSettings={() => setSettingsOpen(true)}
         modelLabel={modelLabel}
         chatOpen={chatOpen}
@@ -155,7 +111,7 @@ function AppContent() {
             onClear={() => canvasHandle.current?.clear()}
             isStreaming={isStreaming}
             isSolved={isSolved}
-            onToggleSolved={handleToggleSolved}
+            onToggleSolved={() => sessionDispatch({ type: 'TOGGLE_SOLVED' })}
             sessionType={sessionType}
           />
         </div>
@@ -172,6 +128,7 @@ function AppContent() {
         isOpen={sessionsOpen}
         onClose={() => setSessionsOpen(false)}
         onLoad={handleLoad}
+        onDeleted={handleDeleted}
       />
 
       <SettingsModal

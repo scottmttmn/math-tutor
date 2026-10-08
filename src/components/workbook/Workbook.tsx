@@ -7,7 +7,7 @@ import { useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
 import { useSessionDispatch, useSessionState } from '@/context/SessionContext';
 import { useTutorChat } from '@/hooks/useTutorChat';
 import { listSessions } from '@/lib/db';
-import { loadWorkbookSession, saveWorkbookSession, stageWorkbookSession } from '@/lib/workbookStorage';
+import { loadRecoveredSession, saveRecoverableSession, settleInterruptedReplies, stageSession } from '@/lib/sessionRecovery';
 import type { Session, WorkbookContext } from '@/types';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
@@ -54,7 +54,7 @@ function WorkbookContent() {
   [exercise, selectedPassage]);
   const { sendHelp, sendFollowUp } = useTutorChat(workbookContext);
 
-  const restore = useCallback((nextExerciseId: string | null, saved: Awaited<ReturnType<typeof loadWorkbookSession>>) => {
+  const restore = useCallback((nextExerciseId: string | null, saved: Awaited<ReturnType<typeof loadRecoveredSession>>) => {
     const nextExercise = content.exercises.find((item) => item.id === nextExerciseId);
     const id = nextExerciseId ? exerciseKey(nextExerciseId) : READING_ID;
     sessionDispatch({
@@ -62,9 +62,7 @@ function WorkbookContent() {
       sessionId: id,
       problemStatement: nextExercise?.text ?? content.title,
       problemImage: null,
-      chatHistory: (saved?.chatHistory ?? []).map((message) => message.role === 'assistant' && (message.pending || !message.content.trim())
-        ? { ...message, pending: false, content: `${message.content}\n\nThe tutor response was interrupted. Ask again to continue.` }
-        : message),
+      chatHistory: settleInterruptedReplies(saved?.chatHistory ?? []),
       isSolved: saved?.isSolved ?? false,
       sessionType: nextExerciseId ? 'problem' : 'note',
     });
@@ -83,7 +81,7 @@ function WorkbookContent() {
         const initialExerciseId = content.exercises.some((item) => item.id === lastExerciseId) ? lastExerciseId : null;
         readingScrollTop.current = Number(localStorage.getItem(READING_SCROLL_KEY)) || 0;
         const [saved, sessions] = await Promise.all([
-          loadWorkbookSession(initialExerciseId ? exerciseKey(initialExerciseId) : READING_ID), listSessions(),
+          loadRecoveredSession(initialExerciseId ? exerciseKey(initialExerciseId) : READING_ID), listSessions(),
         ]);
         if (!active) return;
         const completed = sessions.filter((item) => item.isSolved && item.id.startsWith(`workbook:${content.id}:exercise:`)).map((item) => item.id.split(':').at(-1) ?? '');
@@ -121,7 +119,7 @@ function WorkbookContent() {
   const persistCurrent = useCallback(async (): Promise<boolean> => {
     if (!currentSnapshot) return true;
     try {
-      await saveWorkbookSession(withLiveDrawing(currentSnapshot));
+      await saveRecoverableSession(withLiveDrawing(currentSnapshot));
       setSaveError('');
       return true;
     } catch {
@@ -133,7 +131,7 @@ function WorkbookContent() {
   useLayoutEffect(() => {
     if (!currentSnapshot) return;
     latestSnapshot.current = currentSnapshot;
-    try { stageWorkbookSession(currentSnapshot); }
+    try { stageSession(currentSnapshot); }
     catch { /* The IndexedDB save below reports any durable storage failure. */ }
   }, [currentSnapshot]);
 
@@ -145,7 +143,7 @@ function WorkbookContent() {
 
   useEffect(() => {
     const flush = () => {
-      if (latestSnapshot.current) void saveWorkbookSession(withLiveDrawing(latestSnapshot.current)).catch(() => {
+      if (latestSnapshot.current) void saveRecoverableSession(withLiveDrawing(latestSnapshot.current)).catch(() => {
         setSaveError('Progress could not be saved. Please try again before leaving.');
       });
     };
@@ -192,7 +190,7 @@ function WorkbookContent() {
     const savedCurrent = await persistCurrent();
     if (!savedCurrent) { switching.current = false; setReady(true); return; }
     try {
-      const saved = await loadWorkbookSession(nextExerciseId ? exerciseKey(nextExerciseId) : READING_ID);
+      const saved = await loadRecoveredSession(nextExerciseId ? exerciseKey(nextExerciseId) : READING_ID);
       readingTargetRef.current = readingAnchor ?? null;
       if (nextExerciseId) localStorage.setItem(ACTIVE_EXERCISE_KEY, nextExerciseId);
       else localStorage.removeItem(ACTIVE_EXERCISE_KEY);

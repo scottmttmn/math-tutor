@@ -198,7 +198,13 @@ try {
   await page.getByRole('button', { name: 'Ask for Help', exact: true }).click();
   await page.getByText('Exercise hint.', { exact: true }).waitFor();
   assert.match(requests.at(-1).messages[0].content, /NEVER give the full solution/);
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  // Free-form sessions save themselves and come back after a reload.
+  await page.getByRole('status').getByText('Saved', { exact: true }).waitFor();
+  await page.reload();
+  await page.getByRole('button', { name: 'Chat', exact: true }).click();
+  await page.getByText('Exercise hint.', { exact: true }).waitFor();
+  assert.equal(await page.getByPlaceholder("Type the math problem you're working on...").inputValue(), 'Find a strategy for a quadratic.');
+  await page.waitForFunction(() => document.querySelectorAll('.tl-shape').length > 0);
   await page.getByRole('button', { name: 'New', exact: true }).click();
   await page.getByRole('button', { name: /New Notes/ }).click();
   await page.getByPlaceholder("Topic or concept you're studying...").fill('Complex modulus');
@@ -213,9 +219,11 @@ try {
   await page.getByText('Notes explanation.', { exact: true }).last().waitFor();
   assert.equal(await page.getByPlaceholder('Type or speak a follow-up...').inputValue(), '');
   await page.getByRole('button', { name: 'Load', exact: true }).click();
+  await page.getByText('Complex modulus', { exact: true }).first().waitFor();
+  assert.ok(await page.getByText('Find a strategy for a quadratic.', { exact: true }).count() > 0);
   assert.equal(await page.getByText(/Complex Analysis 1\.3 ·/).count(), 0);
   await page.getByRole('button', { name: 'Close', exact: true }).click();
-  console.log('PASS free-form Problem/Notes policies, saving, dictated follow-ups, and workbook-session isolation');
+  console.log('PASS free-form Problem/Notes policies, autosave and reload, dictated follow-ups, and workbook-session isolation');
 
   await page.getByRole('link', { name: 'Workbook', exact: true }).click(); await waitExercise();
   await page.setViewportSize({ width: 390, height: 844 });

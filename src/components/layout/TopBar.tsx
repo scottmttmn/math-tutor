@@ -2,10 +2,11 @@
 
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import type { SessionType } from '@/types';
+import type { AutosaveStatus, SessionType } from '@/types';
 
 interface Props {
   onNew: (type: SessionType) => void;
+  saveStatus: AutosaveStatus;
   onSave: () => void;
   onOpenSessions: () => void;
   onOpenSettings: () => void;
@@ -16,6 +17,7 @@ interface Props {
 
 export default function TopBar({
   onNew,
+  saveStatus,
   onSave,
   onOpenSessions,
   onOpenSettings,
@@ -105,12 +107,20 @@ export default function TopBar({
           )}
         </div>
 
-        <button
-          onClick={onSave}
-          className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-        >
-          Save
-        </button>
+        {/* Sessions save themselves; this only reports it, or offers a retry after a failure. */}
+        {saveStatus === 'error' ? (
+          <button
+            onClick={onSave}
+            className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 bg-red-50 rounded-lg hover:bg-red-100"
+            title="Your latest changes aren't saved"
+          >
+            Couldn&apos;t save · Retry
+          </button>
+        ) : (
+          <span role="status" className="w-14 text-center text-xs text-gray-400">
+            {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved' : ''}
+          </span>
+        )}
         <button
           onClick={onOpenSessions}
           className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"

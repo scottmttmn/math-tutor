@@ -134,24 +134,24 @@ test('recovery preserves newer unsaved work and ignores corrupt or stale copies'
   global.localStorage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
   let durable;
   let finishSave;
-  const storage = load('src/lib/workbookStorage.ts', { '@/lib/db': {
+  const storage = load('src/lib/sessionRecovery.ts', { '@/lib/db': {
     loadSession: async () => durable,
     saveSession: (session) => new Promise((resolve) => { finishSave = () => { durable = session; resolve(); }; }),
   } });
   const original = { id: 'workbook:test:exercise:1', canvasStrokes: [], chatHistory: [], updatedAt: 1 };
   const latest = { ...original, canvasStrokes: [{ points: [{ x: 1, y: 1 }, { x: 2, y: 2 }] }], isSolved: true, updatedAt: 2 };
-  storage.stageWorkbookSession(original);
-  assert.deepEqual(await storage.loadWorkbookSession(original.id), original);
-  const save = storage.saveWorkbookSession(original);
-  storage.stageWorkbookSession(latest);
+  storage.stageSession(original);
+  assert.deepEqual(await storage.loadRecoveredSession(original.id), original);
+  const save = storage.saveRecoverableSession(original);
+  storage.stageSession(latest);
   finishSave(); await save;
-  assert.deepEqual(await storage.loadWorkbookSession(original.id), latest);
-  storage.stageWorkbookSession(original);
-  assert.deepEqual(await storage.loadWorkbookSession(original.id), latest);
-  const saveLatest = storage.saveWorkbookSession(latest); finishSave(); await saveLatest;
+  assert.deepEqual(await storage.loadRecoveredSession(original.id), latest);
+  storage.stageSession(original);
+  assert.deepEqual(await storage.loadRecoveredSession(original.id), latest);
+  const saveLatest = storage.saveRecoverableSession(latest); finishSave(); await saveLatest;
   assert.equal(values.size, 0);
   values.set(`${original.id}:pendingSave`, '{broken');
-  assert.deepEqual(await storage.loadWorkbookSession(original.id), latest);
+  assert.deepEqual(await storage.loadRecoveredSession(original.id), latest);
   delete global.localStorage;
 });
 
