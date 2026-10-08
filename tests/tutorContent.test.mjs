@@ -22,3 +22,11 @@ test('streaming, currency, invalid math and HTML stay readable and safe', () => 
   assert.doesNotMatch(render('<img src=x onerror=alert(1)>'), /<img/);
   assert.doesNotMatch(render(String.raw`\(\href{javascript:alert(1)}{click}\)`), /href="javascript/);
 });
+
+test('emphasis can wrap typeset math and code', () => {
+  const html = render(String.raw`**Use \(x^2\) here** and *try $y$*`);
+  assert.doesNotMatch(html, /\*/);
+  assert.match(html, /<strong[^>]*>Use <span[^>]*><span class="katex">/);
+  assert.match(html, /<em[^>]*>try <span[^>]*><span class="katex">/);
+  assert.match(render('**run `npm test` now**'), /<strong[^>]*>run <code/);
+});

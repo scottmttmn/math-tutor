@@ -427,3 +427,29 @@ test('a ChatGPT-plan request releases the server gate when it ends', async () =>
   advanceTime();
   assert.equal((await request(chatgptConfig)).status, 200);
 });
+
+test('a cancelled ChatGPT-plan stream releases the server gate right away', async () => {
+  let started;
+  const chatgpt = { getChatGPT: () => ({ streamResponse: ({ signal }) => new Promise((_, reject) => {
+    started = true;
+    signal.addEventListener('abort', () => reject(new Error('cancelled')));
+  }) }) };
+  const { createTutorRequestGate } = load('src/lib/tutorRequestGate.ts');
+  let now = 10_000;
+  const gate = createTutorRequestGate(() => now);
+  const { POST } = load('src/app/api/tutor/route.ts', {
+    '@/lib/chatgpt': chatgpt, '@/lib/siwc': { ChatGPTError: class extends Error {} },
+    '@/lib/tutorRequestGate': { createTutorRequestGate: () => gate },
+  });
+  const response = await POST(new Request('http://localhost/api/tutor', { method: 'POST', body: JSON.stringify({
+    problemStatement: '', chatHistory: [], canvasImage: '', userQuestion: 'Help',
+    modelConfig: { provider: 'chatgpt', model: 'test', baseUrl: '' },
+  }) }));
+  assert.ok(started);
+  now += 5000;
+  assert.equal(gate.acquire().accepted, false);
+  await response.body.cancel();
+  const next = gate.acquire();
+  assert.equal(next.accepted, true);
+  next.release();
+});

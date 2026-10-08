@@ -148,6 +148,8 @@ function streamChatGPTResponse(
   input.push({ role: 'user', content: parts });
 
   const encoder = new TextEncoder();
+  const abort = new AbortController();
+  let cancelled = false;
   return new ReadableStream({
     async start(controller) {
       try {
@@ -155,12 +157,15 @@ function streamChatGPTResponse(
           model: modelConfig.model,
           instructions: systemPrompt,
           input,
+          signal: abort.signal,
           onDelta: (delta) => {
+            if (cancelled) return;
             controller.enqueue(
               encoder.encode(`data: ${JSON.stringify({ type: 'text_delta', content: delta })}\n\n`)
             );
           },
         });
+        if (cancelled) return;
         if (usage) {
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify({ type: 'usage', usage })}\n\n`)
@@ -170,6 +175,7 @@ function streamChatGPTResponse(
           encoder.encode(`data: ${JSON.stringify({ type: 'message_stop' })}\n\n`)
         );
       } catch (err) {
+        if (cancelled) return;
         controller.enqueue(
           encoder.encode(`data: ${JSON.stringify({ type: 'error', error: friendlyChatGPTError(err) })}\n\n`)
         );
@@ -178,6 +184,8 @@ function streamChatGPTResponse(
       }
       controller.close();
     },
+    // A reader that goes away (reload, navigation) frees the gate now, not when the upstream reply ends.
+    cancel() { cancelled = true; abort.abort(); onFinish(); },
   });
 }
 
