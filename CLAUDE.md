@@ -175,7 +175,15 @@ npm run dev    # Development server (port 3000; webpack, like build — Turbopac
 npm run build  # Production build
 npm run start  # Production server
 npm run lint   # ESLint
+npm run typecheck  # tsc --noEmit
+npm test       # Unit tests
+npm run test:e2e   # Browser tests; needs `npm run start -- -p 3100` running
 ```
+
+### Workflow and CI
+- Every change goes through a branch and a PR, whoever makes it (Scott alternates Codex and Claude; Codex reads `AGENTS.md`, which points here). Push before stopping.
+- `.github/workflows/ci.yml` runs on every PR and on `main`: `npm ci`, `lint`, `typecheck`, `npm test`, `build`, then `npm run test:e2e` against the production build on port 3100. The browser tests use a mock provider, so CI needs no API keys.
+- Review comments are addressed (fixed, or answered with why not) and resolved before merging; `main` requires resolved conversations and a green `check` job.
 
 ### Linting
 ESLint uses the Next.js core web vitals config. Run `npm run lint` before committing. There is no Prettier config; formatting follows ESLint rules.
