@@ -9,9 +9,10 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   onLoad: (id: string) => void;
+  onDeleted?: (id: string) => void;
 }
 
-export default function SessionList({ isOpen, onClose, onLoad }: Props) {
+export default function SessionList({ isOpen, onClose, onLoad, onDeleted }: Props) {
   const [sessions, setSessions] = useState<SessionMetadata[]>([]);
 
   useEffect(() => {
@@ -36,6 +37,7 @@ export default function SessionList({ isOpen, onClose, onLoad }: Props) {
   const handleDelete = async (id: string) => {
     await dbDeleteSession(id);
     setSessions((prev) => prev.filter((s) => s.id !== id));
+    onDeleted?.(id);
   };
 
   if (!isOpen) return null;
