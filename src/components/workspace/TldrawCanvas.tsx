@@ -32,6 +32,12 @@ const MIRROR_DELAY_MS = 250;
 // tldraw defaults to M, which is too heavy for writing math; start every board on S.
 const DEFAULT_PEN_SIZE = 's';
 
+// A fresh board starts with the pen at its default size, even when the editor is reused.
+function startDrawing(editor: Editor) {
+  editor.setStyleForNextShapes(DefaultSizeStyle, DEFAULT_PEN_SIZE);
+  editor.setCurrentTool('draw');
+}
+
 function shapesToExport(editor: Editor): TLShapeId[] {
   const selected = editor.getSelectedShapeIds();
   return selected.length > 0 ? selected : [...editor.getCurrentPageShapeIds()];
@@ -48,7 +54,7 @@ function applyLoad(editor: Editor, load: CanvasLoad) {
   }
   // Undo must not step back into the previous session.
   editor.clearHistory();
-  editor.setCurrentTool('draw');
+  startDrawing(editor);
 }
 
 export default function TldrawCanvas({ handleRef }: { handleRef: RefObject<DrawingCanvasHandle | null> }) {
@@ -63,9 +69,8 @@ export default function TldrawCanvas({ handleRef }: { handleRef: RefObject<Drawi
 
   const handleMount = useCallback((mounted: Editor) => {
     const { document: existing, pendingLoad: load } = mountState.current;
-    mounted.setStyleForNextShapes(DefaultSizeStyle, DEFAULT_PEN_SIZE);
     if (!load && existing) applyLoad(mounted, { document: existing, strokes: [] });
-    else mounted.setCurrentTool('draw');
+    else startDrawing(mounted);
     setEditor(mounted);
   }, []);
 
