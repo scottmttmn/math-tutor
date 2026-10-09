@@ -12,8 +12,8 @@ Done: autosave on the main page, the 5-second request limit, CI on every PR, thi
 
 ### 1. Handwriting test set
 
-- Pages of real handwriting (written on a Wacom in the app) with a LaTeX answer key, in `tests/handwriting/`. All 15 pages are written; next is running `npm run handwriting` with real keys.
-- A script sends each page to every configured model and scores the transcription against the key, so we know which models read handwritten math well enough before building on recognition.
+- Pages of real handwriting (written on a Wacom in the app) with a LaTeX answer key, in `tests/handwriting/`. All 15 pages are written. First run (2026-10-09): Claude Sonnet 5.5 98%, Gemini 3.8 Flash 95% (some replies cut off at the old token limit). Next: re-run with the higher token limit, adding Claude Opus 5.5 and the ChatGPT-plan models Luna and Sol 6.1, then pick the model to build recognition on.
+- A script (`npm run handwriting`) sends each page to every configured model and scores the transcription against the key, so we know which models read handwritten math well enough before building on recognition.
 
 ### 2. Problem history
 

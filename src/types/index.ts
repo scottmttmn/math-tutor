@@ -103,6 +103,22 @@ export interface ChatGPTStatus {
 
 // === API Types ===
 
+/** POST /api/transcribe: one image read by the ChatGPT plan (used by the handwriting test). */
+export interface TranscribeRequest {
+  /** Base64 PNG without the data: prefix. */
+  image: string;
+  prompt: string;
+  /** A plan model slug or loose name ("sol 6.1"); defaults to the app's default plan model. */
+  model?: string;
+}
+
+export interface TranscribeResponse {
+  text: string;
+  model: string;
+  /** True when the reply stopped before it finished. */
+  cutOff: boolean;
+}
+
 export interface TutorRequest {
   problemStatement: string;
   chatHistory: ChatMessage[];

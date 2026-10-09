@@ -25,12 +25,13 @@ const SYNONYMS = [
   [/\\(?:left|right|big|Big|bigg|Bigg)(?![a-zA-Z])/g, ''],
   [/\\(?:displaystyle|limits)(?![a-zA-Z])/g, ''],
   [/\\(?:blacksquare|square|qed|Box)(?![a-zA-Z])/g, '\\qed'],
+  [/\\colon(?![a-zA-Z])/g, ':'],
 ];
 
 export function normalizeLatex(line) {
   let s = String(line).trim();
   // Delimiters a model may add despite the prompt.
-  s = s.replace(/^(?:\$\$?|\\\[|\\\()|(?:\$\$?|\\\]|\\\))$/g, '');
+  s = s.replace(/^(?:\\\[|\\\()|(?:\\\]|\\\))$/g, '').replace(/\$/g, '');
   s = s.replace(/\\(?:begin|end)\{(?:align\*?|aligned|equation\*?)\}/g, '');
   // Alignment points mean nothing outside a matrix or cases.
   if (!/\\begin\{(?:[pbvBV]?matrix|cases|array)\}/.test(s)) s = s.replace(/&/g, '');
@@ -38,6 +39,9 @@ export function normalizeLatex(line) {
   s = s.replace(SPACING, '');
   // Single-token groups: x^{2} and x^2 are the same.
   s = s.replace(/([_^])\{([^{}\\])\}/g, '$1$2');
+  // A fraction of plain numbers or letters written inline: 3/2 and \frac{3}{2} are the same.
+  // Rewritten as \frac so the numerator and denominator keep their boundaries.
+  s = s.replace(/(?<![\w}])(\w+)\s*\/\s*(\w+)(?![\w{\\])/g, '\\frac{$1}{$2}');
   return s.replace(/\s+/g, '');
 }
 

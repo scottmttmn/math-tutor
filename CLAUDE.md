@@ -30,6 +30,7 @@ src/
 ├── app/
 │   ├── api/tutor/route.ts     # Streaming API endpoint (Anthropic + OpenAI-compat + ChatGPT plan)
 │   ├── api/chatgpt/route.ts   # Sign in with ChatGPT: status, sign-in, sign-out
+│   ├── api/transcribe/route.ts# One image read by the ChatGPT plan (used by the handwriting test)
 │   ├── page.tsx               # Root page (renders AppShell)
 │   ├── layout.tsx             # Root layout (metadata, fonts)
 │   └── globals.css            # Global Tailwind styles
@@ -179,7 +180,7 @@ npm run lint   # ESLint
 npm run typecheck  # tsc --noEmit
 npm test       # Unit tests
 npm run test:e2e   # Browser tests; needs `npm run start -- -p 3100` running
-npm run handwriting  # Handwriting test: transcribe tests/handwriting/wacom/<page-id>.png with each model, score against tests/handwriting/pages.json (results in tests/handwriting/results/, gitignored)
+npm run handwriting  # Handwriting test: transcribe tests/handwriting/wacom/<page-id>.png with each model, score against tests/handwriting/pages.json (results in tests/handwriting/results/, gitignored). chatgpt:<model> entries go through the running app's /api/transcribe, so start the app and sign in first
 ```
 
 ### Workflow and CI

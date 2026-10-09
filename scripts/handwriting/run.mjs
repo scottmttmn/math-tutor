@@ -2,11 +2,14 @@
 // transcription, and scores it against the answer key.
 //
 //   node scripts/handwriting/run.mjs [--pages <dir with pages.json>] [--images <dir>] \
-//     [--models anthropic:claude-sonnet-5-5,gemini:gemini-3.8-flash] [--out <dir>]
+//     [--models anthropic:claude-sonnet-5-5,gemini:gemini-3.8-flash,chatgpt:luna] [--out <dir>] \
+//     [--app http://localhost:3000]
 //
 // --pages defaults to tests/handwriting, Scott's handwritten set. Images are <page-id>.png in
-// --images (default <pages>/wacom). Keys come from .env.local,
-// as for the app. Writes results.json and summary.md to --out (default <pages>/results/<time>).
+// --images (default <pages>/wacom). Keys come from .env.local, as for the app.
+// ChatGPT-plan models (chatgpt for the plan's default, or chatgpt:<slug or name>) go through the
+// running app's /api/transcribe, so start the app (--app) and sign in with ChatGPT first.
+// Writes results.json and summary.md to --out (default <pages>/results/<time>).
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -28,20 +31,53 @@ const OPENAI_COMPATIBLE = {
   ollama: { baseURL: process.env.NEXT_PUBLIC_OLLAMA_BASE_URL ?? 'http://localhost:11434/v1', keys: [], fallbackKey: 'ollama' },
 };
 
-const DEFAULT_MODELS = 'anthropic:claude-sonnet-5-5,gemini:gemini-3.8-flash,openai:gpt-4o';
+const DEFAULT_MODELS = [
+  'anthropic:claude-sonnet-5-5', 'anthropic:claude-opus-5-5', 'gemini:gemini-3.8-flash', 'openai:gpt-4o',
+  'chatgpt:luna', 'chatgpt:sol-6.1',
+].join(',');
 
-async function transcribe(provider, model, base64) {
+// Thinking models (Gemini 3.x) spend part of this on reasoning, so leave plenty for the answer.
+const MAX_TOKENS = 8192;
+
+/** Why a provider can't run here, or null when it can (Ollama needs no key). */
+async function unavailable(provider, app) {
+  if (provider === 'anthropic') return process.env.ANTHROPIC_API_KEY ? null : 'no ANTHROPIC_API_KEY in .env.local';
+  if (provider === 'chatgpt') {
+    try {
+      const status = await (await fetch(`${app}/api/chatgpt`)).json();
+      return status.status === 'connected' && status.sharing ? null : `not signed in with ChatGPT at ${app}`;
+    } catch {
+      return `the app isn't running at ${app}`;
+    }
+  }
+  const settings = OPENAI_COMPATIBLE[provider];
+  if (!settings || settings.fallbackKey || settings.keys.some((name) => process.env[name])) return null;
+  return `no ${settings.keys.join(' or ')} in .env.local`;
+}
+
+async function transcribe(provider, model, base64, app) {
+  if (provider === 'chatgpt') {
+    const response = await fetch(`${app}/api/transcribe`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ image: base64, prompt: PROMPT, ...(model ? { model } : {}) }),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`);
+    return { text: body.text, cutOff: body.cutOff, served: body.model };
+  }
   if (provider === 'anthropic') {
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const reply = await client.messages.create({
       model,
-      max_tokens: 2048,
+      max_tokens: MAX_TOKENS,
       messages: [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: 'image/png', data: base64 } },
         { type: 'text', text: PROMPT },
       ] }],
     });
-    return reply.content.filter((block) => block.type === 'text').map((block) => block.text).join('');
+    const text = reply.content.filter((block) => block.type === 'text').map((block) => block.text).join('');
+    return { text, cutOff: reply.stop_reason === 'max_tokens' };
   }
   const settings = OPENAI_COMPATIBLE[provider];
   if (!settings) throw new Error(`Unknown provider "${provider}" (use anthropic, ${Object.keys(OPENAI_COMPATIBLE).join(', ')})`);
@@ -50,13 +86,14 @@ async function transcribe(provider, model, base64) {
   const client = new OpenAI({ apiKey, baseURL: settings.baseURL });
   const reply = await client.chat.completions.create({
     model,
-    max_tokens: 2048,
+    max_tokens: MAX_TOKENS,
     messages: [{ role: 'user', content: [
       { type: 'image_url', image_url: { url: `data:image/png;base64,${base64}` } },
       { type: 'text', text: PROMPT },
     ] }],
   });
-  return reply.choices[0]?.message?.content ?? '';
+  const choice = reply.choices[0];
+  return { text: choice?.message?.content ?? '', cutOff: choice?.finish_reason === 'length' };
 }
 
 const percent = (x) => `${Math.round(x * 100)}%`;
@@ -69,6 +106,7 @@ async function main() {
     images: { type: 'string' },
     models: { type: 'string', default: DEFAULT_MODELS },
     out: { type: 'string' },
+    app: { type: 'string', default: 'http://localhost:3000' },
   } });
   if (existsSync('.env.local')) process.loadEnvFile('.env.local');
 
@@ -78,10 +116,18 @@ async function main() {
   const { pages } = JSON.parse(readFileSync(join(pagesDir, 'pages.json'), 'utf8'));
   const present = pages.filter((page) => existsSync(join(imagesDir, `${page.id}.png`)));
   if (present.length === 0) throw new Error(`No <page-id>.png images in ${imagesDir}`);
-  const models = values.models.split(',').map((entry) => {
+  const requested = values.models.split(',').map((entry) => {
     const [provider, ...rest] = entry.trim().split(':');
     return { provider, model: rest.join(':') };
   });
+  // A model that can't run here (no key, app not running) is skipped and noted, rather than scored 0%.
+  const reasons = await Promise.all(requested.map(({ provider }) => unavailable(provider, values.app)));
+  const skipped = requested
+    .map(({ provider, model }, i) => ({ name: `${provider}:${model}`, reason: reasons[i] }))
+    .filter((m) => m.reason);
+  for (const m of skipped) console.log(`Skipping ${m.name}: ${m.reason}`);
+  const models = requested.filter((_, i) => !reasons[i]);
+  if (models.length === 0) throw new Error('None of the models can run: add keys to .env.local or start the app');
 
   const results = [];
   for (const { provider, model } of models) {
@@ -90,11 +136,11 @@ async function main() {
       const base64 = readFileSync(join(imagesDir, `${page.id}.png`)).toString('base64');
       const started = Date.now();
       try {
-        const text = await transcribe(provider, model, base64);
+        const { text, cutOff, served } = await transcribe(provider, model, base64, values.app);
         const scored = scorePage(page.lines, transcriptionLines(text));
         const diagram = text.split('\n').find((line) => /^\s*DIAGRAM:/i.test(line))?.trim() ?? null;
-        results.push({ model: name, page: page.id, ms: Date.now() - started, ...scored, diagram, raw: text });
-        console.log(`${name}  ${page.id}  ${percent(scored.score)}  (${scored.exact}/${page.lines.length} exact)`);
+        results.push({ model: name, page: page.id, ms: Date.now() - started, ...scored, cutOff, served, diagram, raw: text });
+        console.log(`${name}${served && served !== model ? ` (${served})` : ''}  ${page.id}  ${percent(scored.score)}  (${scored.exact}/${page.lines.length} exact)${cutOff ? '  CUT OFF' : ''}`);
       } catch (error) {
         results.push({ model: name, page: page.id, error: String(error?.message ?? error) });
         console.log(`${name}  ${page.id}  ERROR ${error?.message ?? error}`);
@@ -113,7 +159,7 @@ async function main() {
     const mean = scored.length ? scored.reduce((sum, r) => sum + r.score, 0) / scored.length : 0;
     const cells = pageIds.map((id) => {
       const r = mine.find((x) => x.page === id);
-      return !r ? '' : r.error !== undefined ? 'error' : percent(r.score);
+      return !r ? '' : r.error !== undefined ? 'error' : `${percent(r.score)}${r.cutOff ? ' ✂' : ''}`;
     });
     return `| ${name} | ${percent(mean)} | ${cells.join(' | ')} |`;
   });
@@ -131,12 +177,19 @@ async function main() {
       ...results.filter((r) => r.page === page.id && r.error === undefined).map((r) => `- ${r.model}: ${r.diagram ?? '(no description)'}`),
       '',
     ]);
+  const notes = [
+    ...skipped.map((m) => `- Skipped ${m.name}: ${m.reason}.`),
+    // Which plan model each chatgpt: entry ran as.
+    ...[...new Map(results.filter((r) => r.served).map((r) => [r.model, r.served]))].map(([name, slug]) => `- ${name} ran as \`${slug}\`.`),
+  ];
   const summary = [
     '# Handwriting test results',
     '',
     `Images: \`${imagesDir}\``,
     '',
     'Scores cover the written lines only. Drawings are listed at the end to compare by eye.',
+    ...(results.some((r) => r.cutOff) ? ['', '✂ The reply stopped early (usually at the token limit), so lines at the end may be missing.'] : []),
+    ...(notes.length ? ['', ...notes] : []),
     '',
     `| Model | Mean | ${pageIds.join(' | ')} |`,
     `|---|---|${pageIds.map(() => '---').join('|')}|`,
