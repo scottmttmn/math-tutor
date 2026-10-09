@@ -96,7 +96,7 @@ async function transcribe(provider, model, base64, app) {
   return { text: choice?.message?.content ?? '', cutOff: choice?.finish_reason === 'length' };
 }
 
-// A rate limit (429) is waited out and retried; a daily quota or the ChatGPT plan's usage cap ends
+// A rate limit (429) or an overloaded model (503) is waited out and retried; a daily quota or the ChatGPT plan's usage cap ends
 // that model's run.
 const RETRY_WAITS_MS = [60_000, 120_000];
 const isDailyQuota = (error) => /usage_limit/.test(error?.code ?? '')
@@ -108,8 +108,9 @@ async function transcribeWithRetry(provider, model, base64, app, name) {
       return await transcribe(provider, model, base64, app);
     } catch (error) {
       const wait = RETRY_WAITS_MS[attempt];
-      if (error?.status !== 429 || isDailyQuota(error) || wait === undefined) throw error;
-      console.log(`${name}  rate limited, waiting ${wait / 1000}s`);
+      const retryable = error?.status === 503 || (error?.status === 429 && !isDailyQuota(error));
+      if (!retryable || wait === undefined) throw error;
+      console.log(`${name}  ${error.status === 503 ? 'overloaded' : 'rate limited'}, waiting ${wait / 1000}s`);
       await new Promise((done) => setTimeout(done, wait));
     }
   }
@@ -168,7 +169,8 @@ async function main() {
       } catch (error) {
         results.push({ model: name, page: page.id, error: String(error?.message ?? error) });
         console.log(`${name}  ${page.id}  ERROR ${error?.message ?? error}`);
-        if (error?.status === 429 && isDailyQuota(error)) stopped = `Not run: daily quota used up (${error.message})`;
+        // A daily quota, or a rate limit that outlasted every retry, won't clear during this run.
+        if (error?.status === 429) stopped = `Not run: still rate limited (${error.message})`;
       }
     }
   }
