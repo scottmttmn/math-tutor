@@ -37,7 +37,7 @@ src/
 ├── components/
 │   ├── layout/
 │   │   ├── AppShell.tsx       # Top-level app container; wires contexts + UI
-│   │   ├── TopBar.tsx         # Header bar (New dropdown, save status, Load, Settings, Chat toggle)
+│   │   ├── TopBar.tsx         # Header bar (New dropdown, save status, History, Settings, Chat toggle)
 │   │   ├── BottomToolbar.tsx  # Clear, Mark Solved, Ask for Help (drawing tools are tldraw's own)
 │   │   ├── SettingsModal.tsx  # Model/provider configuration (defines PRESETS array)
 │   │   └── HelpQuestionModal.tsx  # Custom question input with voice
@@ -51,8 +51,7 @@ src/
 │   │   ├── ChatMessage.tsx    # Individual message bubble
 │   │   └── ChatInput.tsx      # Follow-up message input
 │   └── sessions/
-│       ├── SessionList.tsx    # Saved sessions modal
-│       └── SessionCard.tsx    # Session preview card (📐 problem / 📝 note)
+│       └── History.tsx        # Full-screen history: every board and workbook exercise, with thumbnails, search, filter, sort, rename
 ├── context/
 │   ├── CanvasContext.tsx      # Mirror of the tldraw document + pending load requests
 │   └── SessionContext.tsx     # Session state (problem, chat history, sessionType, sessions)
@@ -63,6 +62,7 @@ src/
 │   └── useChatGPTConnection.ts# Sign in with ChatGPT state for SettingsModal
 ├── lib/
 │   ├── db.ts                  # IndexedDB CRUD for sessions via `idb`
+│   ├── history.ts             # Turns saved sessions into History entries; search, filter and sort
 │   ├── modelConfig.ts         # localStorage get/set for ModelConfig
 │   ├── chatgpt.ts             # Server-only Sign in with ChatGPT client + OS-keychain token encryption
 │   ├── siwc/                  # Vendored OpenAI Sign in with ChatGPT SDK (noncommercial license, see below)
@@ -102,7 +102,7 @@ src/
 - Buttons follow a consistent pattern: base classes + hover/disabled variants. Match existing button styles.
 
 ### Canvas
-- The canvas is **tldraw**, mounted by `TldrawCanvas.tsx` through `DrawingCanvas.tsx`, which loads it with `next/dynamic` and `ssr: false`. `DrawingCanvas` fills its nearest positioned ancestor, so the wrapper in `AppShell` / `Workbook` must be `relative` with a size.
+- The canvas is **tldraw**, mounted by `TldrawCanvas.tsx` through `DrawingCanvas.tsx`, which loads it with `next/dynamic` and `ssr: false`. `DrawingCanvas` fills its nearest positioned ancestor, so the wrapper in `AppShell` / `Workbook` must be `relative` with a size. Its wrapper is `isolate`d so tldraw's own z-indexes (up to 10000) stay under the app's dialogs and the History overlay.
 - `DrawingCanvasHandle` (pass a ref as `handleRef`): `captureImage()` exports the selected shapes, else every shape, trimmed to their bounds (PNG, pixelRatio 2, base64 without the `data:` prefix; `''` when empty); `captureThumbnail()`, `getDocument()`, `getRevision()` (bumped synchronously on every document change), and `clear()` (one undoable step).
 - Every board starts with the pen at size **S** (`DEFAULT_PEN_SIZE` in `TldrawCanvas.tsx`); tldraw's default M is too heavy for writing math.
 - tldraw's UI supplies the tools, colors, undo/redo and their shortcuts. `MainMenu`, `PageMenu`, `HelpMenu` and debug panels are hidden and there is one page per session.
@@ -135,8 +135,10 @@ src/
 
 ### Session Persistence
 - Sessions are stored in IndexedDB using the `idb` library (`src/lib/db.ts`). Do not use `localStorage` for session data.
-- `db.ts` exports: `saveSession`, `loadSession`, `deleteSession`, `listSessions`.
-- Session fields: `id`, `title`, `problemStatement`, `problemImage`, `canvasStrokes` (pre-tldraw only), `canvasDocument?`, `canvasImageBlob`, `chatHistory`, `createdAt`, `updatedAt`, `isSolved?`, `sessionType?`.
+- `db.ts` exports: `saveSession`, `loadSession`, `deleteSession`, `listSessions`, `renameSession`.
+- Session fields: `id`, `title`, `problemStatement`, `problemImage`, `canvasStrokes` (pre-tldraw only), `canvasDocument?`, `canvasImageBlob` (the History thumbnail), `chatHistory`, `createdAt`, `updatedAt`, `isSolved?`, `sessionType?`, `customTitle?`.
+- `customTitle` is the name given in History. Pages that autosave don't know it, so `saveSession` keeps the stored one when a save omits it; `renameSession` is the only writer.
+- **History** (`sessions/History.tsx`, opened from the top bar) lists free-form boards and workbook sessions (`workbook:<section>:exercise:<id>` / `:reading`) that have work in them. A workbook entry opens `/workbook?open=<exercise id | reading>`, which the workbook reads once and then drops from the URL.
 - `SessionMetadata` (used for session list): `id`, `title`, `problemStatement`, `createdAt`, `updatedAt`, `messageCount`, `isSolved?`, `sessionType?`.
 - `sessionType` and `isSolved` are optional for backward compatibility with sessions saved before those fields existed. Treat missing `sessionType` as `'problem'`.
 - Model configuration (provider, model ID, base URL) is stored in `localStorage` via `src/lib/modelConfig.ts`.
@@ -209,7 +211,7 @@ ESLint uses the Next.js core web vitals config. Run `npm run lint` before commit
 ### Session Save/Load
 - **Autosave:** `useSessionAutosave` saves 800ms after the last change (problem, image, chat, solved, type, drawing), reading the live document from the handle. It skips an untouched new session and a session that was only opened (it compares content, not timestamps), keeps `createdAt`, and serializes saves. The top bar shows Saving…/Saved, or a Retry button after a failure. New saves write `canvasStrokes: []`.
 - **Reload:** the open session's id is kept in `localStorage` (`math-tutor:currentSession`) and reopened on load. On `pagehide`/hidden it stages a synchronous recovery copy via `src/lib/sessionRecovery.ts` (shared with the workbook); a session reopened from that copy is written back to IndexedDB.
-- **Load / New:** `openSession` / `startNew` save the current session first, then load. Deleting the open session starts a new one without saving it again.
+- **Open / New:** `openSession` (from History) / `startNew` save the current session first, then load. Deleting the open session starts a new one without saving it again.
 - **New:** the **New** button in `TopBar` is a dropdown — *New Problem* or *New Notes* — which passes a `SessionType` to `AppShell.handleNew()`.
 
 ### Keyboard Shortcuts

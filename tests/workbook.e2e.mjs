@@ -269,14 +269,34 @@ try {
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.getByText('Notes explanation.', { exact: true }).last().waitFor();
   assert.equal(await page.getByPlaceholder('Type or speak a follow-up...').inputValue(), '');
-  await page.getByRole('button', { name: 'Load', exact: true }).click();
-  await page.getByText('Complex modulus', { exact: true }).first().waitFor();
-  assert.ok(await page.getByText('Find a strategy for a quadratic.', { exact: true }).count() > 0);
-  assert.equal(await page.getByText(/Complex Analysis 1\.3 ·/).count(), 0);
-  await page.getByRole('button', { name: 'Close', exact: true }).click();
-  console.log('PASS free-form Problem/Notes policies, autosave and reload, dictated follow-ups, and workbook-session isolation');
+  await page.getByRole('button', { name: 'History', exact: true }).click();
+  const history = page.getByRole('dialog', { name: 'History' });
+  await history.getByText('Complex modulus', { exact: true }).waitFor();
+  assert.ok(await history.getByText('Find a strategy for a quadratic.', { exact: true }).count() > 0);
+  // Workbook exercises with work in them are listed too, and open in the workbook.
+  const workbookCard = history.getByRole('listitem').filter({ hasText: /Complex Analysis 1\.3 · Exercise 1(?!\d)/ });
+  assert.match(await workbookCard.innerText(), /Workbook/);
+  await history.getByRole('searchbox', { name: 'Search history' }).fill('modulus');
+  assert.equal(await history.getByRole('listitem').count(), 1);
+  // A name given in History survives the open session's next autosave.
+  await history.getByRole('button', { name: 'Rename', exact: true }).click();
+  await history.getByRole('textbox', { name: 'Name' }).fill('Modulus notes');
+  await history.getByRole('textbox', { name: 'Name' }).press('Enter');
+  await history.getByText('Modulus notes', { exact: true }).waitFor();
+  await history.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByPlaceholder("Topic or concept you're studying...").fill('Complex modulus and argument');
+  await page.waitForTimeout(1500); // Past the autosave delay.
+  await page.getByRole('status').getByText('Saved', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'History', exact: true }).click();
+  await history.getByText('Modulus notes', { exact: true }).waitFor();
+  await history.getByRole('button', { name: 'Close', exact: true }).click();
+  console.log('PASS free-form Problem/Notes policies, autosave and reload, dictated follow-ups, and History search and rename');
 
-  await page.getByRole('link', { name: 'Workbook', exact: true }).click(); await waitExercise();
+  // Opening a workbook entry from History goes to that exercise.
+  await page.getByRole('button', { name: 'History', exact: true }).click();
+  await history.getByRole('searchbox', { name: 'Search history' }).fill('');
+  await workbookCard.getByRole('button', { name: /^Open / }).click(); await waitExercise();
+  assert.equal(await page.getByRole('heading', { level: 1 }).innerText(), 'Exercise 1');
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.getByRole('button', { name: 'Mark attempt complete', exact: true }).isVisible());
   await page.getByRole('button', { name: 'Back to reading' }).click(); await waitReading();

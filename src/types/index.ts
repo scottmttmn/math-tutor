@@ -58,7 +58,29 @@ export interface Session {
   updatedAt: number;
   isSolved?: boolean;
   sessionType?: SessionType;
+  /** A name the student gave it in History; otherwise the title comes from the problem. */
+  customTitle?: string;
 }
+
+/** One entry in History: a free-form board, or a workbook exercise or reading with work in it. */
+export interface HistoryItem {
+  id: string;
+  title: string;
+  problemStatement: string;
+  createdAt: number;
+  updatedAt: number;
+  messageCount: number;
+  isSolved: boolean;
+  sessionType: SessionType;
+  renamed: boolean;
+  thumbnail: Blob | null;
+  /** Where a workbook entry opens; free-form boards open in place. */
+  href: string | null;
+}
+
+/** History's filter: everything, problems not yet solved, solved problems, or notes. */
+export type HistoryShow = 'all' | 'inProgress' | 'solved' | 'notes';
+export type HistorySort = 'updated' | 'created' | 'title';
 
 /** Main-page autosave: nothing to save yet, writing, written, or the last write failed. */
 export type AutosaveStatus = 'idle' | 'saving' | 'saved' | 'error';

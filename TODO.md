@@ -17,9 +17,9 @@ Done: the handwriting test, autosave on the main page, the 5-second request limi
 
 ### 2. Problem history
 
-- A record of every problem worked: free-form boards, workbook exercises and Shelf items in one place.
-- Replaces the small **Load** popup with a grid. Thumbnails are already saved with every session (`canvasImageBlob`) but never shown.
-- Search, rename, sort, and filter by solved.
+Done: **History** (top bar) replaces the Load popup with a full-screen grid of every free-form board and every workbook exercise or reading that has work in it, with thumbnails, search, rename, sort, and filters (All / In progress / Solved / Notes). Workbook entries open in the workbook.
+
+- Still to do: Shelf items join History once the Shelf exists.
 
 ### 3. PDF Shelf
 
