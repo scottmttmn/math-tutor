@@ -36,3 +36,11 @@ test('pages match lines in order, so a missing line costs only that line', () =>
 test('fences, blank lines and the diagram note are not transcription lines', () => {
   assert.deepEqual(transcriptionLines('```latex\nx=1\n\ny=2\nDIAGRAM: a circle\n```'), ['x=1', 'y=2']);
 });
+
+test('a matrix or cases block split over several output lines still matches its key line', () => {
+  const key = [String.raw`A = \begin{pmatrix} 2 & -1 \\ 0 & 3 \end{pmatrix}`, 'B = 1'];
+  const split = [String.raw`A = \begin{pmatrix} 2 & -1 \\`, String.raw`0 & 3 \end{pmatrix}`, 'B = 1'];
+  const scored = scorePage(key, split);
+  assert.equal(scored.exact, 2);
+  assert.equal(scored.lines[1].got, 'B = 1');
+});
