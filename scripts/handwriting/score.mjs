@@ -3,7 +3,9 @@
 // \frac, \left( vs () don't count as misreadings; what's left is compared character by
 // character.
 
-const SPACING = /\\(?:,|;|:|!|quad|qquad|enspace|thinspace|medspace|thickspace)(?![a-zA-Z])|\\ |~/g;
+// Symbol spacing (\, \; \: \! and backslash-space) may sit right before a letter, as in \,dx; word
+// commands (\quad) may not, or \quadratic would match. The \\ row break is not spacing.
+const SPACING = /(?<!\\)\\(?:[,;:! ]|(?:quad|qquad|enspace|thinspace|medspace|thickspace)(?![a-zA-Z]))|~/g;
 
 const SYNONYMS = [
   [/\\(?:d|t)frac(?![a-zA-Z])/g, '\\frac'],

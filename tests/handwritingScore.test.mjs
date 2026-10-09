@@ -53,3 +53,9 @@ test('inline fractions, stray dollar signs and \\colon are not misreadings', () 
   assert.ok(similarity(String.raw`\frac{1}{2}x`, String.raw`\frac{1}{2x}`) < 1);
   assert.ok(similarity(String.raw`a\frac{b}{c}`, String.raw`\frac{ab}{c}`) < 1);
 });
+
+test('thin spaces before a letter and matrix row breaks normalize correctly', () => {
+  assert.equal(similarity(String.raw`\int_0^1 x^2 \, dx = \frac{1}{3}`, String.raw`\int_0^1 x^2\,dx=\frac{1}{3}`), 1);
+  assert.equal(similarity(String.raw`A = \begin{pmatrix} 2 & -1 \\ 0 & 3 \end{pmatrix}`, String.raw`A=\begin{pmatrix}2&-1\\0&3\end{pmatrix}`), 1);
+  assert.ok(similarity(String.raw`\begin{pmatrix} 1 \\ 2 \end{pmatrix}`, String.raw`\begin{pmatrix} 12 \end{pmatrix}`) < 1);
+});
