@@ -63,7 +63,7 @@ async function transcribe(provider, model, base64, app) {
       body: JSON.stringify({ image: base64, prompt: PROMPT, ...(model ? { model } : {}) }),
     });
     const body = await response.json();
-    if (!response.ok) throw Object.assign(new Error(body.error ?? `HTTP ${response.status}`), { status: response.status });
+    if (!response.ok) throw Object.assign(new Error(body.error ?? `HTTP ${response.status}`), { status: response.status, code: body.code });
     return { text: body.text, cutOff: body.cutOff, served: body.model };
   }
   if (provider === 'anthropic') {
@@ -96,9 +96,11 @@ async function transcribe(provider, model, base64, app) {
   return { text: choice?.message?.content ?? '', cutOff: choice?.finish_reason === 'length' };
 }
 
-// A rate limit (429) is waited out and retried; a daily quota ends that model's run.
+// A rate limit (429) is waited out and retried; a daily quota or the ChatGPT plan's usage cap ends
+// that model's run.
 const RETRY_WAITS_MS = [60_000, 120_000];
-const isDailyQuota = (error) => /perday|per.day|daily|\bRPD\b/i.test(`${error?.message ?? ''}${JSON.stringify(error?.error ?? '')}`);
+const isDailyQuota = (error) => /usage_limit/.test(error?.code ?? '')
+  || /perday|per.day|daily|\bRPD\b/i.test(`${error?.message ?? ''}${JSON.stringify(error?.error ?? '')}`);
 
 async function transcribeWithRetry(provider, model, base64, app, name) {
   for (let attempt = 0; ; attempt++) {
@@ -192,9 +194,9 @@ async function main() {
     .filter((r) => r.error === undefined)
     .flatMap((r) => r.lines.filter((l) => l.score < 1).map((l) => `| ${r.model} | ${r.page} | ${code(l.expected)} | ${l.got === null ? '(missing)' : code(l.got)} | ${percent(l.score)} |`));
   // Each distinct error once per model, with the pages it hit.
-  const errors = [...Map.groupBy(results.filter((r) => r.error !== undefined), (r) => `${r.model}\n${r.error}`)]
+  const errors = [...Map.groupBy(results.filter((r) => r.error !== undefined), (r) => JSON.stringify([r.model, r.error]))]
     .map(([key, hits]) => {
-      const [model, message] = key.split('\n');
+      const [model, message] = JSON.parse(key);
       return `- ${model} (${hits.map((r) => r.page).join(', ')}): ${message.replaceAll('\n', ' ')}`;
     });
   // Drawings aren't scored automatically; they're listed for comparing by eye.

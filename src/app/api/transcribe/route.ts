@@ -47,6 +47,11 @@ export async function POST(request: Request) {
     if (error instanceof ChatGPTError && error.code === 'response_incomplete') {
       return Response.json({ text: partial, model: slug ?? '', cutOff: true } satisfies TranscribeResponse);
     }
-    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 502 });
+    // Pass a rate limit through as 429 (with the SDK's code) so the handwriting test can wait it out.
+    const limited = error instanceof ChatGPTError && error.status === 429;
+    return Response.json(
+      { error: error instanceof Error ? error.message : String(error), code: error instanceof ChatGPTError ? error.code : undefined },
+      { status: limited ? 429 : 502 },
+    );
   }
 }
