@@ -15,6 +15,8 @@ const eslintConfig = defineConfig([
     // Vendored from OpenAI's Sign in with ChatGPT DevKit; kept close to upstream.
     "src/lib/siwc/**",
     ".claude/**",
+    // Copied from pdfjs-dist on npm install.
+    "public/pdfjs/**",
   ]),
 ]);
 

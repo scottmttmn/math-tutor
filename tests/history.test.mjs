@@ -20,6 +20,14 @@ test('workbook pages appear only once they hold work, and open in the workbook',
   assert.equal(toHistoryItem(session({ id: 'board-1' })).href, null);
 });
 
+test('Shelf exercises appear once they hold work, and open beside their page', () => {
+  assert.equal(toHistoryItem(session({ id: 'shelf:doc1:ex1' })), null);
+  const solved = toHistoryItem(session({ id: 'shelf:doc1:ex1', isSolved: true }));
+  assert.equal(solved.source, 'shelf');
+  assert.equal(solved.href, '/shelf/read?doc=doc1&open=ex1');
+  assert.equal(toHistoryItem(session({ id: 'board-1' })).source, 'board');
+});
+
 test('a given name wins over the title from the problem, and notes are never solved', () => {
   const named = toHistoryItem(session({ title: 'Find x', customTitle: 'Quadratics practice' }));
   assert.equal(named.title, 'Quadratics practice');

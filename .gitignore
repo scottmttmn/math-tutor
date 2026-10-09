@@ -12,6 +12,8 @@
 
 # copied from @tldraw/assets on npm install
 /public/tldraw-assets
+# copied from pdfjs-dist on npm install
+/public/pdfjs
 
 # testing
 /coverage

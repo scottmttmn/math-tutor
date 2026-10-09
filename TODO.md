@@ -19,13 +19,13 @@ Done: the handwriting test, autosave on the main page, the 5-second request limi
 
 Done: **History** (top bar) replaces the Load popup with a full-screen grid of every free-form board and every workbook exercise or reading that has work in it, with thumbnails, search, rename, sort, and filters (All / In progress / Solved / Notes). Workbook entries open in the workbook.
 
-- Still to do: Shelf items join History once the Shelf exists.
+- Shelf exercises join History too.
 
 ### 3. PDF Shelf
 
-- Drop in PDFs (books, MOOC assignments). They land on a Shelf.
-- Mark exercises as you read (a book) or all at once (an assignment); each opens on its own board beside the page. Single problems drop straight onto a board.
-- No AI needed; works offline.
+Done: **Shelf** (top bar) holds PDFs added or dropped in. Open one to read it page by page; **Mark exercise** and drag a box around a problem, and it opens on its own board beside the page (below it on an upright tablet), stays marked on the page (✓ once solved), and shows in History. **Single problem** puts a picture or a PDF's first page straight onto a new board. Works offline; the tutor gets the marked region as the problem figure.
+
+- Still to do: a PDF's pages scroll one at a time (no continuous scroll or zoom yet); marks can't be moved or renamed after saving.
 
 ### 4. Export and auto-backup
 

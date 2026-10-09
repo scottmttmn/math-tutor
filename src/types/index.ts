@@ -62,7 +62,7 @@ export interface Session {
   customTitle?: string;
 }
 
-/** One entry in History: a free-form board, or a workbook exercise or reading with work in it. */
+/** One entry in History: a free-form board, or a workbook or Shelf exercise (or reading) with work in it. */
 export interface HistoryItem {
   id: string;
   title: string;
@@ -74,13 +74,50 @@ export interface HistoryItem {
   sessionType: SessionType;
   renamed: boolean;
   thumbnail: Blob | null;
-  /** Where a workbook entry opens; free-form boards open in place. */
+  /** Where it was worked on: a free-form board, the workbook, or an exercise marked on the Shelf. */
+  source: 'board' | 'workbook' | 'shelf';
+  /** Where a workbook or Shelf entry opens; free-form boards open in place. */
   href: string | null;
 }
 
 /** History's filter: everything, problems not yet solved, solved problems, or notes. */
 export type HistoryShow = 'all' | 'inProgress' | 'solved' | 'notes';
 export type HistorySort = 'updated' | 'created' | 'title';
+
+// === Shelf ===
+
+/** A region of a PDF page, as fractions (0 to 1) of the page's width and height. */
+export interface PageRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** An exercise marked on a Shelf PDF; its board is the session `shelf:<document id>:<exercise id>`. */
+export interface ShelfExercise {
+  id: string;
+  label: string;
+  /** 1-based page number. */
+  page: number;
+  rect: PageRect;
+  createdAt: number;
+}
+
+/** A PDF on the Shelf, with the exercises marked on it. */
+export interface ShelfDocument {
+  id: string;
+  title: string;
+  file: Blob;
+  pageCount: number;
+  /** First page, small, for the Shelf grid. */
+  cover: Blob | null;
+  /** The page the reader was last on (1-based). */
+  lastPage: number;
+  exercises: ShelfExercise[];
+  createdAt: number;
+  updatedAt: number;
+}
 
 /** Main-page autosave: nothing to save yet, writing, written, or the last write failed. */
 export type AutosaveStatus = 'idle' | 'saving' | 'saved' | 'error';
