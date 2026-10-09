@@ -30,18 +30,30 @@ const OPENAI_COMPATIBLE = {
 
 const DEFAULT_MODELS = 'anthropic:claude-sonnet-5-5,gemini:gemini-3.8-flash,openai:gpt-4o';
 
+// Thinking models (Gemini 3.x) spend part of this on reasoning, so leave plenty for the answer.
+const MAX_TOKENS = 8192;
+
+/** The env var holding a provider's key, or null when none is set (Ollama needs none). */
+function missingKey(provider) {
+  if (provider === 'anthropic') return process.env.ANTHROPIC_API_KEY ? null : 'ANTHROPIC_API_KEY';
+  const settings = OPENAI_COMPATIBLE[provider];
+  if (!settings || settings.fallbackKey || settings.keys.some((name) => process.env[name])) return null;
+  return settings.keys.join(' or ');
+}
+
 async function transcribe(provider, model, base64) {
   if (provider === 'anthropic') {
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const reply = await client.messages.create({
       model,
-      max_tokens: 2048,
+      max_tokens: MAX_TOKENS,
       messages: [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: 'image/png', data: base64 } },
         { type: 'text', text: PROMPT },
       ] }],
     });
-    return reply.content.filter((block) => block.type === 'text').map((block) => block.text).join('');
+    const text = reply.content.filter((block) => block.type === 'text').map((block) => block.text).join('');
+    return { text, cutOff: reply.stop_reason === 'max_tokens' };
   }
   const settings = OPENAI_COMPATIBLE[provider];
   if (!settings) throw new Error(`Unknown provider "${provider}" (use anthropic, ${Object.keys(OPENAI_COMPATIBLE).join(', ')})`);
@@ -50,13 +62,14 @@ async function transcribe(provider, model, base64) {
   const client = new OpenAI({ apiKey, baseURL: settings.baseURL });
   const reply = await client.chat.completions.create({
     model,
-    max_tokens: 2048,
+    max_tokens: MAX_TOKENS,
     messages: [{ role: 'user', content: [
       { type: 'image_url', image_url: { url: `data:image/png;base64,${base64}` } },
       { type: 'text', text: PROMPT },
     ] }],
   });
-  return reply.choices[0]?.message?.content ?? '';
+  const choice = reply.choices[0];
+  return { text: choice?.message?.content ?? '', cutOff: choice?.finish_reason === 'length' };
 }
 
 const percent = (x) => `${Math.round(x * 100)}%`;
@@ -78,10 +91,17 @@ async function main() {
   const { pages } = JSON.parse(readFileSync(join(pagesDir, 'pages.json'), 'utf8'));
   const present = pages.filter((page) => existsSync(join(imagesDir, `${page.id}.png`)));
   if (present.length === 0) throw new Error(`No <page-id>.png images in ${imagesDir}`);
-  const models = values.models.split(',').map((entry) => {
+  const requested = values.models.split(',').map((entry) => {
     const [provider, ...rest] = entry.trim().split(':');
     return { provider, model: rest.join(':') };
   });
+  // A model with no key is skipped and noted, rather than scored 0%.
+  const skipped = requested
+    .map(({ provider, model }) => ({ name: `${provider}:${model}`, key: missingKey(provider) }))
+    .filter((m) => m.key);
+  for (const m of skipped) console.log(`Skipping ${m.name}: no ${m.key} in .env.local`);
+  const models = requested.filter(({ provider }) => !missingKey(provider));
+  if (models.length === 0) throw new Error('No model has an API key in .env.local');
 
   const results = [];
   for (const { provider, model } of models) {
@@ -90,11 +110,11 @@ async function main() {
       const base64 = readFileSync(join(imagesDir, `${page.id}.png`)).toString('base64');
       const started = Date.now();
       try {
-        const text = await transcribe(provider, model, base64);
+        const { text, cutOff } = await transcribe(provider, model, base64);
         const scored = scorePage(page.lines, transcriptionLines(text));
         const diagram = text.split('\n').find((line) => /^\s*DIAGRAM:/i.test(line))?.trim() ?? null;
-        results.push({ model: name, page: page.id, ms: Date.now() - started, ...scored, diagram, raw: text });
-        console.log(`${name}  ${page.id}  ${percent(scored.score)}  (${scored.exact}/${page.lines.length} exact)`);
+        results.push({ model: name, page: page.id, ms: Date.now() - started, ...scored, cutOff, diagram, raw: text });
+        console.log(`${name}  ${page.id}  ${percent(scored.score)}  (${scored.exact}/${page.lines.length} exact)${cutOff ? '  CUT OFF' : ''}`);
       } catch (error) {
         results.push({ model: name, page: page.id, error: String(error?.message ?? error) });
         console.log(`${name}  ${page.id}  ERROR ${error?.message ?? error}`);
@@ -113,7 +133,7 @@ async function main() {
     const mean = scored.length ? scored.reduce((sum, r) => sum + r.score, 0) / scored.length : 0;
     const cells = pageIds.map((id) => {
       const r = mine.find((x) => x.page === id);
-      return !r ? '' : r.error !== undefined ? 'error' : percent(r.score);
+      return !r ? '' : r.error !== undefined ? 'error' : `${percent(r.score)}${r.cutOff ? ' ✂' : ''}`;
     });
     return `| ${name} | ${percent(mean)} | ${cells.join(' | ')} |`;
   });
@@ -137,6 +157,8 @@ async function main() {
     `Images: \`${imagesDir}\``,
     '',
     'Scores cover the written lines only. Drawings are listed at the end to compare by eye.',
+    ...(results.some((r) => r.cutOff) ? ['', '✂ The reply hit the token limit, so lines at the end may be missing.'] : []),
+    ...(skipped.length ? ['', `Skipped (no key in .env.local): ${skipped.map((m) => m.name).join(', ')}.`] : []),
     '',
     `| Model | Mean | ${pageIds.join(' | ')} |`,
     `|---|---|${pageIds.map(() => '---').join('|')}|`,

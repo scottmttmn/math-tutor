@@ -44,3 +44,10 @@ test('a matrix or cases block split over several output lines still matches its 
   assert.equal(scored.exact, 2);
   assert.equal(scored.lines[1].got, 'B = 1');
 });
+
+test('inline fractions, stray dollar signs and \\colon are not misreadings', () => {
+  assert.equal(similarity(String.raw`x^{\frac{3}{2}} = \sqrt{x^3}`, String.raw`x^{3/2} = \sqrt{x^3}`), 1);
+  assert.equal(similarity(String.raw`3 \times x = 3x`, String.raw`$3 \times x = 3x$`), 1);
+  assert.equal(similarity(String.raw`\varphi : G \to H`, String.raw`\varphi \colon G \to H`), 1);
+  assert.ok(similarity(String.raw`\frac{1}{2}`, String.raw`\frac{1}{3}`) < 1);
+});
