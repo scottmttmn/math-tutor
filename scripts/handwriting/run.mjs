@@ -63,7 +63,7 @@ async function transcribe(provider, model, base64, app) {
       body: JSON.stringify({ image: base64, prompt: PROMPT, ...(model ? { model } : {}) }),
     });
     const body = await response.json();
-    if (!response.ok) throw new Error(body.error ?? `HTTP ${response.status}`);
+    if (!response.ok) throw Object.assign(new Error(body.error ?? `HTTP ${response.status}`), { status: response.status, code: body.code });
     return { text: body.text, cutOff: body.cutOff, served: body.model };
   }
   if (provider === 'anthropic') {
@@ -94,6 +94,26 @@ async function transcribe(provider, model, base64, app) {
   });
   const choice = reply.choices[0];
   return { text: choice?.message?.content ?? '', cutOff: choice?.finish_reason === 'length' };
+}
+
+// A rate limit (429) or an overloaded model (503) is waited out and retried; a daily quota or the ChatGPT plan's usage cap ends
+// that model's run.
+const RETRY_WAITS_MS = [60_000, 120_000];
+const isDailyQuota = (error) => /usage_limit/.test(error?.code ?? '')
+  || /perday|per.day|daily|\bRPD\b/i.test(`${error?.message ?? ''}${JSON.stringify(error?.error ?? '')}`);
+
+async function transcribeWithRetry(provider, model, base64, app, name) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await transcribe(provider, model, base64, app);
+    } catch (error) {
+      const wait = RETRY_WAITS_MS[attempt];
+      const retryable = error?.status === 503 || (error?.status === 429 && !isDailyQuota(error));
+      if (!retryable || wait === undefined) throw error;
+      console.log(`${name}  ${error.status === 503 ? 'overloaded' : 'rate limited'}, waiting ${wait / 1000}s`);
+      await new Promise((done) => setTimeout(done, wait));
+    }
+  }
 }
 
 const percent = (x) => `${Math.round(x * 100)}%`;
@@ -132,11 +152,16 @@ async function main() {
   const results = [];
   for (const { provider, model } of models) {
     const name = `${provider}:${model}`;
+    let stopped = null;
     for (const page of present) {
+      if (stopped) {
+        results.push({ model: name, page: page.id, error: stopped });
+        continue;
+      }
       const base64 = readFileSync(join(imagesDir, `${page.id}.png`)).toString('base64');
       const started = Date.now();
       try {
-        const { text, cutOff, served } = await transcribe(provider, model, base64, values.app);
+        const { text, cutOff, served } = await transcribeWithRetry(provider, model, base64, values.app, name);
         const scored = scorePage(page.lines, transcriptionLines(text));
         const diagram = text.split('\n').find((line) => /^\s*DIAGRAM:/i.test(line))?.trim() ?? null;
         results.push({ model: name, page: page.id, ms: Date.now() - started, ...scored, cutOff, served, diagram, raw: text });
@@ -144,6 +169,8 @@ async function main() {
       } catch (error) {
         results.push({ model: name, page: page.id, error: String(error?.message ?? error) });
         console.log(`${name}  ${page.id}  ERROR ${error?.message ?? error}`);
+        // A daily quota, or a rate limit that outlasted every retry, won't clear during this run.
+        if (error?.status === 429) stopped = `Not run: still rate limited (${error.message})`;
       }
     }
   }
@@ -161,11 +188,19 @@ async function main() {
       const r = mine.find((x) => x.page === id);
       return !r ? '' : r.error !== undefined ? 'error' : `${percent(r.score)}${r.cutOff ? ' ✂' : ''}`;
     });
-    return `| ${name} | ${percent(mean)} | ${cells.join(' | ')} |`;
+    // The mean covers only the pages that ran, so say how many that was.
+    const coverage = scored.length < pageIds.length ? ` (${scored.length} of ${pageIds.length} pages)` : '';
+    return `| ${name} | ${scored.length ? percent(mean) : '–'}${coverage} | ${cells.join(' | ')} |`;
   });
   const misses = results
     .filter((r) => r.error === undefined)
     .flatMap((r) => r.lines.filter((l) => l.score < 1).map((l) => `| ${r.model} | ${r.page} | ${code(l.expected)} | ${l.got === null ? '(missing)' : code(l.got)} | ${percent(l.score)} |`));
+  // Each distinct error once per model, with the pages it hit.
+  const errors = [...Map.groupBy(results.filter((r) => r.error !== undefined), (r) => JSON.stringify([r.model, r.error]))]
+    .map(([key, hits]) => {
+      const [model, message] = JSON.parse(key);
+      return `- ${model} (${hits.map((r) => r.page).join(', ')}): ${message.replaceAll('\n', ' ')}`;
+    });
   // Drawings aren't scored automatically; they're listed for comparing by eye.
   const drawings = present
     .filter((page) => page.diagram)
@@ -195,6 +230,7 @@ async function main() {
     `|---|---|${pageIds.map(() => '---').join('|')}|`,
     ...rows,
     '',
+    ...(errors.length ? ['## Errors', '', ...errors, ''] : []),
     '## Lines not read exactly',
     '',
     '| Model | Page | Expected | Got | Score |',
