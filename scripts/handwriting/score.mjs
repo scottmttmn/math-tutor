@@ -70,20 +70,32 @@ export function transcriptionLines(text) {
     .filter((line) => line && !/^DIAGRAM:/i.test(line));
 }
 
+// A matrix, cases block or tall fraction may come back over several output lines.
+const MAX_SPAN = 3;
+
 /**
- * Matches key lines to transcribed lines in order (a missed or merged line costs only that
- * line) and returns each key line's best similarity plus the page's mean.
+ * Matches key lines to transcribed lines in order (a missed line costs only that line; a key
+ * line may match up to MAX_SPAN consecutive transcribed lines joined) and returns each key
+ * line's best similarity plus the page's mean.
  */
 export function scorePage(keyLines, transcribed) {
   const n = keyLines.length;
   const m = transcribed.length;
-  const sim = keyLines.map((k) => transcribed.map((t) => similarity(k, t)));
+  // sim[i][j][k - 1]: key line i against transcribed lines j..j+k-1 joined.
+  const sim = keyLines.map((key) => transcribed.map((_, j) => {
+    const spans = [];
+    for (let k = 1; k <= MAX_SPAN && j + k <= m; k++) spans.push(similarity(key, transcribed.slice(j, j + k).join(' ')));
+    return spans;
+  }));
   // best[i][j]: highest total for key lines i.. using transcribed lines j..
   const best = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m; j >= 0; j--) {
       let value = best[i + 1][j];
-      if (j < m) value = Math.max(value, best[i][j + 1], sim[i][j] + best[i + 1][j + 1]);
+      if (j < m) {
+        value = Math.max(value, best[i][j + 1]);
+        sim[i][j].forEach((score, k) => { value = Math.max(value, score + best[i + 1][j + k + 1]); });
+      }
       best[i][j] = value;
     }
   }
@@ -91,10 +103,11 @@ export function scorePage(keyLines, transcribed) {
   let i = 0;
   let j = 0;
   while (i < n) {
-    if (j < m && best[i][j] === sim[i][j] + best[i + 1][j + 1]) {
-      lines.push({ expected: keyLines[i], got: transcribed[j], score: sim[i][j] });
+    const k = j < m ? sim[i][j].findIndex((score, span) => best[i][j] === score + best[i + 1][j + span + 1]) : -1;
+    if (k >= 0) {
+      lines.push({ expected: keyLines[i], got: transcribed.slice(j, j + k + 1).join(' '), score: sim[i][j][k] });
       i++;
-      j++;
+      j += k + 1;
     } else if (j < m && best[i][j] === best[i][j + 1]) {
       j++;
     } else {

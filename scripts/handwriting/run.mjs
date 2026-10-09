@@ -1,10 +1,11 @@
 // Handwriting test: sends each handwritten page to each model, asks for a LaTeX
 // transcription, and scores it against the answer key.
 //
-//   node scripts/handwriting/run.mjs --pages <dir with pages.json> [--images <dir>] \
+//   node scripts/handwriting/run.mjs [--pages <dir with pages.json>] [--images <dir>] \
 //     [--models anthropic:claude-sonnet-5-5,gemini:gemini-3.8-flash] [--out <dir>]
 //
-// Images are <page-id>.png in --images (default <pages>/wacom). Keys come from .env.local,
+// --pages defaults to tests/handwriting, Scott's handwritten set. Images are <page-id>.png in
+// --images (default <pages>/wacom). Keys come from .env.local,
 // as for the app. Writes results.json and summary.md to --out (default <pages>/results/<time>).
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -15,7 +16,8 @@ import OpenAI from 'openai';
 import { scorePage, transcriptionLines } from './score.mjs';
 
 const PROMPT = `Transcribe the handwritten math in this image into LaTeX.
-- One output line per handwritten line, top to bottom, in the order written.
+- One output line per equation or statement, top to bottom, in the order written. A matrix,
+  cases block or fraction that spans several rows is still one line.
 - Output only the LaTeX lines: no $ or \\[ delimiters, no code fences, no commentary.
 - Write words as \\text{...}. Leave out anything crossed out.
 - If the page has a drawing, add one last line starting with "DIAGRAM:" that describes it.`;
@@ -63,12 +65,11 @@ const code = (latex) => `\`${latex.replaceAll('|', '\\|').replaceAll('\n', ' ')}
 
 async function main() {
   const { values } = parseArgs({ options: {
-    pages: { type: 'string' },
+    pages: { type: 'string', default: 'tests/handwriting' },
     images: { type: 'string' },
     models: { type: 'string', default: DEFAULT_MODELS },
     out: { type: 'string' },
   } });
-  if (!values.pages) throw new Error('Pass --pages <dir containing pages.json>');
   if (existsSync('.env.local')) process.loadEnvFile('.env.local');
 
   const pagesDir = resolve(values.pages);
@@ -119,10 +120,23 @@ async function main() {
   const misses = results
     .filter((r) => r.error === undefined)
     .flatMap((r) => r.lines.filter((l) => l.score < 1).map((l) => `| ${r.model} | ${r.page} | ${code(l.expected)} | ${l.got === null ? '(missing)' : code(l.got)} | ${percent(l.score)} |`));
+  // Drawings aren't scored automatically; they're listed for comparing by eye.
+  const drawings = present
+    .filter((page) => page.diagram)
+    .flatMap((page) => [
+      `### ${page.id}`,
+      '',
+      `Drawn: ${page.diagram}`,
+      '',
+      ...results.filter((r) => r.page === page.id && r.error === undefined).map((r) => `- ${r.model}: ${r.diagram ?? '(no description)'}`),
+      '',
+    ]);
   const summary = [
     '# Handwriting test results',
     '',
     `Images: \`${imagesDir}\``,
+    '',
+    'Scores cover the written lines only. Drawings are listed at the end to compare by eye.',
     '',
     `| Model | Mean | ${pageIds.join(' | ')} |`,
     `|---|---|${pageIds.map(() => '---').join('|')}|`,
@@ -134,6 +148,7 @@ async function main() {
     '|---|---|---|---|---|',
     ...misses,
     '',
+    ...(drawings.length ? ['## Drawings (not scored)', '', ...drawings] : []),
   ].join('\n');
   writeFileSync(join(outDir, 'summary.md'), summary);
   console.log(`\nWrote ${join(outDir, 'summary.md')}`);
