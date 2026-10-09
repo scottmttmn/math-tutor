@@ -50,4 +50,6 @@ test('inline fractions, stray dollar signs and \\colon are not misreadings', () 
   assert.equal(similarity(String.raw`3 \times x = 3x`, String.raw`$3 \times x = 3x$`), 1);
   assert.equal(similarity(String.raw`\varphi : G \to H`, String.raw`\varphi \colon G \to H`), 1);
   assert.ok(similarity(String.raw`\frac{1}{2}`, String.raw`\frac{1}{3}`) < 1);
+  assert.ok(similarity(String.raw`\frac{1}{2}x`, String.raw`\frac{1}{2x}`) < 1);
+  assert.ok(similarity(String.raw`a\frac{b}{c}`, String.raw`\frac{ab}{c}`) < 1);
 });

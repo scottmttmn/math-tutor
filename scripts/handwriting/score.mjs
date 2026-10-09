@@ -39,8 +39,9 @@ export function normalizeLatex(line) {
   s = s.replace(SPACING, '');
   // Single-token groups: x^{2} and x^2 are the same.
   s = s.replace(/([_^])\{([^{}\\])\}/g, '$1$2');
-  // A fraction of plain numbers or letters written inline: \frac{3}{2} and 3/2 are the same.
-  s = s.replace(/\\frac\{\s*(\w+)\s*\}\{\s*(\w+)\s*\}/g, '$1/$2');
+  // A fraction of plain numbers or letters written inline: 3/2 and \frac{3}{2} are the same.
+  // Rewritten as \frac so the numerator and denominator keep their boundaries.
+  s = s.replace(/(?<![\w}])(\w+)\s*\/\s*(\w+)(?![\w{\\])/g, '\\frac{$1}{$2}');
   return s.replace(/\s+/g, '');
 }
 
