@@ -235,7 +235,7 @@ Configured via `SettingsModal` and stored in `localStorage`. Provider presets ar
 | Provider | SDK Used | Default Model | Base URL |
 |---|---|---|---|
 | Anthropic (Claude) | `@anthropic-ai/sdk` | `claude-sonnet-5-5` | Default (api.anthropic.com) |
-| ChatGPT plan | vendored `src/lib/siwc` | First listed model matching `CHATGPT_DEFAULT_MODEL_PATTERN` (Luna), else the first listed | `https://api.openai.com/v1/responses` (fixed) |
+| ChatGPT plan | vendored `src/lib/siwc` | First listed model matching `CHATGPT_DEFAULT_MODEL_PATTERN` (Sol; Luna invented content in the handwriting test), else the first listed | `https://api.openai.com/v1/responses` (fixed) |
 | OpenAI | `openai` (compat) | `gpt-4o` | `https://api.openai.com/v1` |
 | Google Gemini | `openai` (compat) | `gemini-3.8-flash` | `https://generativelanguage.googleapis.com/v1beta/openai/` |
 | Groq | `openai` (compat) | `llama-3.3-70b-versatile` | `https://api.groq.com/openai/v1` |
