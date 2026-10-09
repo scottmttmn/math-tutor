@@ -22,6 +22,11 @@ export function hasRecoveryCopy(id: string) {
   return localStorage.getItem(recoveryKey(id)) !== null;
 }
 
+/** Drops a session's recovery copy, so a deleted session can't come back from it. */
+export function discardRecoveryCopy(id: string) {
+  try { localStorage.removeItem(recoveryKey(id)); } catch { /* Nothing to discard. */ }
+}
+
 export async function loadRecoveredSession(id: string): Promise<Session | undefined> {
   const saved = await loadSession(id);
   const pending = localStorage.getItem(recoveryKey(id));

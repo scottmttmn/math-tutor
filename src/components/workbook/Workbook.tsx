@@ -42,6 +42,8 @@ function WorkbookContent() {
   const readingTargetRef = useRef<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const latestSnapshot = useRef<Session | null>(null);
+  // The exercise's last board picture, for History; refreshed on each save.
+  const thumbnail = useRef<Blob | null>(null);
   const sentRevision = useRef<number | null>(null);
   const { document: canvasDocument, pendingLoad } = useCanvasState();
   const canvasDispatch = useCanvasDispatch();
@@ -68,6 +70,7 @@ function WorkbookContent() {
       sessionType: nextExerciseId ? 'problem' : 'note',
     });
     canvasDispatch({ type: 'LOAD', document: saved?.canvasDocument, strokes: saved?.canvasStrokes });
+    thumbnail.current = saved?.canvasImageBlob ?? null;
     setCreatedAt(saved?.createdAt ?? Date.now());
     setExerciseId(nextExerciseId);
     setSelectedPassage('');
@@ -78,6 +81,13 @@ function WorkbookContent() {
     let active = true;
     async function loadProgress() {
       try {
+        // History opens a page with ?open=<exercise id or "reading">; after that, reloads resume as usual.
+        const requested = new URLSearchParams(window.location.search).get('open');
+        if (requested) {
+          if (requested === 'reading') localStorage.removeItem(ACTIVE_EXERCISE_KEY);
+          else localStorage.setItem(ACTIVE_EXERCISE_KEY, requested);
+          window.history.replaceState(null, '', window.location.pathname);
+        }
         const lastExerciseId = localStorage.getItem(ACTIVE_EXERCISE_KEY);
         const initialExerciseId = content.exercises.some((item) => item.id === lastExerciseId) ? lastExerciseId : null;
         readingScrollTop.current = Number(localStorage.getItem(READING_SCROLL_KEY)) || 0;
@@ -114,13 +124,21 @@ function WorkbookContent() {
   // The context copy of the drawing lags the pen by a moment; read the editor directly when saving.
   const withLiveDrawing = useCallback((snapshot: Session): Session => {
     const live = snapshot.sessionType === 'problem' ? canvasRef.current?.getDocument() : null;
-    return live ? { ...snapshot, canvasDocument: live } : snapshot;
+    return { ...snapshot, canvasImageBlob: thumbnail.current, ...(live ? { canvasDocument: live } : {}) };
   }, []);
 
   const persistCurrent = useCallback(async (): Promise<boolean> => {
     if (!currentSnapshot) return true;
     try {
-      await saveRecoverableSession(withLiveDrawing(currentSnapshot));
+      // Read the board before awaiting the thumbnail: switching exercises can unmount the editor meanwhile.
+      const snapshot = withLiveDrawing(currentSnapshot);
+      // Only picture a board the editor is showing (getDocument is null while a load is pending).
+      const handle = canvasRef.current;
+      if (snapshot.sessionType === 'problem' && handle?.getDocument()) {
+        thumbnail.current = await handle.captureThumbnail();
+        snapshot.canvasImageBlob = thumbnail.current;
+      }
+      await saveRecoverableSession(snapshot);
       setSaveError('');
       return true;
     } catch {

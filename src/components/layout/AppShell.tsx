@@ -16,7 +16,7 @@ import ProblemStatement from '../workspace/ProblemStatement';
 import NoteHeader from '../workspace/NoteHeader';
 import DrawingCanvas, { type DrawingCanvasHandle } from '../workspace/DrawingCanvas';
 import ChatPanel from '../chat/ChatPanel';
-import SessionList from '../sessions/SessionList';
+import History from '../sessions/History';
 import SettingsModal from './SettingsModal';
 
 function AppContent() {
@@ -126,10 +126,11 @@ function AppContent() {
         )}
       </div>
 
-      <SessionList
+      <History
         isOpen={sessionsOpen}
+        currentSessionId={currentSessionId}
         onClose={() => setSessionsOpen(false)}
-        onLoad={handleLoad}
+        onOpen={handleLoad}
         onDeleted={handleDeleted}
       />
 

@@ -17,6 +17,7 @@ interface MathTutorDB extends DBSchema {
       updatedAt: number;
       isSolved?: boolean;
       sessionType?: SessionType;
+      customTitle?: string;
     };
     indexes: {
       'by-updated': number;
@@ -43,7 +44,27 @@ export function getDB(): Promise<IDBPDatabase<MathTutorDB>> {
 
 export async function saveSession(session: MathTutorDB['sessions']['value']) {
   const db = await getDB();
-  await db.put('sessions', session);
+  const tx = db.transaction('sessions', 'readwrite');
+  // Names are given in History, not by the page that autosaves, so a save without one keeps it.
+  if (session.customTitle === undefined) {
+    const existing = await tx.store.get(session.id);
+    if (existing?.customTitle) session = { ...session, customTitle: existing.customTitle };
+  }
+  await tx.store.put(session);
+  await tx.done;
+}
+
+/** Names a saved session; an empty name goes back to the title taken from the problem. */
+export async function renameSession(id: string, name: string) {
+  const db = await getDB();
+  const tx = db.transaction('sessions', 'readwrite');
+  const existing = await tx.store.get(id);
+  if (existing) {
+    const renamed: MathTutorDB['sessions']['value'] = { ...existing, customTitle: name.trim() };
+    if (!renamed.customTitle) delete renamed.customTitle;
+    await tx.store.put(renamed);
+  }
+  await tx.done;
 }
 
 export async function loadSession(id: string) {

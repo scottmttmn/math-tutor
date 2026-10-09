@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "npm run test:workbook",
     "test:e2e": "npm run test:workbook:e2e && npm run test:tutor:e2e",
-    "test:workbook": "node --test tests/workbook.test.mjs tests/tutorContent.test.mjs tests/handwritingScore.test.mjs",
+    "test:workbook": "node --test tests/workbook.test.mjs tests/history.test.mjs tests/tutorContent.test.mjs tests/handwritingScore.test.mjs",
     "test:workbook:e2e": "node tests/workbook.e2e.mjs",
     "test:tutor:e2e": "node tests/tutorChat.e2e.mjs",
     "handwriting": "node scripts/handwriting/run.mjs"
