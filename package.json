@@ -3,17 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "postinstall": "node scripts/copy-tldraw-assets.mjs",
+    "postinstall": "node scripts/copy-tldraw-assets.mjs && node scripts/copy-pdfjs-assets.mjs",
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "npm run test:workbook",
-    "test:e2e": "npm run test:workbook:e2e && npm run test:tutor:e2e",
+    "test:e2e": "npm run test:workbook:e2e && npm run test:tutor:e2e && npm run test:shelf:e2e",
     "test:workbook": "node --test tests/workbook.test.mjs tests/history.test.mjs tests/tutorContent.test.mjs tests/handwritingScore.test.mjs",
     "test:workbook:e2e": "node tests/workbook.e2e.mjs",
     "test:tutor:e2e": "node tests/tutorChat.e2e.mjs",
+    "test:shelf:e2e": "node tests/shelf.e2e.mjs",
     "handwriting": "node scripts/handwriting/run.mjs"
   },
   "dependencies": {
@@ -27,6 +28,7 @@
     "katex": "^0.18.9",
     "next": "16.1.6",
     "openai": "^6.25.0",
+    "pdfjs-dist": "6.4.299",
     "proper-lockfile": "^4.1.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",

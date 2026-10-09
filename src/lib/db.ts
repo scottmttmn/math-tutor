@@ -1,5 +1,5 @@
 import { openDB, type IDBPDatabase, type DBSchema } from 'idb';
-import type { CanvasDocument, Stroke, ChatMessage, SessionType } from '@/types';
+import type { CanvasDocument, Stroke, ChatMessage, SessionType, ShelfDocument } from '@/types';
 
 interface MathTutorDB extends DBSchema {
   sessions: {
@@ -23,19 +23,26 @@ interface MathTutorDB extends DBSchema {
       'by-updated': number;
     };
   };
+  shelf: {
+    key: string;
+    value: ShelfDocument;
+  };
 }
 
 const DB_NAME = 'math-tutor';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBPDatabase<MathTutorDB>> | null = null;
 
 export function getDB(): Promise<IDBPDatabase<MathTutorDB>> {
   if (!dbPromise) {
     dbPromise = openDB<MathTutorDB>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        const store = db.createObjectStore('sessions', { keyPath: 'id' });
-        store.createIndex('by-updated', 'updatedAt');
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          const store = db.createObjectStore('sessions', { keyPath: 'id' });
+          store.createIndex('by-updated', 'updatedAt');
+        }
+        if (oldVersion < 2) db.createObjectStore('shelf', { keyPath: 'id' });
       },
     });
   }
@@ -81,4 +88,35 @@ export async function listSessions() {
   const db = await getDB();
   const all = await db.getAllFromIndex('sessions', 'by-updated');
   return all.reverse(); // newest first
+}
+
+// === Shelf ===
+
+/** The board for an exercise marked on a Shelf PDF. */
+export const shelfSessionId = (documentId: string, exerciseId: string) => `shelf:${documentId}:${exerciseId}`;
+
+export async function listShelf() {
+  const db = await getDB();
+  const all = await db.getAll('shelf');
+  return all.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export async function loadShelfDocument(id: string) {
+  const db = await getDB();
+  return db.get('shelf', id);
+}
+
+export async function saveShelfDocument(document: ShelfDocument) {
+  const db = await getDB();
+  await db.put('shelf', document);
+}
+
+/** Removes a PDF and the boards of every exercise marked on it. */
+export async function deleteShelfDocument(id: string) {
+  const db = await getDB();
+  const tx = db.transaction(['shelf', 'sessions'], 'readwrite');
+  await tx.objectStore('shelf').delete(id);
+  const prefix = `shelf:${id}:`;
+  await tx.objectStore('sessions').delete(IDBKeyRange.bound(prefix, `${prefix}\uffff`));
+  await tx.done;
 }

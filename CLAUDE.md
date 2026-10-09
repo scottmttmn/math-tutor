@@ -19,7 +19,8 @@ It has **two session modes**, and the distinction drives much of the codebase:
 - **Canvas:** tldraw 5 (pinned together with `@tldraw/assets`)
 - **Styling:** Tailwind CSS 4
 - **AI Providers:** Anthropic Claude, OpenAI, Google Gemini, Groq, Ollama (local), and the student's own ChatGPT plan via Sign in with ChatGPT
-- **Persistence:** IndexedDB (sessions), localStorage (model config)
+- **Persistence:** IndexedDB (sessions, Shelf PDFs), localStorage (model config)
+- **PDFs:** PDF.js (`pdfjs-dist`, legacy build) for the Shelf
 
 ---
 
@@ -32,6 +33,8 @@ src/
 │   ├── api/chatgpt/route.ts   # Sign in with ChatGPT: status, sign-in, sign-out
 │   ├── api/transcribe/route.ts# One image read by the ChatGPT plan (used by the handwriting test)
 │   ├── page.tsx               # Root page (renders AppShell)
+│   ├── shelf/page.tsx         # The Shelf: PDFs added for working through
+│   ├── shelf/read/page.tsx    # One Shelf PDF beside the open exercise's board (?doc=<id>&open=<exercise id>)
 │   ├── layout.tsx             # Root layout (metadata, fonts)
 │   └── globals.css            # Global Tailwind styles
 ├── components/
@@ -50,8 +53,14 @@ src/
 │   │   ├── ChatPanel.tsx      # Chat display and scroll container
 │   │   ├── ChatMessage.tsx    # Individual message bubble
 │   │   └── ChatInput.tsx      # Follow-up message input
-│   └── sessions/
-│       └── History.tsx        # Full-screen history: every board and workbook exercise, with thumbnails, search, filter, sort, rename
+│   ├── sessions/
+│   │   └── History.tsx        # Full-screen history: every board, workbook and Shelf exercise, with thumbnails, search, filter, sort, rename
+│   ├── shelf/
+│   │   ├── Shelf.tsx          # Shelf grid: add PDFs, Single problem (image/PDF straight onto a new board), remove
+│   │   ├── ShelfReader.tsx    # Page viewer + mark exercises + the open exercise's board and tutor
+│   │   └── PdfPage.tsx        # One page fit to width, marks drawn over it, drag to mark
+│   └── common/
+│       └── BlobImage.tsx      # Shows a Blob (thumbnail, cover) via an object URL
 ├── context/
 │   ├── CanvasContext.tsx      # Mirror of the tldraw document + pending load requests
 │   └── SessionContext.tsx     # Session state (problem, chat history, sessionType, sessions)
@@ -63,6 +72,8 @@ src/
 ├── lib/
 │   ├── db.ts                  # IndexedDB CRUD for sessions via `idb`
 │   ├── history.ts             # Turns saved sessions into History entries; search, filter and sort
+│   ├── pdf.ts                 # PDF.js loading (offline, from public/pdfjs), page render, crops, covers
+│   ├── shelf.ts               # Shelf actions: add PDF, mark/unmark exercises, single problem from a file
 │   ├── modelConfig.ts         # localStorage get/set for ModelConfig
 │   ├── chatgpt.ts             # Server-only Sign in with ChatGPT client + OS-keychain token encryption
 │   ├── siwc/                  # Vendored OpenAI Sign in with ChatGPT SDK (noncommercial license, see below)
@@ -112,6 +123,14 @@ src/
 - **Assets:** fonts, icons and translations are copied from `@tldraw/assets` into `public/tldraw-assets` (gitignored) by the `postinstall` script, so nothing loads from tldraw's CDN. Keep `tldraw` and `@tldraw/assets` on the same exact version.
 - **License:** with no license key tldraw runs on `http://localhost` / `127.0.0.1` (any http origin counts as development) and shows a small "Get a license for production" note. A hosted deployment needs a key from tldraw.dev.
 
+### Shelf
+- PDFs live in the IndexedDB store `shelf` (db version 2) as `ShelfDocument`s: the file Blob, a cover, the last page read, and the marked `exercises` (`page` plus a `rect` in fractions of the page).
+- Marking an exercise crops that region to a PNG (`cropPage`) and creates its board, the session `shelf:<document id>:<exercise id>`, with the crop as `problemImage` (so the tutor gets it as the problem figure) and `exerciseStatement` as the problem text. History lists these once they hold work and opens them at `/shelf/read?doc=…&open=…`.
+- The reader uses `useSessionAutosave(handle, { reopenLast: false })`: the same autosave as the main page, but it never touches `math-tutor:currentSession`; the URL says which board is open.
+- Removing a mark or a PDF deletes the boards with it (and their recovery copies).
+- **Single problem** saves a new free-form session whose `problemImage` is the picture (or a PDF's first page), sets it as the main page's current session and goes to `/`.
+- PDF.js is the **legacy** build: the modern one uses JavaScript (e.g. `Map.prototype.getOrInsertComputed`) that current Chromium and tablet web views lack. Its worker, fonts, cmaps and decoders are copied into `public/pdfjs` (gitignored) by `postinstall`, so nothing loads from a CDN.
+
 ### API Route (`/api/tutor`)
 - Supports two provider paths: **Anthropic** (`@anthropic-ai/sdk`) and **OpenAI-compatible** (`openai` SDK).
 - Always returns a **streaming response** using Server-Sent Events. Do not convert to a non-streaming response.
@@ -135,10 +154,10 @@ src/
 
 ### Session Persistence
 - Sessions are stored in IndexedDB using the `idb` library (`src/lib/db.ts`). Do not use `localStorage` for session data.
-- `db.ts` exports: `saveSession`, `loadSession`, `deleteSession`, `listSessions`, `renameSession`.
+- `db.ts` exports: `saveSession`, `loadSession`, `deleteSession`, `listSessions`, `renameSession`, and for the Shelf `listShelf`, `loadShelfDocument`, `saveShelfDocument`, `deleteShelfDocument`, `shelfSessionId`.
 - Session fields: `id`, `title`, `problemStatement`, `problemImage`, `canvasStrokes` (pre-tldraw only), `canvasDocument?`, `canvasImageBlob` (the History thumbnail), `chatHistory`, `createdAt`, `updatedAt`, `isSolved?`, `sessionType?`, `customTitle?`.
 - `customTitle` is the name given in History. Pages that autosave don't know it, so `saveSession` keeps the stored one when a save omits it; `renameSession` is the only writer.
-- **History** (`sessions/History.tsx`, opened from the top bar) lists free-form boards and workbook sessions (`workbook:<section>:exercise:<id>` / `:reading`) that have work in them. A workbook entry opens `/workbook?open=<exercise id | reading>`, which the workbook reads once and then drops from the URL.
+- **History** (`sessions/History.tsx`, opened from the top bar) lists free-form boards, workbook sessions (`workbook:<section>:exercise:<id>` / `:reading`) and Shelf exercises (`shelf:<document>:<exercise>`) that have work in them. A workbook entry opens `/workbook?open=<exercise id | reading>`, which the workbook reads once and then drops from the URL.
 - `SessionMetadata` (used for session list): `id`, `title`, `problemStatement`, `createdAt`, `updatedAt`, `messageCount`, `isSolved?`, `sessionType?`.
 - `sessionType` and `isSolved` are optional for backward compatibility with sessions saved before those fields existed. Treat missing `sessionType` as `'problem'`.
 - Model configuration (provider, model ID, base URL) is stored in `localStorage` via `src/lib/modelConfig.ts`.
@@ -181,7 +200,7 @@ npm run start  # Production server
 npm run lint   # ESLint
 npm run typecheck  # tsc --noEmit
 npm test       # Unit tests
-npm run test:e2e   # Browser tests; needs `npm run start -- -p 3100` running
+npm run test:e2e   # Browser tests (workbook, tutor chat, Shelf); needs `npm run start -- -p 3100` running
 npm run handwriting  # Handwriting test: transcribe tests/handwriting/wacom/<page-id>.png with each model, score against tests/handwriting/pages.json (results in tests/handwriting/results/, gitignored). chatgpt:<model> entries go through the running app's /api/transcribe, so start the app and sign in first
 ```
 

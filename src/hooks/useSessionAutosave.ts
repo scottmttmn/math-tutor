@@ -26,10 +26,11 @@ function rememberCurrent(id: string | null) {
 }
 
 /**
- * Saves the main page's session to IndexedDB shortly after each change, flushes it when the page
- * is hidden, and reopens it after a reload. Returns the save status and the ways to switch sessions.
+ * Saves the open session to IndexedDB shortly after each change, flushes it when the page is
+ * hidden, and (on the main page) reopens it after a reload. Returns the save status and the ways
+ * to switch sessions. The Shelf passes `reopenLast: false`: it opens boards from its own URL.
  */
-export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle | null>) {
+export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle | null>, { reopenLast = true }: { reopenLast?: boolean } = {}) {
   const state = useSessionState();
   const sessionDispatch = useSessionDispatch();
   const { document: canvasDocument, pendingLoad, hasContent } = useCanvasState();
@@ -99,7 +100,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
             sessionDispatch({ type: 'SET_CURRENT_SESSION_ID', id: session.id });
             draftId.current = null;
           }
-          rememberCurrent(session.id);
+          if (reopenLast) rememberCurrent(session.id);
         }
         setStatus('saved');
         return true;
@@ -111,7 +112,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
     // One save at a time, so an older snapshot never lands after a newer one.
     queue.current = queue.current.then(run, run);
     return queue.current;
-  }, [snapshot, canvasHandle, sessionDispatch]);
+  }, [snapshot, canvasHandle, sessionDispatch, reopenLast]);
 
   const applyLoad = useCallback((session: Session | undefined, type: SessionType = 'problem') => {
     loading.current = true;
@@ -136,9 +137,9 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
       sessionDispatch({ type: 'NEW_SESSION', sessionType: type });
       canvasDispatch({ type: 'LOAD' });
     }
-    rememberCurrent(session?.id ?? null);
+    if (reopenLast) rememberCurrent(session?.id ?? null);
     setStatus(session ? 'saved' : 'idle');
-  }, [sessionDispatch, canvasDispatch]);
+  }, [sessionDispatch, canvasDispatch, reopenLast]);
 
   /** Saves the current session, then opens a saved one. False when the current one couldn't be saved. */
   const openSession = useCallback(async (id: string): Promise<boolean> => {
@@ -162,13 +163,13 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
   useEffect(() => {
     let active = true;
     let id: string | null = null;
-    try { id = localStorage.getItem(CURRENT_SESSION_KEY); } catch { /* Start fresh. */ }
+    try { if (reopenLast) id = localStorage.getItem(CURRENT_SESSION_KEY); } catch { /* Start fresh. */ }
     if (!id) { loading.current = false; return; }
     loadRecoveredSession(id)
       .then((session) => { if (active && !switched.current) applyLoad(session); })
       .catch(() => { if (active && !switched.current) loading.current = false; });
     return () => { active = false; };
-  }, [applyLoad]);
+  }, [applyLoad, reopenLast]);
 
   // Once the editor shows a loaded session, take it as saved so opening one doesn't rewrite it.
   useEffect(() => {
@@ -189,9 +190,9 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
   const flush = useCallback(() => {
     const session = snapshot();
     if (!session || contentKey(session) === savedKey.current) return;
-    try { stageSession(session); rememberCurrent(session.id); } catch { /* The save below may still finish. */ }
+    try { stageSession(session); if (reopenLast) rememberCurrent(session.id); } catch { /* The save below may still finish. */ }
     void persist();
-  }, [snapshot, persist]);
+  }, [snapshot, persist, reopenLast]);
 
   useEffect(() => {
     const onVisibility = () => { if (document.visibilityState === 'hidden') flush(); };

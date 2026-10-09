@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { deleteSession, listSessions, renameSession } from '@/lib/db';
 import { queryHistory, toHistoryItem } from '@/lib/history';
 import { discardRecoveryCopy } from '@/lib/sessionRecovery';
+import BlobImage from '@/components/common/BlobImage';
 import type { HistoryItem, HistoryShow, HistorySort } from '@/types';
 
 interface Props {
@@ -166,7 +167,7 @@ function HistoryCard({ item, isCurrent, onOpen, onRename, onDelete }: CardProps)
         <div className="px-3 pt-2">
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
             <span className="text-gray-500">{isNote ? '📝 Notes' : '📐 Problem'}</span>
-            {item.href && <span className="px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">Workbook</span>}
+            {item.source !== 'board' && <span className="px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">{item.source === 'shelf' ? 'Shelf' : 'Workbook'}</span>}
             {item.isSolved && <span className="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-200">✓ Solved</span>}
             {isCurrent && <span className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">Open now</span>}
           </div>
@@ -227,18 +228,9 @@ function HistoryCard({ item, isCurrent, onOpen, onRename, onDelete }: CardProps)
 }
 
 function Thumbnail({ blob }: { blob: Blob | null }) {
-  const image = useRef<HTMLImageElement>(null);
-  // The object URL lives exactly as long as this card shows this blob.
-  useEffect(() => {
-    if (!blob || !image.current) return;
-    const url = URL.createObjectURL(blob);
-    image.current.src = url;
-    return () => URL.revokeObjectURL(url);
-  }, [blob]);
   return (
     <div className="aspect-[4/3] bg-white border-b border-gray-100 flex items-center justify-center overflow-hidden">
-      {/* eslint-disable-next-line @next/next/no-img-element -- a local blob URL, not an optimizable asset */}
-      {blob ? <img ref={image} alt="" className="max-w-full max-h-full object-contain p-2" /> : <span className="text-xs text-gray-300">Empty board</span>}
+      {blob ? <BlobImage blob={blob} className="max-w-full max-h-full object-contain p-2" /> : <span className="text-xs text-gray-300">Empty board</span>}
     </div>
   );
 }

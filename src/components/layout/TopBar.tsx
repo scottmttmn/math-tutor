@@ -54,6 +54,9 @@ export default function TopBar({
         <Link href="/workbook" className="px-3 py-1.5 text-xs font-medium text-blue-700 border border-blue-200 bg-blue-50 rounded-lg hover:bg-blue-100">
           Workbook
         </Link>
+        <Link href="/shelf" className="px-3 py-1.5 text-xs font-medium text-blue-700 border border-blue-200 bg-blue-50 rounded-lg hover:bg-blue-100">
+          Shelf
+        </Link>
         {/* Chat panel toggle */}
         <button
           onClick={onToggleChat}

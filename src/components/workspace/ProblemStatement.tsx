@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useSessionState, useSessionDispatch } from '@/context/SessionContext';
 import { useCanvasState } from '@/context/CanvasContext';
 
@@ -11,6 +12,8 @@ export default function ProblemStatement({ onCaptureProblemImage }: Props) {
   const { problemStatement, problemImage } = useSessionState();
   const dispatch = useSessionDispatch();
   const { hasContent } = useCanvasState();
+  // A problem brought in from a file (Shelf → Single problem) needs to be readable, not just a thumbnail.
+  const [enlarged, setEnlarged] = useState(false);
 
   return (
     <div className="px-3 py-2">
@@ -23,15 +26,17 @@ export default function ProblemStatement({ onCaptureProblemImage }: Props) {
         placeholder="Type the math problem you're working on..."
         className="w-full h-20 px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
       />
-      <div className="mt-1 flex items-center gap-2">
+      <div className={`mt-1 flex gap-2 ${enlarged && problemImage ? 'items-start' : 'items-center'}`}>
         {problemImage ? (
           <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={`data:image/png;base64,${problemImage}`}
-              alt="Problem figure"
-              className="h-10 w-16 object-contain rounded border border-gray-300 bg-white"
-            />
+            <button onClick={() => setEnlarged((on) => !on)} title={enlarged ? 'Make the problem figure small' : 'Show the problem figure larger'} className={enlarged ? 'min-w-0' : 'shrink-0'}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`data:image/png;base64,${problemImage}`}
+                alt="Problem figure"
+                className={`${enlarged ? 'max-h-72 max-w-full' : 'h-10 w-16'} object-contain rounded border border-gray-300 bg-white`}
+              />
+            </button>
             <span className="text-xs text-green-700 font-medium">Problem captured</span>
             <button
               onClick={() => dispatch({ type: 'SET_PROBLEM_IMAGE', image: null })}
