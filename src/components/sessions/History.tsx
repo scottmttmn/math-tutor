@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { deleteSession, listSessions, renameSession } from '@/lib/db';
 import { queryHistory, toHistoryItem } from '@/lib/history';
+import { discardRecoveryCopy } from '@/lib/sessionRecovery';
 import type { HistoryItem, HistoryShow, HistorySort } from '@/types';
 
 interface Props {
@@ -61,6 +62,7 @@ export default function History({ isOpen, currentSessionId, onClose, onOpen, onD
 
   const remove = async (item: HistoryItem) => {
     await deleteSession(item.id);
+    discardRecoveryCopy(item.id);
     setItems((current) => current?.filter((entry) => entry.id !== item.id) ?? null);
     onDeleted?.(item.id);
   };

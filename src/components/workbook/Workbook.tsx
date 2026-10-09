@@ -130,10 +130,15 @@ function WorkbookContent() {
   const persistCurrent = useCallback(async (): Promise<boolean> => {
     if (!currentSnapshot) return true;
     try {
+      // Read the board before awaiting the thumbnail: switching exercises can unmount the editor meanwhile.
+      const snapshot = withLiveDrawing(currentSnapshot);
       // Only picture a board the editor is showing (getDocument is null while a load is pending).
       const handle = canvasRef.current;
-      if (currentSnapshot.sessionType === 'problem' && handle?.getDocument()) thumbnail.current = await handle.captureThumbnail();
-      await saveRecoverableSession(withLiveDrawing(currentSnapshot));
+      if (snapshot.sessionType === 'problem' && handle?.getDocument()) {
+        thumbnail.current = await handle.captureThumbnail();
+        snapshot.canvasImageBlob = thumbnail.current;
+      }
+      await saveRecoverableSession(snapshot);
       setSaveError('');
       return true;
     } catch {
