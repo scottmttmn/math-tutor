@@ -179,7 +179,7 @@ npm run lint   # ESLint
 npm run typecheck  # tsc --noEmit
 npm test       # Unit tests
 npm run test:e2e   # Browser tests; needs `npm run start -- -p 3100` running
-npm run handwriting -- --pages <dir>  # Handwriting test: transcribe <dir>/wacom/<page-id>.png with each model, score against <dir>/pages.json
+npm run handwriting  # Handwriting test: transcribe tests/handwriting/wacom/<page-id>.png with each model, score against tests/handwriting/pages.json (results in tests/handwriting/results/, gitignored)
 ```
 
 ### Workflow and CI

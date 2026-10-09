@@ -12,7 +12,7 @@ Done: autosave on the main page, the 5-second request limit, CI on every PR, thi
 
 ### 1. Handwriting test set
 
-- Pages of real handwriting (written on a Wacom in the app) with a LaTeX answer key, kept outside the repo.
+- Pages of real handwriting (written on a Wacom in the app) with a LaTeX answer key, in `tests/handwriting/`. All 15 pages are written; next is running `npm run handwriting` with real keys.
 - A script sends each page to every configured model and scores the transcription against the key, so we know which models read handwritten math well enough before building on recognition.
 
 ### 2. Problem history

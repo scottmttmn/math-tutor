@@ -1,10 +1,11 @@
 // Handwriting test: sends each handwritten page to each model, asks for a LaTeX
 // transcription, and scores it against the answer key.
 //
-//   node scripts/handwriting/run.mjs --pages <dir with pages.json> [--images <dir>] \
+//   node scripts/handwriting/run.mjs [--pages <dir with pages.json>] [--images <dir>] \
 //     [--models anthropic:claude-sonnet-5-5,gemini:gemini-3.8-flash] [--out <dir>]
 //
-// Images are <page-id>.png in --images (default <pages>/wacom). Keys come from .env.local,
+// --pages defaults to tests/handwriting, Scott's handwritten set. Images are <page-id>.png in
+// --images (default <pages>/wacom). Keys come from .env.local,
 // as for the app. Writes results.json and summary.md to --out (default <pages>/results/<time>).
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -63,12 +64,11 @@ const code = (latex) => `\`${latex.replaceAll('|', '\\|').replaceAll('\n', ' ')}
 
 async function main() {
   const { values } = parseArgs({ options: {
-    pages: { type: 'string' },
+    pages: { type: 'string', default: 'tests/handwriting' },
     images: { type: 'string' },
     models: { type: 'string', default: DEFAULT_MODELS },
     out: { type: 'string' },
   } });
-  if (!values.pages) throw new Error('Pass --pages <dir containing pages.json>');
   if (existsSync('.env.local')) process.loadEnvFile('.env.local');
 
   const pagesDir = resolve(values.pages);

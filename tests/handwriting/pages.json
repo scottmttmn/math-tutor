@@ -1,0 +1,194 @@
+{
+  "version": 1,
+  "about": "Pages to copy by hand for the handwriting-recognition test set. Each page lists what to write; `lines` are the ground truth (LaTeX) a model's transcription is scored against, one per handwritten line. `diagram` describes any drawing the model should describe or export rather than transcribe.",
+  "pages": [
+    {
+      "id": "01-fractions",
+      "title": "Fractions, roots and exponents",
+      "style": "neat",
+      "tests": "nested fractions, radicals, superscripts sitting on fractions",
+      "lines": [
+        "\\frac{1}{1+\\frac{1}{x}} = \\frac{x}{x+1}",
+        "\\sqrt{\\frac{a^2+b^2}{2}} \\ge \\frac{a+b}{2}",
+        "\\left(\\frac{2}{3}\\right)^{-2} = \\frac{9}{4}",
+        "x^{\\frac{3}{2}} = \\sqrt{x^3} = x\\sqrt{x}",
+        "\\sqrt[3]{27} + 2^{2^3} = 3 + 256"
+      ]
+    },
+    {
+      "id": "02-subscripts",
+      "title": "Subscripts and superscripts together",
+      "style": "neat",
+      "tests": "indices vs exponents, double subscripts, primes",
+      "lines": [
+        "a_{n+1} = a_n^2 - 2a_{n-1}",
+        "x_1^2 + x_2^2 + \\dots + x_n^2",
+        "a_{ij} = a_{ji} \\text{ for all } i, j",
+        "e^{x^2} \\ne (e^x)^2 = e^{2x}",
+        "f'(x_0) = \\lim_{h \\to 0} \\frac{f(x_0+h) - f(x_0)}{h}"
+      ]
+    },
+    {
+      "id": "03-lookalikes",
+      "title": "Characters that look alike",
+      "style": "neat",
+      "tests": "1 l I, 0 O o, z 2, x times, u v, epsilon vs element-of, t +, 5 S, 9 g q",
+      "lines": [
+        "\\ell = 1 + I_0",
+        "z^2 = 2z \\implies z \\in \\{0, 2\\}",
+        "3 \\times x = 3x, \\quad u \\cup v \\ne u \\vee v",
+        "\\forall \\varepsilon > 0, \\; \\exists \\delta > 0, \\quad x \\in S",
+        "t + 5 = 9, \\quad g(q) = S",
+        "O \\ne 0"
+      ]
+    },
+    {
+      "id": "04-calculus",
+      "title": "Integrals, sums and limits",
+      "style": "neat",
+      "tests": "limits of integration, big operators, dx placement",
+      "lines": [
+        "\\int_0^1 x^2 \\, dx = \\frac{1}{3}",
+        "\\sum_{k=1}^{n} k = \\frac{n(n+1)}{2}",
+        "\\int_{-\\infty}^{\\infty} e^{-x^2} \\, dx = \\sqrt{\\pi}",
+        "\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1",
+        "\\prod_{p \\text{ prime}} \\frac{1}{1 - p^{-s}} = \\sum_{n=1}^{\\infty} \\frac{1}{n^s}"
+      ]
+    },
+    {
+      "id": "05-complex",
+      "title": "Complex numbers",
+      "style": "neat",
+      "tests": "i vs 1, bars for conjugates, modulus bars, arg, Greek theta",
+      "lines": [
+        "z = x + iy, \\quad \\bar{z} = x - iy",
+        "|z|^2 = z\\bar{z} = x^2 + y^2",
+        "e^{i\\theta} = \\cos\\theta + i\\sin\\theta",
+        "\\left| \\frac{z - z_1}{z - z_2} \\right| = 1",
+        "\\arg(z_1 z_2) = \\arg z_1 + \\arg z_2 \\pmod{2\\pi}"
+      ]
+    },
+    {
+      "id": "06-complex-plane",
+      "title": "A sketch in the complex plane",
+      "style": "neat",
+      "tests": "labels on a diagram; model should describe the drawing, not invent formulas",
+      "lines": [
+        "|z - 1| = 2"
+      ],
+      "diagram": "Axes labeled Re and Im. A circle centered at 1 with radius 2, with 1, -1 and 3 marked on the real axis and the inside shaded. (As drawn: the shaded region is not labeled.)"
+    },
+    {
+      "id": "07-linear-algebra",
+      "title": "Matrices and vectors",
+      "style": "neat",
+      "tests": "brackets, alignment of entries, determinants, transpose",
+      "lines": [
+        "A = \\begin{pmatrix} 2 & -1 \\\\ 0 & 3 \\end{pmatrix}",
+        "\\det A = 6, \\quad A^{-1} = \\frac{1}{6}\\begin{pmatrix} 3 & 1 \\\\ 0 & 2 \\end{pmatrix}",
+        "\\vec{v} = \\begin{pmatrix} 1 \\\\ 0 \\\\ -2 \\end{pmatrix}, \\quad \\|\\vec{v}\\| = \\sqrt{5}",
+        "(AB)^T = B^T A^T",
+        "\\det \\begin{vmatrix} a & b \\\\ c & d \\end{vmatrix} = ad - bc"
+      ]
+    },
+    {
+      "id": "08-algebra",
+      "title": "Abstract algebra",
+      "style": "neat",
+      "tests": "group notation, quotients, cong, cyclic groups, mapsto",
+      "lines": [
+        "\\mathbb{Z}/n\\mathbb{Z} \\cong \\mathbb{Z}_n",
+        "\\varphi : G \\to H, \\quad g \\to g^2",
+        "G/\\ker\\varphi \\cong \\operatorname{im}\\varphi",
+        "|G| = |G : H|\\,|H|",
+        "S_3 = \\langle (1\\,2)(1\\,2\\,3) \\rangle"
+      ]
+    },
+    {
+      "id": "09-logic-sets",
+      "title": "Logic and set notation",
+      "style": "neat",
+      "tests": "quantifiers, negation, set builder, subset vs element, empty set vs phi",
+      "lines": [
+        "\\neg(\\forall x \\, P(x)) \\iff \\exists x \\, \\neg P(x)",
+        "A \\setminus B = \\{ x \\in A : x \\notin B \\}",
+        "A \\subseteq B \\land B \\subseteq A \\implies A = B",
+        "\\emptyset \\ne \\{\\emptyset\\}, \\quad \\phi(n) = n\\prod_{p \\mid n}\\left(1 - \\frac{1}{p}\\right)",
+        "\\vdash (P \\to Q) \\to (\\neg Q \\to \\neg P)"
+      ]
+    },
+    {
+      "id": "10-combinatorics",
+      "title": "Combinatorics",
+      "style": "neat",
+      "tests": "binomial coefficients vs fractions, factorials, piecewise",
+      "lines": [
+        "\\binom{n}{k} = \\frac{n!}{k!\\,(n-k)!}",
+        "(1+x)^n = \\sum_{k=0}^{n} \\binom{n}{k} x^k",
+        "\\binom{n}{k} = \\binom{n-1}{k-1} + \\binom{n-1}{k}",
+        "D_n = n! \\sum_{k=0}^{n} \\frac{(-1)^k}{k!}",
+        "F_n = \\begin{cases} n & n \\le 1 \\\\ F_{n-1} + F_{n-2} & n \\ge 2 \\end{cases}"
+      ]
+    },
+    {
+      "id": "11-graph",
+      "title": "A small graph",
+      "style": "neat",
+      "tests": "diagram with labels plus a short statement",
+      "lines": [
+        "\\sum_{v \\in V} \\deg v = 2|E|",
+        "K_4 \\text{ has } \\binom{4}{2} = 6 \\text{ edges}"
+      ],
+      "diagram": "Draw K_4: four dots labeled a, b, c, d at the corners of a square, with all six edges (the four sides and both diagonals)."
+    },
+    {
+      "id": "12-proof",
+      "title": "A short proof in sentences",
+      "style": "neat",
+      "tests": "prose mixed with inline math; this is the TeX write-up use case",
+      "lines": [
+        "\\text{Claim: } \\sqrt{2} \\text{ is irrational.}",
+        "\\text{Proof. Suppose } \\sqrt{2} = p/q \\text{ with } p, q \\text{ integers } q \\ne 0, \\text{ in lowest terms.}",
+        "\\text{Then } p^2 = 2q^2, \\text{ so } p^2 \\text{ is even, hence } p \\text{ is even. Write } p = 2r.",
+        "\\text{Then } 4r^2 = 2q^2, \\text{ so } q^2 = 2r^2 \\text{ and } q \\text{ is even too.}",
+        "\\text{This contradicts lowest terms, so } \\sqrt{2} \\notin \\mathbb{Q}. \\qquad \\blacksquare"
+      ]
+    },
+    {
+      "id": "13-aligned",
+      "title": "A derivation, one step per line",
+      "style": "neat",
+      "tests": "equals signs lined up down the page",
+      "lines": [
+        "(x+1)^2 - (x-1)^2",
+        "= (x^2 + 2x + 1) - (x^2 - 2x + 1)",
+        "= x^2 + 2x + 1 - x^2 + 2x - 1",
+        "= 4x"
+      ]
+    },
+    {
+      "id": "14-scratch",
+      "title": "Scratch work (messy on purpose)",
+      "style": "scratch",
+      "tests": "crossed-out steps, arrows, margin notes; the model should ignore what is crossed out",
+      "lines": [
+        "x^2 - 5x + 6 = 0",
+        "(x - 2)(x - 3) = 0",
+        "x = 2 \\text{ or } x = 3"
+      ],
+      "scratch": "Write the first line. Then write (x - 1)(x - 6) = 0 and cross it out with one line. Write the correct factoring next to it with an arrow pointing to it. Circle the final answer, and write 'check: 4 - 10 + 6 = 0 ✓' small in the margin."
+    },
+    {
+      "id": "15-fast",
+      "title": "Fast and sloppy",
+      "style": "scratch",
+      "tests": "your real speed; write this as quickly as you would when thinking",
+      "lines": [
+        "\\frac{d}{dx}\\left[x^2 \\ln x\\right] = 2x\\ln x + x",
+        "\\int x e^x \\, dx = x e^x - e^x + C",
+        "u = \\ln x, \\; du = \\frac{dx}{x}",
+        "\\int \\frac{\\ln x}{x} \\, dx = \\frac{\\ln(x)^2}{2} + C"
+      ]
+    }
+  ]
+}
