@@ -57,6 +57,19 @@ export default function ShelfReader() {
     setShelfDocument(next);
   }, []);
 
+  // Writes to the PDF's record run one at a time, each from the record the previous one left, so a
+  // slow write (a page turn, a mark) can't save over a newer one with stale exercises.
+  const documentWrites = useRef<Promise<unknown>>(Promise.resolve());
+  const writeDocument = useCallback(<T,>(write: (current: ShelfDocument) => Promise<T>): Promise<T> => {
+    const run = () => {
+      const current = documentRef.current;
+      return current ? write(current) : Promise.reject(new Error('No document'));
+    };
+    const result = documentWrites.current.then(run, run);
+    documentWrites.current = result.catch(() => undefined);
+    return result;
+  }, []);
+
   const openExercise = useCallback(async (exercise: ShelfExercise, loaded?: { pdf: PDFDocumentProxy; document: ShelfDocument }) => {
     const source = loaded ?? (pdf && documentRef.current ? { pdf, document: documentRef.current } : null);
     if (!source || switching.current || isStreaming) return;
@@ -83,7 +96,8 @@ export default function ShelfReader() {
       const stored = documentId ? await loadShelfDocument(documentId) : undefined;
       if (!stored) { if (active) setLoadError('This PDF is not on your Shelf.'); return; }
       opened = await openPdf(stored.file);
-      if (!active) return;
+      // Left before it finished opening: the cleanup has already run, so free it here.
+      if (!active) { void opened.loadingTask.destroy(); return; }
       updateDocument(stored);
       setPdf(opened);
       setPage(Math.min(Math.max(1, stored.lastPage), opened.numPages));
@@ -102,14 +116,14 @@ export default function ShelfReader() {
     const current = documentRef.current;
     if (!current || current.lastPage === page) return;
     const timer = setTimeout(() => {
-      const latest = documentRef.current;
-      if (!latest) return;
-      const next = { ...latest, lastPage: page, updatedAt: Date.now() };
-      documentRef.current = next;
-      void saveShelfDocument(next).catch(() => { /* Only the reading position is lost. */ });
+      void writeDocument(async (latest) => {
+        const next = { ...latest, lastPage: page, updatedAt: Date.now() };
+        await saveShelfDocument(next);
+        documentRef.current = next;
+      }).catch(() => { /* Only the reading position is lost. */ });
     }, PAGE_SAVE_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [page]);
+  }, [page, writeDocument]);
 
   // Keep the marks' ✓ in step with the open board's Mark Solved.
   useEffect(() => {
@@ -133,13 +147,16 @@ export default function ShelfReader() {
   };
 
   const saveMark = async () => {
-    const current = documentRef.current;
-    if (!pdf || !current || !pendingMark) return;
+    if (!pdf || !pendingMark) return;
     const rect = pendingMark;
+    const markPage = page;
     setPendingMark(null);
     try {
-      const { document: next, exercise } = await markExercise(pdf, current, page, rect, markLabel);
-      updateDocument(next);
+      const { document: next, exercise } = await writeDocument(async (current) => {
+        const marked = await markExercise(pdf, current, markPage, rect, markLabel);
+        updateDocument(marked.document);
+        return marked;
+      });
       await openExercise(exercise, { pdf, document: next });
     } catch {
       setError('The exercise could not be saved. Try again.');
@@ -158,7 +175,7 @@ export default function ShelfReader() {
       writeUrl(current.id, null);
     }
     try {
-      updateDocument(await unmarkExercise(current, exercise.id));
+      await writeDocument(async (latest) => updateDocument(await unmarkExercise(latest, exercise.id)));
       setSolvedIds((ids) => ids.filter((id) => id !== exercise.id));
     } catch { setError('The exercise could not be removed. Try again.'); }
   };
