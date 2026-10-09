@@ -6,13 +6,13 @@ Direction: pen-first and keyboard-free. The end state is an Android app on an e-
 
 Work top to bottom unless priorities change. Every change goes through a branch and a PR (see CLAUDE.md, "Workflow and CI").
 
-Done: autosave on the main page, the 5-second request limit, CI on every PR, thinner default pen.
+Done: the handwriting test, autosave on the main page, the 5-second request limit, CI on every PR, thinner default pen.
 
 ## MVP
 
 ### 1. Handwriting test set
 
-- Pages of real handwriting (written on a Wacom in the app) with a LaTeX answer key, in `tests/handwriting/`. All 15 pages are written. First run (2026-10-09): Claude Sonnet 5.5 98%, Gemini 3.8 Flash 95% (some replies cut off at the old token limit). Next: re-run with the higher token limit, adding Claude Opus 5.5 and the ChatGPT-plan models Luna and Sol 6.1, then pick the model to build recognition on.
+- Pages of real handwriting (written on a Wacom in the app) with a LaTeX answer key, in `tests/handwriting/`. Done (2026-10-09): Claude Sonnet 5.5, Claude Opus 5.5 and ChatGPT-plan Sol 6.1 each read 99%; their misreads are lookalikes (O/θ, q/9, S/5) and the odd dropped sign or row. Luna (91%) invented a whole page of work, so it isn't used for reading handwriting. Gemini 3.8 Flash's free tier was rate limited before it could finish.
 - A script (`npm run handwriting`) sends each page to every configured model and scores the transcription against the key, so we know which models read handwritten math well enough before building on recognition.
 
 ### 2. Problem history

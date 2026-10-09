@@ -39,7 +39,7 @@ function SettingsForm({ onClose }: Pick<Props, 'onClose'>) {
   const isChatGPT = PRESETS[presetIdx]?.provider === 'chatgpt';
   const chatgpt = useChatGPTConnection(isChatGPT);
   const chatgptModels = chatgpt.status.models;
-  // Default to the lightest model the plan offers; hints don't need a frontier model.
+  // A saved plan model stays; otherwise use the default (see CHATGPT_DEFAULT_MODEL_PATTERN).
   const chatgptModel = chatgptModels?.some((m) => m.slug === config.model)
     ? config.model
     : (chatgptModels?.find((m) => CHATGPT_DEFAULT_MODEL_PATTERN.test(`${m.slug} ${m.displayName}`)) ?? chatgptModels?.[0])?.slug
