@@ -81,9 +81,13 @@ try {
   assert.match(JSON.stringify(content), /Exercise 1 · Algebra drills, p\. 1/);
   // The tutor reads the book up to the exercise's page, never past it.
   assert.equal(await page.getByLabel('Tutor reads').inputValue(), '1');
-  const system = requests.at(-1).messages[0].content;
-  assert.match(system, /<book_pages>[\s\S]*roots of unity/);
-  assert.doesNotMatch(system, /Compute \(1\+i\)\^8/);
+  // The pages open the conversation as user text; only the rule about them is in the system prompt.
+  const [system, pages] = requests.at(-1).messages;
+  assert.equal(system.role, 'system');
+  assert.doesNotMatch(system.content, /roots of unity/);
+  assert.equal(pages.role, 'user');
+  assert.match(pages.content, /<book_pages>[\s\S]*roots of unity/);
+  assert.doesNotMatch(pages.content, /Compute \(1\+i\)\^8/);
 
   // Solving shows on the page's mark; a reload returns to the same board with the stroke.
   await page.getByRole('button', { name: 'Page', exact: true }).click();

@@ -44,7 +44,7 @@ export function readingRange(document: ShelfDocument, exercise: ShelfExercise, s
   let from = exercise.readFrom;
   if (from === undefined) {
     const chosen = document.exercises
-      .filter((other) => other.id !== exercise.id && other.readFrom && other.readFrom <= to && to - other.readFrom < MAX_BOOK_PAGES
+      .filter((other) => other.id !== exercise.id && other.page <= to && other.readFrom && other.readFrom <= to && to - other.readFrom < MAX_BOOK_PAGES
         && sectionFor(starts, other.page) === section)
       .map((other) => other.readFrom as number);
     from = chosen.length ? Math.max(...chosen) : section ? section.page : to - FALLBACK_PAGES;

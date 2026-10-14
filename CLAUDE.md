@@ -138,7 +138,7 @@ src/
 - **Two system prompts**, selected by `sessionType`:
   - `SYSTEM_PROMPT` (default / `'problem'`) — Socratic, hints only, never the answer.
   - `NOTE_SYSTEM_PROMPT` (`'note'`) — direct explanations, may state answers.
-- `bookContext` (Shelf pages) is appended after the system prompt as reference material (cached on the Anthropic path) and always uses `SYSTEM_PROMPT`.
+- `bookContext` (Shelf pages) comes from the student's PDF, so it is untrusted: the pages open the conversation as a user message (cached on the Anthropic path) and only the rule about them (`BOOK_RULE`) goes in the system prompt. Requests with it always use `SYSTEM_PROMPT`.
 - Images are passed as base64 PNG. When `problemImage` is present it is sent **first** and described to the model as the problem figure; the canvas image follows as the student's work.
 - The API cleans message history to ensure valid alternating user/assistant turns before sending to the model (Anthropic path only).
 - Request body shape: `{ problemStatement, chatHistory, canvasImage, modelConfig, userQuestion?, problemImage?, sessionType?, workbookContext?, bookContext? }` (see `TutorRequest` in `src/types/index.ts`).

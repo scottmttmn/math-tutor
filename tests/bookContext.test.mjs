@@ -42,6 +42,8 @@ test('a later exercise in the same section reuses the correction', () => {
   const corrected = exercise('a', 20, 12);
   const later = exercise('b', 24);
   assert.equal(readingRange(book(corrected, later), later, []).from, 12);
+  const before = exercise('g', 16);
+  assert.equal(readingRange(book(exercise('h', 24, 9), before), before, []).from, 10, 'a later exercise\'s choice does not reach back');
   const farLater = exercise('c', 40);
   assert.equal(readingRange(book(corrected, farLater), farLater, []).from, 34, 'out of reach of the correction');
   const otherSection = exercise('d', 43);
