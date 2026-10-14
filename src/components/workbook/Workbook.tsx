@@ -14,6 +14,7 @@ import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/
 import BottomToolbar from '@/components/layout/BottomToolbar';
 import AppBar from '@/components/layout/AppBar';
 import BoardFrame from '@/components/layout/BoardFrame';
+import { ProblemIcon, ShelfIcon, SolvedCheck, TutorIcon } from '@/components/common/Icons';
 import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
 import { useToolsHidden } from '@/hooks/useToolsHidden';
 import ChatMessage from '@/components/chat/ChatMessage';
@@ -29,7 +30,7 @@ const recommendedPart: Record<string, string> = {
   x1_3_6: '(a)',
 };
 
-const contentClasses = 'text-[15px] leading-7 text-gray-800 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:mb-5 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:mt-6 [&_h2]:mb-2 [&_h3]:font-semibold [&_h3]:mt-4 [&_.para]:my-3 [&_p]:my-3 [&_figure]:my-6 [&_figure]:text-center [&_figcaption]:text-xs [&_figcaption]:text-gray-500 [&_img]:mx-auto [&_img]:max-w-full [&_img]:max-h-72 [&_a]:text-blue-700 [&_a]:underline [&_.definition]:rounded-lg [&_.definition]:bg-blue-50 [&_.definition]:p-4 [&_.theorem]:rounded-lg [&_.theorem]:bg-amber-50 [&_.theorem]:p-4 [&_.displaymath]:overflow-x-auto [&_.displaymath]:py-2 [&_.exercise]:my-2 [&_.task]:ml-5';
+const contentClasses = 'text-[15px] leading-7 text-gray-800 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:mb-5 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:mt-6 [&_h2]:mb-2 [&_h3]:font-semibold [&_h3]:mt-4 [&_.para]:my-3 [&_p]:my-3 [&_figure]:my-6 [&_figure]:text-center [&_figcaption]:text-xs [&_figcaption]:text-gray-500 [&_img]:mx-auto [&_img]:max-w-full [&_img]:max-h-72 [&_a]:text-gray-900 [&_a]:underline [&_.definition]:rounded-lg [&_.definition]:bg-gray-100 [&_.definition]:p-4 [&_.theorem]:rounded-lg [&_.theorem]:border-l-4 [&_.theorem]:border-gray-900 [&_.theorem]:bg-white [&_.theorem]:p-4 [&_.displaymath]:overflow-x-auto [&_.displaymath]:py-2 [&_.exercise]:my-2 [&_.task]:ml-5';
 
 function WorkbookContent() {
   const [exerciseId, setExerciseId] = useState<string | null>(null);
@@ -283,10 +284,10 @@ function WorkbookContent() {
       <div ref={chatScrollRef} aria-live="polite" aria-busy={isStreaming} className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
         {chatHistory.length === 0 ? <p className="text-sm text-gray-400 text-center mt-6">{exercise ? 'Your conversation for this exercise starts here.' : 'What would you like to understand better?'}</p> : chatHistory.map((message) => <ChatMessage key={message.id} message={message} />)}
       </div>
-      {selectedPassage && !exercise && <div className="mx-3 mb-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-800 flex gap-2"><span className="line-clamp-2 flex-1">Selected: {selectedPassage}</span><button onClick={() => setSelectedPassage('')} aria-label="Clear selected passage">×</button></div>}
+      {selectedPassage && !exercise && <div className="mx-3 mb-2 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-lg text-xs text-gray-900 flex gap-2"><span className="line-clamp-2 flex-1">Selected: {selectedPassage}</span><button onClick={() => setSelectedPassage('')} aria-label="Clear selected passage" className="min-w-11 -my-2 -mr-3">×</button></div>}
       <form onSubmit={sendQuestion} className="p-3 border-t border-gray-200 flex items-end gap-2">
-        <ChatTextarea aria-label={exercise ? `Question about exercise ${exercise.number}` : 'Question about the reading'} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={isStreaming} placeholder={exercise ? 'Ask about this problem…' : 'Ask about the reading…'} className="flex-1 min-w-0 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        <button type="submit" disabled={!draft.trim() || isStreaming || isLimited} title={isLimited ? 'Please wait a moment before asking again.' : undefined} className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-40">Ask</button>
+        <ChatTextarea aria-label={exercise ? `Question about exercise ${exercise.number}` : 'Question about the reading'} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={isStreaming} placeholder={exercise ? 'Ask about this problem…' : 'Ask about the reading…'} className="flex-1 min-w-0 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
+        <button type="submit" disabled={!draft.trim() || isStreaming || isLimited} title={isLimited ? 'Please wait a moment before asking again.' : undefined} className="min-h-11 px-3 text-sm font-semibold text-white bg-indigo-700 rounded-lg hover:bg-indigo-800 disabled:bg-gray-200 disabled:text-gray-500">Ask</button>
       </form>
       {isLimited && !isStreaming && <p className="px-3 pb-2 text-xs text-gray-500">Please wait a moment before asking again.</p>}
     </>
@@ -298,17 +299,17 @@ function WorkbookContent() {
       <header className={`${fullScreen ? 'hidden' : 'flex'} items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-white`}>
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs text-gray-500">
-            <Link href="/shelf" onClick={(event) => { if (isStreaming) event.preventDefault(); }} aria-disabled={isStreaming} className="text-blue-700 hover:underline">Shelf</Link>
+            <Link href="/shelf" onClick={(event) => { if (isStreaming) event.preventDefault(); }} aria-disabled={isStreaming} className="text-gray-900 underline">Shelf</Link>
             <span>›</span><span>Workbook</span><span>›</span><span>Complex Analysis</span>
           </div>
           <h1 className="font-semibold text-gray-900 truncate">1.3 · The Geometry of Complex Numbers</h1>
         </div>
-        {exercise && <button onClick={() => void openView(null)} disabled={!ready || isStreaming} className="shrink-0 px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50">Back to reading</button>}
+        {exercise && <button onClick={() => void openView(null)} disabled={!ready || isStreaming} className="shrink-0 min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50">Back to reading</button>}
       </header>
 
       {saveError && <div role="alert" className="px-4 py-2 text-sm text-red-700 bg-red-50 border-b border-red-100">{saveError}</div>}
 
-      {!ready ? <div className="p-6 text-gray-500">{saveError ? <button className="text-blue-700 underline" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Retry loading progress</button> : 'Loading workbook…'}</div> : exercise ? (
+      {!ready ? <div className="p-6 text-gray-500">{saveError ? <button className="text-gray-900 underline" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Retry loading progress</button> : 'Loading workbook…'}</div> : exercise ? (
         <BoardFrame
           fullScreen={fullScreen}
           source={{
@@ -328,11 +329,11 @@ function WorkbookContent() {
           title={(
             <>
               <h2 className="font-semibold text-gray-900 truncate">Exercise {exercise.number.replace('.', '')}</h2>
-              <p className="text-xs text-gray-500">Complex Analysis §1.3 · workbook</p>
+              <p className="flex items-center gap-1 text-xs text-gray-600"><ProblemIcon />Problem · <ShelfIcon />Workbook, Complex Analysis §1.3</p>
             </>
           )}
           canvas={<DrawingCanvas handleRef={canvasRef} toolsHidden={toolsHidden} />}
-          toolbar={<BottomToolbar onAskForHelp={() => void reviewWhiteboard()} isStreaming={isStreaming} isSolved={isSolved} onToggleSolved={toggleComplete} onClear={() => canvasRef.current?.clear()} sessionType="problem" completionLabel="attempt" fullScreen={{ on: fullScreen, toggle: toggleFullScreen }} tools={{ hidden: toolsHidden, toggle: toggleTools }} tutor={{ open: tutorOpen, toggle: () => setTutorOpen((open) => !open) }} />}
+          toolbar={<BottomToolbar onAskForHelp={() => void reviewWhiteboard()} isStreaming={isStreaming} isSolved={isSolved} onToggleSolved={toggleComplete} onClear={() => canvasRef.current?.clear()} sessionType="problem" fullScreen={{ on: fullScreen, toggle: toggleFullScreen }} tools={{ hidden: toolsHidden, toggle: toggleTools }} tutor={{ open: tutorOpen, toggle: () => setTutorOpen((open) => !open) }} />}
           tutor={{
             open: tutorOpen,
             onClose: () => setTutorOpen(false),
@@ -357,10 +358,10 @@ function WorkbookContent() {
                   <p className="text-sm text-gray-600 mt-1 mb-4">Recommended problems give you a path through the section. Every problem has its own whiteboard.</p>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {content.exercises.map((item) => (
-                      <button key={item.id} onClick={() => void openView(item.id)} disabled={isStreaming} className="text-left p-3 rounded-lg border border-gray-200 bg-white hover:border-blue-400 hover:bg-blue-50 disabled:opacity-50">
+                      <button key={item.id} onClick={() => void openView(item.id)} disabled={isStreaming} className="text-left p-3 rounded-lg border border-gray-200 bg-white hover:border-gray-900 hover:bg-gray-50 disabled:opacity-50">
                         <span className="font-medium text-gray-900">Exercise {item.number}</span>
-                        {content.recommendedIds.includes(item.id) && <span className="ml-2 text-xs text-blue-700">Recommended{recommendedPart[item.id] ? `: ${recommendedPart[item.id]}` : ''}</span>}
-                        {completedIds.includes(item.id) && <span className="ml-2 text-xs text-green-700">Complete</span>}
+                        {content.recommendedIds.includes(item.id) && <span className="ml-2 text-xs font-medium text-gray-900 underline decoration-dotted">Recommended{recommendedPart[item.id] ? `: ${recommendedPart[item.id]}` : ''}</span>}
+                        {completedIds.includes(item.id) && <span className="ml-2 inline-flex items-center gap-1 align-middle text-xs font-semibold text-gray-900"><SolvedCheck size={14} />Solved</span>}
                         <span className="block text-xs text-gray-500 truncate mt-1">{item.text}</span>
                       </button>
                     ))}
@@ -370,9 +371,9 @@ function WorkbookContent() {
             </div>
           </main>
 
-          <aside className="flex h-[38vh] lg:h-auto lg:w-[380px] lg:border-l border-t lg:border-t-0 border-gray-200 bg-white flex-col shrink-0">
+          <aside className="flex h-[38vh] lg:h-auto lg:w-[380px] lg:border-l-2 border-t-2 lg:border-t-0 border-indigo-700 bg-white flex-col shrink-0">
             <div className="px-4 py-3 border-b border-gray-200">
-              <h2 className="font-semibold text-gray-900">Reading tutor</h2>
+              <h2 className="flex items-center gap-1.5 font-semibold text-indigo-700"><TutorIcon />Reading tutor</h2>
               <p className="text-xs text-gray-500">Ask about the text or a selected passage as you read.</p>
             </div>
             {tutorChat}

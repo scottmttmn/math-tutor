@@ -77,7 +77,7 @@ try {
   await page.getByText('Saved', { exact: true }).waitFor();
 
   // Ask for help: the marked region goes to the tutor as the problem image, the board as the work.
-  await page.getByRole('button', { name: 'Ask for Help' }).click();
+  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
   await page.getByText('Shelf hint.').waitFor();
   const content = requests.at(-1).messages.at(-1).content;
   assert.equal(content.filter((part) => part.type === 'image_url').length, 2, 'problem image and board');
@@ -96,7 +96,7 @@ try {
   // The tutor opened in its drawer; closing it leaves the page and the board.
   await page.getByRole('complementary', { name: 'Tutor' }).waitFor();
   await page.getByRole('button', { name: 'Close tutor' }).click();
-  await page.getByRole('button', { name: /Mark Solved/ }).click();
+  await page.getByRole('button', { name: 'Mark solved', exact: true }).click();
   await page.getByRole('button', { name: 'Open Exercise 1' }).filter({ hasText: '✓' }).waitFor();
   await page.waitForTimeout(1200);
   await page.reload();
@@ -173,7 +173,7 @@ try {
   await page.getByText('Page 1 of 2').waitFor();
   await page.getByRole('button', { name: 'Full screen' }).click();
   await page.waitForTimeout(5000);
-  await page.getByRole('button', { name: 'Ask for Help' }).click();
+  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
   await page.getByRole('button', { name: 'Full screen' }).waitFor();
   await page.getByText('Shelf hint.').last().waitFor();
   // Hiding the tools leaves the pen writing; the choice survives a reload.
@@ -212,7 +212,8 @@ try {
   await page.getByText('Page 1 of 2').waitFor();
 
   // Removing a mark removes its board.
-  await page.getByRole('button', { name: 'Remove', exact: true }).click();
+  await page.getByRole('button', { name: 'More for Exercise 1' }).click();
+  await page.getByRole('menuitem', { name: 'Remove exercise' }).click();
   await page.getByRole('heading', { name: 'Exercises', exact: true }).waitFor();
   // The board closes before the mark's removal is written, so wait for the mark to go.
   await page.getByRole('button', { name: 'Open Exercise 1' }).waitFor({ state: 'detached' });
@@ -238,7 +239,8 @@ try {
 
   // Removing the PDF takes its remaining boards with it.
   await page.goto(`${origin}/shelf`);
-  await page.getByRole('button', { name: 'Remove Algebra drills' }).click();
+  await page.getByRole('button', { name: 'More for Algebra drills' }).click();
+  await page.getByRole('menuitem', { name: 'Remove' }).click();
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
   await page.getByText('No PDFs yet.').waitFor();
   const shelfSessions = await page.evaluate(() => new Promise((resolve) => {

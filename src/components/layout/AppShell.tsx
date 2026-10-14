@@ -17,6 +17,7 @@ import NoteHeader from '../workspace/NoteHeader';
 import DrawingCanvas, { type DrawingCanvasHandle } from '../workspace/DrawingCanvas';
 import ChatPanel from '../chat/ChatPanel';
 import BoardFrame from './BoardFrame';
+import { KindIcon } from '@/components/common/Icons';
 
 function AppContent() {
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
@@ -113,7 +114,7 @@ function AppContent() {
             }}
         title={(
           <>
-            <p className="text-xs text-gray-500">{sessionType === 'note' ? 'Notes' : 'Problem'}</p>
+            <p className="flex items-center gap-1 text-xs text-gray-600"><KindIcon type={sessionType} />{sessionType === 'note' ? 'Notes' : 'Problem'}</p>
             <h1 className="font-semibold text-gray-900 truncate">{problemStatement.split('\n')[0].trim() || (sessionType === 'note' ? 'New notes' : 'New problem')}</h1>
           </>
         )}

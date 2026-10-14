@@ -72,7 +72,7 @@ function SettingsForm({ onClose }: Pick<Props, 'onClose'>) {
         <select
           value={presetIdx}
           onChange={(e) => handlePresetChange(Number(e.target.value))}
-          className="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
         >
           {PRESETS.map((p, i) => (
             <option key={p.label} value={i}>{p.label}</option>
@@ -102,7 +102,7 @@ function SettingsForm({ onClose }: Pick<Props, 'onClose'>) {
                   {chatgpt.status.sharing && (
                     <>
                       {' '}
-                      <a href={CHATGPT_USAGE_URL} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline hover:text-blue-700">
+                      <a href={CHATGPT_USAGE_URL} target="_blank" rel="noopener noreferrer" className="text-gray-900 underline">
                         Manage usage
                       </a>
                     </>
@@ -135,7 +135,7 @@ function SettingsForm({ onClose }: Pick<Props, 'onClose'>) {
           <select
             value={chatgptModel}
             onChange={(e) => setConfig({ ...config, model: e.target.value })}
-            className="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
           >
             {chatgptModels.map((m) => (
               <option key={m.slug} value={m.slug}>{m.displayName}</option>
@@ -147,7 +147,7 @@ function SettingsForm({ onClose }: Pick<Props, 'onClose'>) {
             value={config.model}
             onChange={(e) => setConfig({ ...config, model: e.target.value })}
             placeholder="Model name"
-            className="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
           />
         )}
 
@@ -160,7 +160,7 @@ function SettingsForm({ onClose }: Pick<Props, 'onClose'>) {
               value={config.baseUrl}
               onChange={(e) => setConfig({ ...config, baseUrl: e.target.value })}
               placeholder="http://192.168.x.x:11434/v1"
-              className="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
             />
           </>
         )}
@@ -187,7 +187,7 @@ function SettingsForm({ onClose }: Pick<Props, 'onClose'>) {
           </button>
           <button
             onClick={handleSave}
-            className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+            className="min-h-11 px-4 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700"
           >
             Save
           </button>

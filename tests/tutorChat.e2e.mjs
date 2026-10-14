@@ -54,7 +54,7 @@ try {
   await page.reload();
   await page.getByRole('button', { name: 'New', exact: true }).click();
   await page.getByRole('button', { name: /New Notes/ }).click();
-  await page.getByRole('button', { name: 'Ask About This', exact: true }).click();
+  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
   await page.locator('.tutor-content').last().locator('.katex').nth(3).waitFor();
   console.log('PASS free-form chat math');
 
@@ -84,7 +84,7 @@ try {
     for (let i = 0; i < 10; i += 1) await wide.mouse.move(x + i * 5, y + Math.sin(i) * 10);
     await wide.mouse.up();
   }
-  await wide.getByRole('button', { name: 'Ask for Help', exact: true }).click();
+  await wide.getByRole('button', { name: 'Ask tutor', exact: true }).click();
   await wide.locator('.tutor-content').last().locator('.katex').first().waitFor();
   const png = Buffer.from(wideRequests.at(-1).canvasImage, 'base64');
   const [width, height] = [png.readUInt32BE(16), png.readUInt32BE(20)];

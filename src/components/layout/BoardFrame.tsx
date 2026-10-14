@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useSyncExternalStore, type ReactNode } from 'react';
+import { TutorIcon } from '@/components/common/Icons';
 
 // Tailwind's 2xl: wide enough for the source, the board and the tutor side by side.
 const WIDE_QUERY = '(min-width: 96rem)';
@@ -66,7 +67,7 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
               }}
               aria-pressed={showSource && !sourceCovered}
               title={sourceHidden || sourceCovered ? `Show the ${source.label.toLowerCase()} beside the board` : `Give the board the ${source.label.toLowerCase()}'s room`}
-              className="min-h-10 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+              className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
             >
               {sourceHidden || sourceCovered ? `Show ${source.label.toLowerCase()}` : `Hide ${source.label.toLowerCase()}`}
             </button>
@@ -79,11 +80,11 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
       {showTutor && (
         <aside
           aria-label="Tutor"
-          className="order-first lg:order-none flex flex-col min-h-0 basis-[40%] shrink-0 lg:basis-auto lg:w-[24rem] lg:flex-none border-b lg:border-b-0 lg:border-l border-gray-200 bg-white"
+          className="order-first lg:order-none flex flex-col min-h-0 basis-[40%] shrink-0 lg:basis-auto lg:w-[24rem] lg:flex-none border-b-2 lg:border-b-0 lg:border-l-2 border-indigo-700 bg-white"
         >
           <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200">
-            <h2 className="flex-1 font-semibold text-gray-900">Tutor</h2>
-            <button onClick={tutor.onClose} aria-label="Close tutor" className="min-h-10 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+            <h2 className="flex-1 flex items-center gap-1.5 font-semibold text-indigo-700"><TutorIcon />Tutor</h2>
+            <button onClick={tutor.onClose} aria-label="Close tutor" className="min-h-11 px-3 text-sm text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50">
               Close
             </button>
           </div>

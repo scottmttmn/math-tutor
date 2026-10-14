@@ -4,6 +4,7 @@ import { useCanvasState } from '@/context/CanvasContext';
 import { useRateLimit } from '@/hooks/useRateLimit';
 import { RATE_LIMIT_MS } from '@/lib/constants';
 import type { SessionType } from '@/types';
+import { FullScreenIcon, SolvedCheck, TutorIcon, UnsolvedCheck } from '@/components/common/Icons';
 
 // Drawing tools, colors and undo live in tldraw's own toolbar on the canvas.
 interface Props {
@@ -13,7 +14,6 @@ interface Props {
   isSolved: boolean;
   onToggleSolved: () => void;
   sessionType: SessionType;
-  completionLabel?: 'attempt';
   /** Shows the Full screen button (see useBoardFullScreen). */
   fullScreen?: { on: boolean; toggle: () => void };
   /** Shows the Hide tools button (see useToolsHidden). */
@@ -22,20 +22,22 @@ interface Props {
   tutor?: { open: boolean; toggle: () => void };
 }
 
-export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSolved, onToggleSolved, sessionType, completionLabel, fullScreen, tools, tutor }: Props) {
+export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor }: Props) {
   const { hasContent } = useCanvasState();
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
   const helpDisabled = isLimited || isStreaming;
+  const plain = 'flex items-center gap-1.5 min-h-11 px-3 text-sm text-gray-800 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40';
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2 border-t border-gray-200 bg-white flex-wrap">
+    <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-200 bg-white flex-wrap">
       {fullScreen && (
         <button
           onClick={fullScreen.toggle}
           aria-pressed={fullScreen.on}
-          className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+          className={plain}
           title={fullScreen.on ? 'Show the rest of the page again (Esc)' : 'Give the board the whole screen'}
         >
+          <FullScreenIcon />
           {fullScreen.on ? 'Exit full screen' : 'Full screen'}
         </button>
       )}
@@ -44,7 +46,7 @@ export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSo
         <button
           onClick={tools.toggle}
           aria-pressed={tools.hidden}
-          className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+          className={plain}
           title={tools.hidden ? 'Show the drawing tools and colors' : 'Hide the drawing tools and colors; the pen keeps writing'}
         >
           {tools.hidden ? 'Show tools' : 'Hide tools'}
@@ -54,72 +56,52 @@ export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSo
       {/* Spacer */}
       <div className="flex-1" />
 
-      <button
-        onClick={onClear}
-        disabled={!hasContent}
-        className="px-2 py-1 text-xs text-gray-600 rounded hover:bg-gray-100 disabled:opacity-30"
-        title="Erase the whole canvas (undo with Ctrl+Z)"
-      >
+      <button onClick={onClear} disabled={!hasContent} className={plain} title="Erase the whole board (undo with Ctrl+Z)">
         Clear
       </button>
 
-      {/* Mark Solved — only for problem sessions */}
+      {/* Solved: only for problems. A filled ink check once solved; no color. */}
       {sessionType === 'problem' && (
         <button
           onClick={onToggleSolved}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
-            isSolved
-              ? 'bg-green-500 text-white border-green-500 hover:bg-green-600'
-              : 'text-gray-600 border-gray-300 hover:bg-gray-50'
+          aria-pressed={isSolved}
+          className={`flex items-center gap-1.5 min-h-11 px-3 text-sm rounded-lg bg-white hover:bg-gray-50 ${
+            isSolved ? 'font-semibold text-gray-900 border-2 border-gray-900' : 'text-gray-800 border border-gray-300'
           }`}
-          title={completionLabel ? 'Toggle attempt completion' : isSolved ? 'Click to un-mark as solved' : 'Mark this problem as solved'}
+          title={isSolved ? 'Mark it as not solved yet' : 'Mark this problem as solved'}
         >
-          <CheckIcon solved={isSolved} />
-          {completionLabel ? isSolved ? 'Attempt complete' : 'Mark attempt complete' : isSolved ? 'Solved!' : 'Mark Solved'}
+          {isSolved ? <SolvedCheck /> : <UnsolvedCheck />}
+          {isSolved ? 'Solved' : 'Mark solved'}
         </button>
       )}
 
+      {/* The tutor's controls are the only ones in its color. */}
       {tutor && (
         <button
           onClick={() => {
-            // Full screen hides the tutor, so opening it leaves full screen (as Ask for Help does).
+            // Full screen hides the tutor, so opening it leaves full screen (as Ask tutor does).
             if (fullScreen?.on) { fullScreen.toggle(); if (!tutor.open) tutor.toggle(); }
             else tutor.toggle();
           }}
           aria-pressed={tutor.open && !fullScreen?.on}
-          className={`px-3 py-1.5 text-sm border rounded-lg ${tutor.open ? 'bg-blue-50 text-blue-700 border-blue-200' : 'text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+          className={`flex items-center gap-1.5 min-h-11 px-3 text-sm text-indigo-700 border rounded-lg ${
+            tutor.open && !fullScreen?.on ? 'bg-indigo-50 border-indigo-700' : 'bg-white border-gray-300 hover:bg-indigo-50'
+          }`}
           title={tutor.open ? 'Close the tutor' : 'Show the conversation with the tutor'}
         >
           Tutor
         </button>
       )}
 
-      {/* Ask for Help / Ask About This */}
       <button
         onClick={onAskForHelp}
         disabled={helpDisabled}
-        title={isLimited ? 'Please wait a moment before asking again.' : undefined}
-        className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-          helpDisabled
-            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-            : sessionType === 'note'
-            ? 'bg-blue-500 text-white hover:bg-blue-600'
-            : 'bg-green-500 text-white hover:bg-green-600'
-        }`}
+        title={isLimited ? 'Please wait a moment before asking again.' : sessionType === 'note' ? 'Ask the tutor about these notes' : 'Ask the tutor for a hint'}
+        className="flex items-center gap-1.5 min-h-11 px-4 text-sm font-semibold text-white bg-indigo-700 rounded-lg hover:bg-indigo-800 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
       >
-        {sessionType === 'note'
-          ? 'Ask About This'
-          : 'Ask for Help'}
+        <TutorIcon />
+        Ask tutor
       </button>
     </div>
-  );
-}
-
-function CheckIcon({ solved }: { solved: boolean }) {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={solved ? 2.5 : 1.5} strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="8" cy="8" r="6.5" />
-      <polyline points="5,8.5 7,10.5 11,6" />
-    </svg>
   );
 }

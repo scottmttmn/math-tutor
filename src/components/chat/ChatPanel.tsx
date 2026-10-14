@@ -27,11 +27,11 @@ export default function ChatPanel({ getCanvasImage, getBookContext }: ChatPanelP
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3">
         {chatHistory.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-center text-sm text-gray-400 px-4">
+          <div className="flex items-center justify-center h-full text-center text-sm text-gray-500 px-4">
             <p>
-              Draw your work on the canvas and click
-              <strong className="text-gray-500"> Ask for Help </strong>
-              to get hints from your AI tutor.
+              Write on the board, then press
+              <strong className="text-indigo-700"> Ask tutor </strong>
+              for a hint.
             </p>
           </div>
         ) : (

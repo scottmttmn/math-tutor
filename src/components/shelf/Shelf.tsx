@@ -8,6 +8,7 @@ import { addToShelf, removeFromShelf, startProblemFromFile } from '@/lib/shelf';
 import type { ShelfDocument } from '@/types';
 import AppBar from '@/components/layout/AppBar';
 import BlobImage from '@/components/common/BlobImage';
+import MoreMenu from '@/components/common/MoreMenu';
 
 /** PDFs (books, assignments) kept for working through, plus a way to drop a single problem onto a board. */
 export default function Shelf() {
@@ -78,10 +79,10 @@ export default function Shelf() {
           <p className="text-xs text-gray-500">What you work from: textbooks, problem sets, handouts.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => problemInput.current?.click()} disabled={Boolean(busy)} className="px-3 py-2 text-sm font-medium text-gray-700 border border-gray-300 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50">
+          <button onClick={() => problemInput.current?.click()} disabled={Boolean(busy)} className="min-h-11 px-3 text-sm font-medium text-gray-700 border border-gray-300 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50">
             Single problem
           </button>
-          <button onClick={() => addInput.current?.click()} disabled={Boolean(busy)} className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50">
+          <button onClick={() => addInput.current?.click()} disabled={Boolean(busy)} className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700 disabled:opacity-50">
             Add PDF
           </button>
           <input ref={addInput} type="file" accept="application/pdf,.pdf" multiple hidden aria-label="Add PDF"
@@ -97,7 +98,7 @@ export default function Shelf() {
         </div>
       )}
 
-      <main className={`flex-1 p-4 ${dragging ? 'outline-2 outline-dashed outline-blue-400 -outline-offset-8 bg-blue-50' : ''}`}>
+      <main className={`flex-1 p-4 ${dragging ? 'outline-2 outline-dashed outline-gray-900 -outline-offset-8 bg-gray-100' : ''}`}>
         {documents === null ? null : (
           <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             <li><WorkbookCover /></li>
@@ -122,17 +123,15 @@ function ShelfCard({ document, onRemove }: { document: ShelfDocument; onRemove: 
   return (
     <li className="flex flex-col bg-white border border-gray-200 rounded-xl overflow-hidden">
       <ShelfCover document={document} />
-      <div className="mt-auto flex justify-end gap-1.5 px-3 py-2">
+      <div className="mt-auto flex flex-wrap items-center justify-end gap-1.5 px-3 py-2">
         {confirming ? (
           <>
-            <span className="mr-auto self-center text-xs text-gray-500">{marked > 0 ? 'And its boards?' : 'Remove?'}</span>
-            <button onClick={() => void onRemove()} className="px-2.5 py-1.5 text-xs font-medium bg-red-600 text-white rounded-lg hover:bg-red-700">Remove</button>
-            <button onClick={() => setConfirming(false)} className="px-2.5 py-1.5 text-xs font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">Keep</button>
+            <span className="mr-auto text-xs text-gray-700">{marked > 0 ? 'Remove it and its boards?' : 'Remove it?'}</span>
+            <button onClick={() => void onRemove()} className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Remove</button>
+            <button onClick={() => setConfirming(false)} className="min-h-11 px-3 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">Keep</button>
           </>
         ) : (
-          <button onClick={() => setConfirming(true)} aria-label={`Remove ${document.title}`} className="px-2.5 py-1.5 text-xs font-medium text-red-600 border border-red-200 bg-red-50 rounded-lg hover:bg-red-100">
-            Remove
-          </button>
+          <MoreMenu label={`More for ${document.title}`} items={[{ label: 'Remove', onSelect: () => setConfirming(true) }]} />
         )}
       </div>
     </li>
@@ -148,7 +147,7 @@ export function ShelfCover({ document }: { document: ShelfDocument }) {
         {document.cover ? <BlobImage blob={document.cover} className="w-full h-full object-contain" /> : <span className="text-xs text-gray-400">PDF</span>}
       </div>
       <div className="px-3 py-2">
-        <p className="text-sm font-medium text-gray-800 line-clamp-2">{document.title}</p>
+        <p className="text-sm font-medium text-gray-900 line-clamp-2">{document.title}</p>
         <p className="text-xs text-gray-500">
           {document.pageCount} {document.pageCount === 1 ? 'page' : 'pages'}
           {marked > 0 ? ` · ${marked} ${marked === 1 ? 'exercise' : 'exercises'}` : ''}
@@ -168,7 +167,7 @@ export function WorkbookCover() {
         <span className="text-xs text-gray-500">§1.3</span>
       </div>
       <div className="px-3 py-2">
-        <p className="text-sm font-medium text-gray-800 line-clamp-2">Complex Analysis §1.3</p>
+        <p className="text-sm font-medium text-gray-900 line-clamp-2">Complex Analysis §1.3</p>
         <p className="text-xs text-gray-500">Built-in workbook · reading and exercises</p>
       </div>
     </Link>

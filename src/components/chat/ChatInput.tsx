@@ -49,9 +49,9 @@ export default function ChatInput({ getCanvasImage, getBookContext }: ChatInputP
         <ChatTextarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={chatHistory.length === 0 ? 'Ask for help first...' : 'Type or speak a follow-up...'}
+          placeholder={chatHistory.length === 0 ? 'Ask the tutor first...' : 'Type or speak a follow-up...'}
           disabled={inputDisabled}
-          className="flex-1 min-w-0 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:bg-gray-50"
+          className="flex-1 min-w-0 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent disabled:opacity-50 disabled:bg-gray-50"
         />
         {isSupported && (
           <button
@@ -59,14 +59,13 @@ export default function ChatInput({ getCanvasImage, getBookContext }: ChatInputP
             onClick={handleMicClick}
             disabled={inputDisabled}
             title={isListening ? 'Stop recording' : 'Speak a question'}
-            className={`relative p-2 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-              isListening
-                ? 'bg-red-100 text-red-600 hover:bg-red-200'
-                : 'text-gray-500 border border-gray-300 hover:bg-gray-50'
+            aria-pressed={isListening}
+            className={`relative flex items-center justify-center min-h-11 min-w-11 rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+              isListening ? 'bg-gray-900 text-white border-gray-900' : 'text-gray-700 border-gray-300 hover:bg-gray-50'
             }`}
           >
             {isListening && (
-              <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
             )}
             <MicIcon />
           </button>
@@ -75,13 +74,13 @@ export default function ChatInput({ getCanvasImage, getBookContext }: ChatInputP
           type="submit"
           disabled={!canSend}
           title={isLimited ? 'Please wait a moment before asking again.' : undefined}
-          className="px-3 py-1.5 text-sm font-medium bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="min-h-11 px-3 text-sm font-semibold bg-indigo-700 text-white rounded-lg hover:bg-indigo-800 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
         >
           Send
         </button>
       </div>
       {error && (
-        <p className="mt-1 text-xs text-red-500">{error}</p>
+        <p className="mt-1 text-xs text-red-700">{error}</p>
       )}
     </form>
   );
