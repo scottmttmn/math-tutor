@@ -199,6 +199,12 @@ function streamChatGPTResponse(
         );
       } catch (err) {
         if (cancelled) return;
+        if (err instanceof ChatGPTError) {
+          // Codes and field names only; never the request or response text.
+          console.error('ChatGPT request failed', {
+            code: err.code, status: err.status, param: err.param, requestId: err.requestId, shape: err.responseShape,
+          });
+        }
         controller.enqueue(
           encoder.encode(`data: ${JSON.stringify({ type: 'error', error: friendlyChatGPTError(err) })}\n\n`)
         );

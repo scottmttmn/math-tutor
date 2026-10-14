@@ -218,10 +218,11 @@ try {
 
   await exerciseButton(4).click(); await waitExercise();
   await page.getByRole('link', { name: '(1.3.4)', exact: true }).click(); await waitReading();
-  const targetVisible = await page.locator('#TriangleIneq').evaluate((element) => {
-    const rect = element.getBoundingClientRect(); return rect.top >= 60 && rect.top < window.innerHeight;
-  });
-  assert.ok(targetVisible);
+  // The reading scrolls to the passage after it renders; wait for that rather than reading it at once.
+  await page.waitForFunction(() => {
+    const rect = document.getElementById('TriangleIneq')?.getBoundingClientRect();
+    return Boolean(rect && rect.top >= 60 && rect.top < window.innerHeight);
+  }, null, { timeout: 5000 });
   console.log('PASS exercise identity links return to their reading passage');
 
   await exerciseButton(8).click(); await waitExercise();

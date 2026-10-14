@@ -101,6 +101,19 @@ function shapesToExport(editor: Editor): TLShapeId[] {
   return selected.length > 0 ? selected : [...editor.getCurrentPageShapeIds()];
 }
 
+// Snapshots for the tutor: 2x for sharp ink, but never longer than this on either side. A board
+// written while zoomed out spans thousands of page units, and at 2x that made images over 6000px
+// wide, which ChatGPT rejected. Providers shrink images to about this size anyway.
+const MAX_IMAGE_SIDE = 2048;
+const IMAGE_PADDING = 16;
+
+function imagePixelRatio(editor: Editor, ids: TLShapeId[]): number {
+  const bounds = editor.getShapesPageBounds(ids);
+  if (!bounds) return 2;
+  const side = Math.max(bounds.w, bounds.h) + IMAGE_PADDING * 2;
+  return Math.min(2, MAX_IMAGE_SIDE / side);
+}
+
 function applyLoad(editor: Editor, load: CanvasLoad) {
   if (load.document) {
     editor.loadSnapshot(load.document);
@@ -166,7 +179,9 @@ export default function TldrawCanvas({ handleRef }: { handleRef: RefObject<Drawi
       if (!editor) return '';
       const ids = shapesToExport(editor);
       if (ids.length === 0) return '';
-      const { url } = await editor.toImageDataUrl(ids, { format: 'png', background: true, padding: 16, pixelRatio: 2 });
+      const { url } = await editor.toImageDataUrl(ids, {
+        format: 'png', background: true, padding: IMAGE_PADDING, pixelRatio: imagePixelRatio(editor, ids),
+      });
       return url.split(',')[1] ?? '';
     },
     captureThumbnail: async () => {

@@ -58,6 +58,39 @@ try {
   await page.locator('.tutor-content').last().locator('.katex').nth(3).waitFor();
   console.log('PASS free-form chat math');
 
+  // A board written while zoomed out spans a large page area; its snapshot must stay small.
+  const wide = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+  wide.on('pageerror', (error) => errors.push(error.message));
+  const wideRequests = [];
+  await wide.route('**/api/tutor', (route) => {
+    wideRequests.push(route.request().postDataJSON());
+    route.fulfill({ contentType: 'text/event-stream', body: frames });
+  });
+  await wide.goto(`${origin}/`);
+  const canvas = wide.locator('.tl-canvas');
+  await canvas.waitFor();
+  const canvasBox = await canvas.boundingBox();
+  await wide.mouse.move(canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height / 2);
+  for (let i = 0; i < 8; i += 1) {
+    await wide.keyboard.down('Control');
+    await wide.mouse.wheel(0, 100);
+    await wide.keyboard.up('Control');
+    await wide.waitForTimeout(150);
+  }
+  await wide.keyboard.press('d');
+  for (const [x, y] of [[canvasBox.x + 60, canvasBox.y + 60], [canvasBox.x + canvasBox.width - 120, canvasBox.y + canvasBox.height - 120]]) {
+    await wide.mouse.move(x, y);
+    await wide.mouse.down();
+    for (let i = 0; i < 10; i += 1) await wide.mouse.move(x + i * 5, y + Math.sin(i) * 10);
+    await wide.mouse.up();
+  }
+  await wide.getByRole('button', { name: 'Ask for Help', exact: true }).click();
+  await wide.locator('.tutor-content').last().locator('.katex').first().waitFor();
+  const png = Buffer.from(wideRequests.at(-1).canvasImage, 'base64');
+  const [width, height] = [png.readUInt32BE(16), png.readUInt32BE(20)];
+  assert.ok(Math.max(width, height) <= 2048 && width > 1000, `snapshot ${width}x${height}`);
+  console.log(`PASS zoomed-out board snapshot is ${width}x${height}`);
+
   assert.deepEqual(errors, []);
   console.log('PASS no browser exceptions');
 } finally {
