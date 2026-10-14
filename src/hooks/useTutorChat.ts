@@ -6,9 +6,10 @@ import { useSessionState, useSessionDispatch } from '@/context/SessionContext';
 import { getModelConfig } from '@/lib/modelConfig';
 import { recordTutorUsage, tryStartTutorRequest, useRateLimit } from '@/hooks/useRateLimit';
 import { RATE_LIMIT_MS } from '@/lib/constants';
-import type { ChatMessage, TutorStreamEvent, WorkbookContext } from '@/types';
+import type { BookContext, ChatMessage, TutorStreamEvent, WorkbookContext } from '@/types';
 
-export function useTutorChat(workbookContext?: WorkbookContext) {
+/** `getBookContext` supplies the Shelf pages around the exercise, read fresh for every request. */
+export function useTutorChat(workbookContext?: WorkbookContext, getBookContext?: () => Promise<BookContext | null>) {
   const { problemStatement, problemImage, chatHistory, isStreaming, sessionType } = useSessionState();
   const dispatch = useSessionDispatch();
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
@@ -33,13 +34,14 @@ export function useTutorChat(workbookContext?: WorkbookContext) {
       if (!abort.signal.aborted) dispatch({ type: 'APPEND_TO_LAST_MESSAGE', content });
     };
     try {
+      const bookContext = await getBookContext?.().catch(() => null) ?? undefined;
       const response = await fetch('/api/tutor', {
         method: 'POST', signal: abort.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           problemStatement, chatHistory: chatHistory.filter((message) => message.content.trim()),
           canvasImage, modelConfig: getModelConfig(), userQuestion: userContent,
-          problemImage: problemImage ?? undefined, sessionType, workbookContext,
+          problemImage: problemImage ?? undefined, sessionType, workbookContext, bookContext,
         }),
       });
       if (!response.ok) {
@@ -87,7 +89,7 @@ export function useTutorChat(workbookContext?: WorkbookContext) {
       pendingRequest.current = null;
       if (!abort.signal.aborted) dispatch({ type: 'SET_STREAMING', streaming: false });
     }
-  }, [problemStatement, problemImage, chatHistory, isStreaming, sessionType, workbookContext, dispatch]);
+  }, [problemStatement, problemImage, chatHistory, isStreaming, sessionType, workbookContext, getBookContext, dispatch]);
 
   const sendFollowUp = useCallback(async (text: string, canvasImage = ''): Promise<boolean> => {
     if (!text.trim()) return false;

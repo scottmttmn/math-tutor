@@ -102,6 +102,8 @@ export interface ShelfExercise {
   page: number;
   rect: PageRect;
   createdAt: number;
+  /** First page the tutor reads for this exercise, chosen by the student; 0 = none. Unset: worked out from the bookmarks. */
+  readFrom?: number;
 }
 
 /** A PDF on the Shelf, with the exercises marked on it. */
@@ -187,6 +189,17 @@ export interface TutorRequest {
   problemImage?: string;
   sessionType?: SessionType;
   workbookContext?: WorkbookContext;
+  bookContext?: BookContext;
+}
+
+/** Text of the Shelf pages leading up to an exercise (never past its page), for the tutor to read. */
+export interface BookContext {
+  title: string;
+  /** The bookmark the pages fall under, when the PDF has bookmarks. */
+  section?: string;
+  fromPage: number;
+  toPage: number;
+  text: string;
 }
 
 export type WorkbookContext =

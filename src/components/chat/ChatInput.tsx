@@ -4,16 +4,19 @@ import { useState } from 'react';
 import { useSessionState } from '@/context/SessionContext';
 import { useTutorChat } from '@/hooks/useTutorChat';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
+import type { BookContext } from '@/types';
 
 interface ChatInputProps {
   /** Returns a snapshot to attach to the follow-up, or '' when the tutor has already seen the drawing. */
   getCanvasImage?: () => Promise<string>;
+  /** The Shelf pages the tutor reads with the follow-up, if any. */
+  getBookContext?: () => Promise<BookContext | null>;
 }
 
-export default function ChatInput({ getCanvasImage }: ChatInputProps) {
+export default function ChatInput({ getCanvasImage, getBookContext }: ChatInputProps) {
   const [text, setText] = useState('');
   const { chatHistory, isStreaming } = useSessionState();
-  const { sendFollowUp, isLimited } = useTutorChat();
+  const { sendFollowUp, isLimited } = useTutorChat(undefined, getBookContext);
   const { isListening, isSupported, error, startListening, stopListening, resetTranscript } =
     useSpeechRecognition(setText);
 

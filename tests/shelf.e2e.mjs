@@ -12,7 +12,9 @@ const browserErrors = [];
 const folder = await mkdtemp(join(tmpdir(), 'shelf-acceptance-'));
 const pdfPath = join(folder, 'Algebra drills.pdf');
 await writeFile(pdfPath, makePdf([
-  ['Chapter 1 Exercises', '', '1. Find all z with z^3 = 1.', '', '2. Show that |zw| = |z||w|.'],
+  ['Chapter 1 Exercises', '', '1. Find all z with z^3 = 1.', '', '2. Show that |zw| = |z||w|.', '',
+    'Reminder: the n-th roots of unity are the numbers e^(2 pi i k / n) for k = 0, ..., n - 1.',
+    'They are the vertices of a regular n-gon inscribed in the unit circle.'],
   ['3. Compute (1+i)^8.', '', '4. Describe the set |z - 1| < 2.'],
 ]));
 const imagePath = join(folder, 'one problem.png');
@@ -77,6 +79,11 @@ try {
   const content = requests.at(-1).messages.at(-1).content;
   assert.equal(content.filter((part) => part.type === 'image_url').length, 2, 'problem image and board');
   assert.match(JSON.stringify(content), /Exercise 1 · Algebra drills, p\. 1/);
+  // The tutor reads the book up to the exercise's page, never past it.
+  assert.equal(await page.getByLabel('Tutor reads').inputValue(), '1');
+  const system = requests.at(-1).messages[0].content;
+  assert.match(system, /<book_pages>[\s\S]*roots of unity/);
+  assert.doesNotMatch(system, /Compute \(1\+i\)\^8/);
 
   // Solving shows on the page's mark; a reload returns to the same board with the stroke.
   await page.getByRole('button', { name: 'Page', exact: true }).click();
