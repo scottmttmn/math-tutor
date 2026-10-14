@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type { ModelConfig, Provider } from '@/types';
 import { DEFAULT_ANTHROPIC_MODEL, DEFAULT_GEMINI_MODEL, GEMINI_BASE_URL, getModelConfig, isGeminiEndpoint, saveModelConfig } from '@/lib/modelConfig';
 import { useChatGPTConnection } from '@/hooks/useChatGPTConnection';
@@ -62,13 +63,14 @@ function SettingsDialog({ onClose, initialTab, saveOpenBoard, restoredMessage }:
             </button>
           ))}
         </div>
-        {tab === 'tutor' ? <SettingsForm onClose={onClose} /> : <BackupSettings onClose={onClose} saveOpenBoard={saveOpenBoard} restoredMessage={restoredMessage} />}
+        {tab === 'tutor' ? <SettingsForm onClose={onClose} saveOpenBoard={saveOpenBoard} /> : <BackupSettings onClose={onClose} saveOpenBoard={saveOpenBoard} restoredMessage={restoredMessage} />}
       </div>
     </div>
   );
 }
 
-function SettingsForm({ onClose }: { onClose: () => void }) {
+function SettingsForm({ onClose, saveOpenBoard }: { onClose: () => void; saveOpenBoard?: () => Promise<unknown> }) {
+  const router = useRouter();
   const [config, setConfig] = useState<ModelConfig>(getModelConfig);
   const [presetIdx, setPresetIdx] = useState(() => findPresetIndex(getModelConfig()));
   const isChatGPT = PRESETS[presetIdx]?.provider === 'chatgpt';
@@ -99,6 +101,17 @@ function SettingsForm({ onClose }: { onClose: () => void }) {
 
   return (
     <>
+      <button
+        onClick={() => {
+          // Leave even if the save fails: the board's recovery copy keeps the work.
+          void (saveOpenBoard?.() ?? Promise.resolve()).catch(() => undefined).then(() => { onClose(); router.push('/memory'); });
+        }}
+        className="w-full mb-4 min-h-11 px-3 py-2 text-left text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+      >
+        <span className="block font-medium text-gray-900">Tutor memory →</span>
+        <span className="block text-gray-600">What you&apos;ve told the tutor about yourself and what you know.</span>
+      </button>
+
       {/* Provider preset */}
       <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
       <select

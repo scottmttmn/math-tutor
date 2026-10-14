@@ -1,6 +1,6 @@
-import { listSessions, listShelf, restoreRecords } from '@/lib/db';
+import { listSessions, listShelf, loadProfile, restoreRecords } from '@/lib/db';
 import { readZip, writeZip } from '@/lib/zip';
-import type { BackupManifest, RestoreResult, Session, ShelfDocument } from '@/types';
+import type { BackupManifest, LearnerProfile, RestoreResult, Session, ShelfDocument } from '@/types';
 
 // A backup is backup.json (every board, with its thumbnail and problem picture, and every Shelf
 // entry with its cover and marks) plus each Shelf PDF as pdfs/<id>.pdf. The download is all of it
@@ -28,7 +28,7 @@ export function dataUrlToBlob(url: string): Blob {
 }
 
 /** The backup of these records: backup.json's contents, and the PDFs by path. */
-export async function buildBackup(sessions: Session[], shelf: ShelfDocument[], now = Date.now()) {
+export async function buildBackup(sessions: Session[], shelf: ShelfDocument[], profile?: LearnerProfile, now = Date.now()) {
   const manifest: BackupManifest = {
     app: 'math-tutor',
     version: 1,
@@ -41,6 +41,7 @@ export async function buildBackup(sessions: Session[], shelf: ShelfDocument[], n
       void file; // The PDF goes beside backup.json, not in it.
       return { ...rest, cover: cover ? await blobToDataUrl(cover) : null };
     })),
+    ...(profile ? { profile } : {}),
   };
   const pdfs = new Map(shelf.map((document) => [pdfPath(document.id), document.file] as const));
   return { manifest, pdfs };
@@ -48,15 +49,20 @@ export async function buildBackup(sessions: Session[], shelf: ShelfDocument[], n
 
 /** Everything saved on this device. */
 export async function collectBackup() {
-  const [sessions, shelf] = await Promise.all([listSessions(), listShelf()]);
-  return buildBackup(sessions, shelf);
+  const [sessions, shelf, profile] = await Promise.all([listSessions(), listShelf(), loadProfile()]);
+  return buildBackup(sessions, shelf, profile);
 }
 
 /** Changes whenever a board or Shelf entry is added, changed, renamed or removed. */
-export function backupFingerprint(sessions: Pick<Session, 'id' | 'updatedAt' | 'customTitle'>[], shelf: Pick<ShelfDocument, 'id' | 'updatedAt'>[]) {
+export function backupFingerprint(
+  sessions: Pick<Session, 'id' | 'updatedAt' | 'customTitle'>[],
+  shelf: Pick<ShelfDocument, 'id' | 'updatedAt'>[],
+  profile?: Pick<LearnerProfile, 'updatedAt'>,
+) {
   return [
     ...sessions.map((session) => `s ${session.id} ${session.updatedAt} ${session.customTitle ?? ''}`),
     ...shelf.map((document) => `p ${document.id} ${document.updatedAt}`),
+    ...(profile ? [`m ${profile.updatedAt}`] : []),
   ].sort().join('\n');
 }
 
@@ -89,8 +95,18 @@ export async function restoreManifest(manifest: BackupManifest, pdfs: Map<string
     const file = pdfs.get(pdfPath(document.id));
     return { ...document, cover: cover ? dataUrlToBlob(cover) : null, file: file ? new Blob([file], { type: 'application/pdf' }) : null };
   });
-  const written = await restoreRecords(sessions, shelf);
-  return { restoredSessions: written.sessions.length, restoredShelf: written.shelf.length, skipped: written.skipped, missingPdfs: written.missingPdfs };
+  const written = await restoreRecords(sessions, shelf, validProfile(manifest.profile));
+  return {
+    restoredSessions: written.sessions.length, restoredShelf: written.shelf.length, restoredProfile: written.profile,
+    skipped: written.skipped, missingPdfs: written.missingPdfs,
+  };
+}
+
+// The tutor memory is sent with every question, so only a well-formed one is restored.
+function validProfile(profile: unknown): LearnerProfile | undefined {
+  const candidate = profile as LearnerProfile | undefined;
+  if (!candidate || typeof candidate.aboutMe !== 'string' || !Array.isArray(candidate.topics) || !Number.isFinite(candidate.updatedAt)) return undefined;
+  return { ...candidate, shareWithTutor: candidate.shareWithTutor !== false };
 }
 
 // A folder picked with <input webkitdirectory> names files from the picked folder ("Backup/pdfs/x.pdf").

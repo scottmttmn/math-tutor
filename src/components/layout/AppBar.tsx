@@ -10,7 +10,8 @@ import { useBackupStatus } from '@/hooks/useBackupStatus';
 import { backupDue, resumeBackup } from '@/lib/autoBackup';
 import { GearIcon, HomeIcon, NotesIcon, ProblemIcon, ShelfIcon } from '@/components/common/Icons';
 
-export type AppPlace = 'home' | 'shelf' | 'board';
+// 'memory' has no tab of its own; it opens from Settings and Home.
+export type AppPlace = 'home' | 'shelf' | 'board' | 'memory';
 
 interface Props {
   /** Where the page sits; its tab is shown as current. */

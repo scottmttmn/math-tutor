@@ -8,9 +8,9 @@ const { crc32, writeZip, readZip } = load('src/lib/zip.ts');
 const written = [];
 const db = {
   listSessions: async () => [], listShelf: async () => [],
-  restoreRecords: async (sessions, shelf) => {
-    written.push({ sessions, shelf });
-    return { sessions: sessions.map((s) => s.id), shelf: shelf.filter((d) => d.file).map((d) => d.id), skipped: 0, missingPdfs: shelf.filter((d) => !d.file).map((d) => d.title) };
+  restoreRecords: async (sessions, shelf, profile) => {
+    written.push({ sessions, shelf, profile });
+    return { sessions: sessions.map((s) => s.id), shelf: shelf.filter((d) => d.file).map((d) => d.id), profile: Boolean(profile), skipped: 0, missingPdfs: shelf.filter((d) => !d.file).map((d) => d.title) };
   },
 };
 const backup = load('src/lib/backup.ts', { '@/lib/db': db });
@@ -70,7 +70,7 @@ test('a backup carries every board and Shelf PDF, and restores them as they were
   const zip = await writeZip(new Map([['backup.json', new Blob([JSON.stringify(manifest)])], ...pdfs]));
   written.length = 0;
   const result = await backup.restoreFromFiles([asFile(zip, 'math-tutor-backup-2026-10-14.zip')]);
-  assert.deepEqual(result, { restoredSessions: 2, restoredShelf: 1, skipped: 0, missingPdfs: [] });
+  assert.deepEqual(result, { restoredSessions: 2, restoredShelf: 1, restoredProfile: false, skipped: 0, missingPdfs: [] });
   const [{ sessions, shelf }] = written;
   assert.equal(sessions[0].customTitle, 'Named');
   assert.deepEqual(new Uint8Array(await sessions[0].canvasImageBlob.arrayBuffer()), new Uint8Array(await thumbnail.arrayBuffer()));
@@ -97,6 +97,22 @@ test('a backup folder restores from its files: backup.json over the dated copies
   // backup.json alone: the PDF isn't there, so that Shelf entry can't come back on a new device.
   const alone = await backup.restoreFromFiles([asFile(new Blob([JSON.stringify(manifest)]), 'backup.json')]);
   assert.deepEqual(alone.missingPdfs, ['Book']);
+});
+
+test('the tutor memory goes into the backup and comes back; a malformed one is left out', async () => {
+  const profile = { aboutMe: 'Self-taught', topics: [{ id: 'calculus/limits', name: 'Limits', area: 'Calculus', rating: 'solid' }], shareWithTutor: false, updatedAt: 7 };
+  const { manifest } = await backup.buildBackup([], [], profile);
+  assert.deepEqual(manifest.profile, profile);
+  assert.equal((await backup.buildBackup([], [])).manifest.profile, undefined);
+  written.length = 0;
+  const result = await backup.restoreFromFiles([asFile(new Blob([JSON.stringify(manifest)]), 'backup.json')]);
+  assert.equal(result.restoredProfile, true);
+  assert.deepEqual(written[0].profile, profile);
+  written.length = 0;
+  await backup.restoreFromFiles([asFile(new Blob([JSON.stringify({ ...manifest, profile: { aboutMe: 3 } })]), 'backup.json')]);
+  assert.equal(written[0].profile, undefined);
+  assert.notEqual(backup.backupFingerprint([], [], profile), backup.backupFingerprint([], [], { updatedAt: 8 }));
+  assert.notEqual(backup.backupFingerprint([], [], profile), backup.backupFingerprint([], []));
 });
 
 test('restore refuses files that are not a backup', async () => {

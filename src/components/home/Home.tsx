@@ -3,14 +3,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { deleteSession, listSessions, listShelf, renameSession } from '@/lib/db';
+import { deleteSession, listSessions, listShelf, loadProfile, renameSession } from '@/lib/db';
+import { isProfileEmpty } from '@/lib/learnerProfile';
 import { queryHistory, toHistoryItem } from '@/lib/history';
 import { discardRecoveryCopy } from '@/lib/sessionRecovery';
 import { boardToOpen, setBoardToOpen } from '@/lib/currentBoard';
 import AppBar from '@/components/layout/AppBar';
 import BlobImage from '@/components/common/BlobImage';
 import MoreMenu from '@/components/common/MoreMenu';
-import { KindIcon, ShelfIcon, SolvedCheck } from '@/components/common/Icons';
+import { KindIcon, ShelfIcon, SolvedCheck, TutorIcon } from '@/components/common/Icons';
 import { ShelfCover, WorkbookCover } from '@/components/shelf/Shelf';
 import type { HistoryItem, HistoryShow, HistorySort, ShelfDocument } from '@/types';
 
@@ -39,6 +40,8 @@ export default function Home() {
   const [search, setSearch] = useState('');
   const [show, setShow] = useState<HistoryShow>('all');
   const [sort, setSort] = useState<HistorySort>('updated');
+  // Until the student tells the tutor about themselves, Home offers it once, quietly.
+  const [memoryEmpty, setMemoryEmpty] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -48,6 +51,9 @@ export default function Home() {
     listShelf()
       .then((documents) => { if (active) setShelf(documents.sort((a, b) => b.createdAt - a.createdAt)); })
       .catch(() => { /* The Shelf page reports its own errors. */ });
+    loadProfile()
+      .then((profile) => { if (active) setMemoryEmpty(!profile || isProfileEmpty(profile)); })
+      .catch(() => { /* Not worth an error here. */ });
     return () => { active = false; };
   }, []);
 
@@ -79,6 +85,15 @@ export default function Home() {
 
       <main className="flex-1 w-full max-w-7xl mx-auto p-4 flex flex-col gap-6">
         {latest && <ContinueCard item={latest} onOpen={() => open(latest)} />}
+        {memoryEmpty && (
+          <Link href="/memory" className="flex items-center gap-3 min-h-11 px-4 py-3 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-50">
+            <span className="text-indigo-700"><TutorIcon /></span>
+            <span className="flex-1 text-gray-700">
+              <span className="font-medium text-gray-900">Tell the tutor what you know.</span> Rate a few topics so its hints start at your level. Optional.
+            </span>
+            <span aria-hidden="true" className="text-gray-500">→</span>
+          </Link>
+        )}
 
         <section aria-labelledby="boards-heading" className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">

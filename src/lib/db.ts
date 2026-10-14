@@ -1,5 +1,5 @@
 import { openDB, type IDBPDatabase, type DBSchema } from 'idb';
-import type { CanvasDocument, Stroke, ChatMessage, SessionType, ShelfDocument } from '@/types';
+import type { CanvasDocument, Stroke, ChatMessage, LearnerProfile, SessionType, ShelfDocument } from '@/types';
 
 interface MathTutorDB extends DBSchema {
   sessions: {
@@ -55,11 +55,11 @@ export function getDB(): Promise<IDBPDatabase<MathTutorDB>> {
   return dbPromise;
 }
 
-// Writes to sessions or the Shelf, so automatic backup knows when to run.
+// Writes to sessions, the Shelf or the tutor memory, so automatic backup knows when to run.
 const changeListeners = new Set<() => void>();
 const changed = () => changeListeners.forEach((listener) => listener());
 
-/** Calls `listener` after every write to sessions or the Shelf; returns the unsubscribe. */
+/** Calls `listener` after every write to sessions, the Shelf or the tutor memory; returns the unsubscribe. */
 export function onDataChange(listener: () => void) {
   changeListeners.add(listener);
   return () => { changeListeners.delete(listener); };
@@ -151,10 +151,14 @@ type StoredSession = MathTutorDB['sessions']['value'];
  * A Shelf PDF without its file keeps this device's file, or is skipped when there is none.
  * Returns the ids written.
  */
-export async function restoreRecords(sessions: StoredSession[], shelf: (Omit<ShelfDocument, 'file'> & { file: Blob | null })[]) {
+export async function restoreRecords(
+  sessions: StoredSession[],
+  shelf: (Omit<ShelfDocument, 'file'> & { file: Blob | null })[],
+  profile?: LearnerProfile,
+) {
   const db = await getDB();
-  const tx = db.transaction(['sessions', 'shelf'], 'readwrite');
-  const written = { sessions: [] as string[], shelf: [] as string[], skipped: 0, missingPdfs: [] as string[] };
+  const tx = db.transaction(['sessions', 'shelf', 'settings'], 'readwrite');
+  const written = { sessions: [] as string[], shelf: [] as string[], profile: false, skipped: 0, missingPdfs: [] as string[] };
   for (const session of sessions) {
     const existing = await tx.objectStore('sessions').get(session.id);
     if (existing && existing.updatedAt >= session.updatedAt) { written.skipped += 1; continue; }
@@ -169,15 +173,36 @@ export async function restoreRecords(sessions: StoredSession[], shelf: (Omit<She
     await tx.objectStore('shelf').put({ ...document, file });
     written.shelf.push(document.id);
   }
+  if (profile) {
+    const existing = (await tx.objectStore('settings').get(PROFILE_KEY)) as LearnerProfile | undefined;
+    if (existing && existing.updatedAt >= profile.updatedAt) written.skipped += 1;
+    else { await tx.objectStore('settings').put(profile, PROFILE_KEY); written.profile = true; }
+  }
   await tx.done;
-  if (written.sessions.length || written.shelf.length) changed();
+  if (written.sessions.length || written.shelf.length || written.profile) changed();
   return written;
 }
 
-/** Whether anything is saved yet: a board or a Shelf PDF. */
+// === Tutor memory ===
+
+const PROFILE_KEY = 'learnerProfile';
+
+/** The student's tutor memory, if they have saved one. */
+export async function loadProfile(): Promise<LearnerProfile | undefined> {
+  const db = await getDB();
+  return (await db.get('settings', PROFILE_KEY)) as LearnerProfile | undefined;
+}
+
+export async function saveProfile(profile: LearnerProfile) {
+  const db = await getDB();
+  await db.put('settings', profile, PROFILE_KEY);
+  changed();
+}
+
+/** Whether anything is saved yet: a board, a Shelf PDF or the tutor memory. */
 export async function hasSavedWork() {
   const db = await getDB();
-  return (await db.count('sessions')) + (await db.count('shelf')) > 0;
+  return (await db.count('sessions')) + (await db.count('shelf')) + (await db.count('settings', PROFILE_KEY)) > 0;
 }
 
 export async function getSetting<T>(key: string): Promise<T | undefined> {
