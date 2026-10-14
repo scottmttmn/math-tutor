@@ -1,10 +1,16 @@
 'use client';
 
-import { useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { TextareaHTMLAttributes } from 'react';
 
 /** Tallest the box grows before it scrolls, in pixels (about six lines of text-sm). */
 const MAX_HEIGHT = 128;
+
+function fitHeight(box: HTMLTextAreaElement) {
+  box.style.height = 'auto';
+  box.style.height = `${Math.min(box.scrollHeight, MAX_HEIGHT)}px`;
+  box.style.overflowY = box.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden';
+}
 
 type ChatTextareaProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'value' | 'rows'> & { value: string };
 
@@ -16,12 +22,22 @@ export default function ChatTextarea({ value, className = '', onKeyDown, ...prop
   const ref = useRef<HTMLTextAreaElement>(null);
 
   useLayoutEffect(() => {
-    const box = ref.current;
-    if (!box) return;
-    box.style.height = 'auto';
-    box.style.height = `${Math.min(box.scrollHeight, MAX_HEIGHT)}px`;
-    box.style.overflowY = box.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden';
+    if (ref.current) fitHeight(ref.current);
   }, [value]);
+
+  // A width change (rotating a tablet, resizing the window) rewraps the text, so measure again.
+  useEffect(() => {
+    const box = ref.current;
+    if (!box || typeof ResizeObserver === 'undefined') return;
+    let width = box.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (box.clientWidth === width) return;
+      width = box.clientWidth;
+      fitHeight(box);
+    });
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, []);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     onKeyDown?.(event);

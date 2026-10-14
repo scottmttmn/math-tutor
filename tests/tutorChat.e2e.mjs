@@ -22,7 +22,12 @@ try {
   const box = page.getByRole('textbox');
   const oneLine = (await box.boundingBox()).height;
   await box.fill('Why is the modulus of a product the product of the moduli, and does the same hold for sums of complex numbers?');
-  assert.ok((await box.boundingBox()).height > oneLine, 'a long question wraps onto more lines');
+  const wrapped = (await box.boundingBox()).height;
+  assert.ok(wrapped > oneLine, 'a long question wraps onto more lines');
+  // Narrowing the panel rewraps the draft; the box grows without the text changing.
+  await page.evaluate(() => { document.querySelector('aside').style.width = '260px'; });
+  await page.waitForFunction((before) => document.querySelector('textarea').getBoundingClientRect().height > before, wrapped);
+  await page.evaluate(() => { document.querySelector('aside').style.width = ''; });
   await box.fill('Explain');
   await box.press('Shift+Enter');
   await box.pressSequentially('modulus.');
