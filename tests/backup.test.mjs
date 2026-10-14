@@ -47,6 +47,12 @@ test('a ZIP reads back the files written into it, names and bytes intact', async
   await assert.rejects(readZip(new Blob(['not a zip at all, just some text that is long enough'])), /Not a ZIP/);
 });
 
+test('a ZIP with a damaged entry is refused, not restored', async () => {
+  const zip = new Uint8Array(await (await writeZip(new Map([['backup.json', new Blob(['{"sessions":[]}'])]]))).arrayBuffer());
+  zip[30 + 'backup.json'.length + 3] ^= 0x01; // One flipped bit in the entry's contents.
+  await assert.rejects(readZip(new Blob([zip])), /Damaged ZIP entry: backup.json/);
+});
+
 test('a backup carries every board and Shelf PDF, and restores them as they were', async () => {
   const thumbnail = new Blob([new Uint8Array([137, 80, 78, 71, 0, 255])], { type: 'image/png' });
   const cover = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });

@@ -31,16 +31,20 @@ interface Props {
   onClose: () => void;
   /** The tab shown first; the tutor's model unless given. */
   tab?: SettingsTab;
+  /** Saves the board open on this page before a backup or restore. */
+  saveOpenBoard?: () => Promise<unknown>;
+  /** A restore's result, shown on the Backup tab after the page reloaded. */
+  restoredMessage?: string;
 }
 
 const TABS: { tab: SettingsTab; label: string }[] = [{ tab: 'tutor', label: 'Tutor' }, { tab: 'backup', label: 'Backup' }];
 
-export default function SettingsModal({ isOpen, onClose, tab = 'tutor' }: Props) {
+export default function SettingsModal({ isOpen, tab = 'tutor', ...rest }: Props) {
   if (!isOpen) return null;
-  return <SettingsDialog onClose={onClose} initialTab={tab} />;
+  return <SettingsDialog {...rest} initialTab={tab} />;
 }
 
-function SettingsDialog({ onClose, initialTab }: { onClose: () => void; initialTab: SettingsTab }) {
+function SettingsDialog({ onClose, initialTab, saveOpenBoard, restoredMessage }: Omit<Props, 'isOpen' | 'tab'> & { initialTab: SettingsTab }) {
   const [tab, setTab] = useState(initialTab);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -58,7 +62,7 @@ function SettingsDialog({ onClose, initialTab }: { onClose: () => void; initialT
             </button>
           ))}
         </div>
-        {tab === 'tutor' ? <SettingsForm onClose={onClose} /> : <BackupSettings onClose={onClose} />}
+        {tab === 'tutor' ? <SettingsForm onClose={onClose} /> : <BackupSettings onClose={onClose} saveOpenBoard={saveOpenBoard} restoredMessage={restoredMessage} />}
       </div>
     </div>
   );

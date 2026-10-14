@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { makePdf } from './makePdf.mjs';
+import load from './load-typescript.mjs';
+
+const { readZip } = load('src/lib/zip.ts');
 
 const origin = process.env.WORKBOOK_TEST_URL || 'http://127.0.0.1:3100';
 const browserErrors = [];
@@ -69,11 +72,15 @@ try {
   assert.equal(pdf.bytes.subarray(0, 8).toString('latin1'), '%PDF-1.4');
   console.log('PASS a board saves as a PNG and a PDF');
 
-  // Nothing is backed up yet, so the bar suggests it; it opens the Backup settings.
+  // Nothing is backed up yet, so the bar suggests it; it opens the Backup settings. An edit made
+  // just before (still inside the autosave pause) is in the backup: the board is saved first.
+  await page.getByPlaceholder("Type the math problem you're working on...").fill('Find x when 2x + 3 = 7 (check it)');
   await page.getByRole('button', { name: 'Back up', exact: true }).click();
   await page.getByRole('tab', { name: 'Backup', selected: true }).waitFor();
   const zip = await download(page, () => page.getByRole('button', { name: 'Download backup' }).click());
   assert.match(zip.name, /^math-tutor-backup-\d{4}-\d{2}-\d{2}\.zip$/);
+  const zipped = JSON.parse(await (await readZip(new Blob([zip.bytes]))).get('backup.json').text());
+  assert.equal(zipped.sessions[0].problemStatement, 'Find x when 2x + 3 = 7 (check it)');
   await page.getByText(/Last downloaded just now/).waitFor();
   await page.getByRole('button', { name: 'Done' }).click();
   assert.equal(await page.getByRole('button', { name: 'Back up', exact: true }).count(), 0);
@@ -86,7 +93,7 @@ try {
   await page.getByText(/Backing up to Dropbox\/Math Tutor backup\. Last backup just now\./).waitFor();
   const manifest = JSON.parse(await readOpfs(page, 'Dropbox/Math Tutor backup/backup.json'));
   assert.equal(manifest.sessions.length, 1);
-  assert.equal(manifest.sessions[0].problemStatement, 'Find x when 2x + 3 = 7');
+  assert.equal(manifest.sessions[0].problemStatement, 'Find x when 2x + 3 = 7 (check it)');
   assert.equal(manifest.shelf[0].title, 'Geometry');
   assert.ok(await readOpfs(page, `Dropbox/Math Tutor backup/pdfs/${manifest.shelf[0].id}.pdf`) > 0);
   const today = new Date();
@@ -104,7 +111,8 @@ try {
   await page.getByRole('button', { name: 'Done' }).click();
   console.log('PASS automatic backup writes backup.json, a dated copy and the PDFs to the chosen folder');
 
-  // A new device (an empty browser): restoring the ZIP brings the board and the PDF back.
+  // A new device (an empty browser): restoring the ZIP brings the board and the PDF back. The page
+  // reloads so it can't save what it showed before over the restored work, then shows the result.
   const fresh = await openPage();
   try {
     await fresh.page.goto(`${origin}/`);
@@ -116,7 +124,7 @@ try {
     await fresh.page.getByText('Nothing to restore: this device already has everything in the backup.').waitFor();
     await fresh.page.getByRole('button', { name: 'Done' }).click();
     await fresh.page.reload();
-    await fresh.page.getByText('Find x when 2x + 3 = 7').first().waitFor();
+    await fresh.page.getByText('Find x when 2x + 3 = 7 (check it)').first().waitFor();
     await fresh.page.goto(`${origin}/shelf`);
     await fresh.page.getByRole('link', { name: 'Open Geometry' }).click();
     await fresh.page.getByText('Page 1 of 1').waitFor();

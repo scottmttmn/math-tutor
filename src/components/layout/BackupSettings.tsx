@@ -30,13 +30,31 @@ function describeRestore(result: RestoreResult) {
   return parts.join(' ');
 }
 
+/** Where a restore's result waits while the page reloads; the bar reopens Backup with it. */
+export const RESTORE_RESULT_KEY = 'math-tutor:restoreResult';
+
 const plain = 'min-h-11 px-3 text-sm text-gray-800 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50';
 
 /** The Backup tab of Settings: folder backup, download, restore, and whether the browser keeps the data. */
-export default function BackupSettings({ onClose }: { onClose: () => void }) {
+interface Props {
+  onClose: () => void;
+  /** Saves the board open on this page, so a backup holds its latest strokes; false when the save failed. */
+  saveOpenBoard?: () => Promise<unknown>;
+  /** What a restore did, shown after the page reloaded for it. */
+  restoredMessage?: string;
+}
+
+export default function BackupSettings({ onClose, saveOpenBoard, restoredMessage }: Props) {
   const status = useBackupStatus();
   const [busy, setBusy] = useState<'download' | 'restore' | 'backup' | null>(null);
-  const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
+  const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(restoredMessage ? { text: restoredMessage } : null);
+
+  // The open board autosaves after a pause; a backup taken now must not miss what was just written.
+  const saveBoard = async () => {
+    if (!saveOpenBoard) return;
+    const saved = await saveOpenBoard().catch(() => false);
+    if (saved === false) throw new Error('This board’s latest changes could not be saved, so nothing was backed up or restored. Try again.');
+  };
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
 
@@ -52,6 +70,7 @@ export default function BackupSettings({ onClose }: { onClose: () => void }) {
   };
 
   const download = () => run('download', async () => {
+    await saveBoard();
     downloadBlob(await backupZip(), backupFileName());
     await recordDownload();
     return null;
@@ -60,7 +79,16 @@ export default function BackupSettings({ onClose }: { onClose: () => void }) {
   const restore = (files: FileList | null) => {
     if (!files?.length) return;
     const picked = [...files];
-    void run('restore', async () => describeRestore(await restoreFromFiles(picked)));
+    void run('restore', async () => {
+      await saveBoard();
+      const result = await restoreFromFiles(picked);
+      if (!result.restoredSessions && !result.restoredShelf) return describeRestore(result);
+      // The page still holds what it loaded before the restore, and its next autosave would write
+      // that over a restored copy; reload so it shows what is saved now.
+      try { sessionStorage.setItem(RESTORE_RESULT_KEY, describeRestore(result)); } catch { /* The reload still happens. */ }
+      window.location.reload();
+      return null;
+    });
   };
 
   return (
@@ -85,7 +113,7 @@ export default function BackupSettings({ onClose }: { onClose: () => void }) {
             <div className="flex flex-wrap gap-2">
               {status.state === 'paused'
                 ? <button onClick={() => void run('backup', async () => { await resumeBackup(); return null; })} disabled={busy !== null} className={plain}>Allow and back up</button>
-                : <button onClick={() => void run('backup', async () => { await backUpNow(true); return null; })} disabled={busy !== null || status.state === 'writing'} className={plain}>Back up now</button>}
+                : <button onClick={() => void run('backup', async () => { await saveBoard(); await backUpNow(true); return null; })} disabled={busy !== null || status.state === 'writing'} className={plain}>Back up now</button>}
               <button onClick={() => void run('backup', async () => { await chooseBackupFolder(); return null; })} disabled={busy !== null} className={plain}>Change folder…</button>
               <button onClick={() => void stopBackup()} disabled={busy !== null} className={plain}>Stop</button>
             </div>

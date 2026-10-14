@@ -75,7 +75,7 @@ export async function writeZip(files: Map<string, Blob>, date = new Date()): Pro
   return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: 'application/zip' });
 }
 
-/** The files in a ZIP this app wrote, by path. Contents are slices of the file, read when needed. */
+/** The files in a ZIP this app wrote, by path. Throws when an entry's bytes don't match its checksum. */
 export async function readZip(zip: Blob): Promise<Map<string, Blob>> {
   // The end record is the last 22 bytes, unless a comment follows it (up to 64 KB).
   const tail = new DataView(await zip.slice(Math.max(0, zip.size - 22 - 0xffff)).arrayBuffer());
@@ -94,6 +94,7 @@ export async function readZip(zip: Blob): Promise<Map<string, Blob>> {
   for (let i = 0; i < count; i += 1) {
     if (directory.getUint32(at, true) !== 0x02014b50) throw new Error('Damaged ZIP file');
     const method = directory.getUint16(at + 10, true);
+    const crc = directory.getUint32(at + 16, true);
     const size = directory.getUint32(at + 20, true);
     const nameLength = directory.getUint16(at + 28, true);
     const extraLength = directory.getUint16(at + 30, true);
@@ -103,7 +104,9 @@ export async function readZip(zip: Blob): Promise<Map<string, Blob>> {
     if (method !== 0) throw new Error('Compressed ZIP entries are not supported');
     const local = new DataView(await zip.slice(localOffset, localOffset + 30).arrayBuffer());
     const dataStart = localOffset + 30 + local.getUint16(26, true) + local.getUint16(28, true);
-    files.set(name, zip.slice(dataStart, dataStart + size));
+    const data = new Uint8Array(await zip.slice(dataStart, dataStart + size).arrayBuffer());
+    if (data.length !== size || crc32(data) !== crc) throw new Error(`Damaged ZIP entry: ${name}`);
+    files.set(name, new Blob([data]));
     at += 46 + nameLength + extraLength + commentLength;
   }
   return files;
