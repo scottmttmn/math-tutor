@@ -266,7 +266,7 @@ try {
   assert.doesNotMatch(JSON.stringify(requests.at(-1).messages), /Current exercise/);
   await page.getByTitle('Speak a question', { exact: true }).click();
   await page.evaluate(() => window.__testRecognition.onresult({ results: [[{ transcript: 'Explain conjugation' }]] }));
-  await page.waitForFunction(() => document.querySelector('input[placeholder="Type or speak a follow-up..."]').value === 'Explain conjugation');
+  await page.waitForFunction(() => document.querySelector('textarea[placeholder="Type or speak a follow-up..."]').value === 'Explain conjugation');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.getByText('Notes explanation.', { exact: true }).last().waitFor();
   assert.equal(await page.getByPlaceholder('Type or speak a follow-up...').inputValue(), '');

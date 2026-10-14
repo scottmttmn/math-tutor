@@ -19,8 +19,23 @@ try {
   await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: frames }));
   await page.goto(`${origin}/workbook`);
   await page.getByRole('heading', { name: 'Reading tutor' }).waitFor();
-  await page.getByRole('textbox').fill('Explain modulus.');
-  await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  const box = page.getByRole('textbox');
+  const oneLine = (await box.boundingBox()).height;
+  await box.fill('Why is the modulus of a product the product of the moduli, and does the same hold for sums of complex numbers?');
+  const wrapped = (await box.boundingBox()).height;
+  assert.ok(wrapped > oneLine, 'a long question wraps onto more lines');
+  // Narrowing the panel rewraps the draft; the box grows without the text changing.
+  await page.evaluate(() => { document.querySelector('aside').style.width = '260px'; });
+  await page.waitForFunction((before) => document.querySelector('textarea').getBoundingClientRect().height > before, wrapped);
+  await page.evaluate(() => { document.querySelector('aside').style.width = ''; });
+  await box.fill('Explain');
+  await box.press('Shift+Enter');
+  await box.pressSequentially('modulus.');
+  assert.equal(await box.inputValue(), 'Explain\nmodulus.');
+  const sent = page.waitForRequest('**/api/tutor');
+  await box.press('Enter');
+  assert.equal(JSON.parse((await sent).postData()).userQuestion, 'Explain\nmodulus.');
+  assert.equal(await box.inputValue(), '');
   const chat = page.locator('.tutor-content').last();
   await chat.locator('.katex').nth(3).waitFor();
   assert.equal(await chat.locator('.katex').count(), 4);
@@ -46,16 +61,16 @@ try {
   // A board written while zoomed out spans a large page area; its snapshot must stay small.
   const wide = await browser.newPage({ viewport: { width: 1440, height: 960 } });
   wide.on('pageerror', (error) => errors.push(error.message));
-  const sent = [];
+  const wideRequests = [];
   await wide.route('**/api/tutor', (route) => {
-    sent.push(route.request().postDataJSON());
+    wideRequests.push(route.request().postDataJSON());
     route.fulfill({ contentType: 'text/event-stream', body: frames });
   });
   await wide.goto(`${origin}/`);
   const canvas = wide.locator('.tl-canvas');
   await canvas.waitFor();
-  const box = await canvas.boundingBox();
-  await wide.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  const canvasBox = await canvas.boundingBox();
+  await wide.mouse.move(canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height / 2);
   for (let i = 0; i < 8; i += 1) {
     await wide.keyboard.down('Control');
     await wide.mouse.wheel(0, 100);
@@ -63,7 +78,7 @@ try {
     await wide.waitForTimeout(150);
   }
   await wide.keyboard.press('d');
-  for (const [x, y] of [[box.x + 60, box.y + 60], [box.x + box.width - 120, box.y + box.height - 120]]) {
+  for (const [x, y] of [[canvasBox.x + 60, canvasBox.y + 60], [canvasBox.x + canvasBox.width - 120, canvasBox.y + canvasBox.height - 120]]) {
     await wide.mouse.move(x, y);
     await wide.mouse.down();
     for (let i = 0; i < 10; i += 1) await wide.mouse.move(x + i * 5, y + Math.sin(i) * 10);
@@ -71,7 +86,7 @@ try {
   }
   await wide.getByRole('button', { name: 'Ask for Help', exact: true }).click();
   await wide.locator('.tutor-content').last().locator('.katex').first().waitFor();
-  const png = Buffer.from(sent.at(-1).canvasImage, 'base64');
+  const png = Buffer.from(wideRequests.at(-1).canvasImage, 'base64');
   const [width, height] = [png.readUInt32BE(16), png.readUInt32BE(20)];
   assert.ok(Math.max(width, height) <= 2048 && width > 1000, `snapshot ${width}x${height}`);
   console.log(`PASS zoomed-out board snapshot is ${width}x${height}`);

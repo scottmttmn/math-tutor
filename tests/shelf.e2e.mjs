@@ -147,6 +147,32 @@ try {
   assert.equal(await shapeCount(), 1);
   console.log('PASS add a PDF, mark exercises, boards beside the page, tutor sees the marked region, reload');
 
+  // The marked problem can go on the board, once, locked; Clear leaves it there.
+  await page.getByRole('button', { name: 'Put on board' }).click();
+  await page.locator('.tl-image').waitFor();
+  assert.equal(await shapeCount(), 2);
+  await page.getByRole('button', { name: 'Put on board' }).click();
+  await page.waitForTimeout(300);
+  assert.equal(await shapeCount(), 2, 'placed only once');
+  await page.getByRole('button', { name: 'Clear' }).click();
+  await page.waitForTimeout(300);
+  assert.equal(await shapeCount(), 1, 'Clear keeps the problem');
+
+  // Full screen hides the page and gives the board the window; asking for help leaves it.
+  const boardWidth = (await page.locator('.tl-canvas').boundingBox()).width;
+  await page.getByRole('button', { name: 'Full screen' }).click();
+  await page.getByText('Page 1 of 2').waitFor({ state: 'hidden' });
+  await page.waitForTimeout(300);
+  assert.ok((await page.locator('.tl-canvas').boundingBox()).width > boardWidth * 1.5, 'the board fills the window');
+  await page.getByRole('button', { name: 'Exit full screen' }).click();
+  await page.getByText('Page 1 of 2').waitFor();
+  await page.getByRole('button', { name: 'Full screen' }).click();
+  await page.waitForTimeout(5000);
+  await page.getByRole('button', { name: 'Ask for Help' }).click();
+  await page.getByRole('button', { name: 'Full screen' }).waitFor();
+  await page.getByText('Shelf hint.').last().waitFor();
+  console.log('PASS the problem goes on the board; full screen board');
+
   // History lists the exercise with work in it (not the empty one) and opens it beside its page.
   await page.getByRole('button', { name: 'Close board' }).click();
   await page.getByRole('heading', { name: 'Exercises', exact: true }).waitFor();

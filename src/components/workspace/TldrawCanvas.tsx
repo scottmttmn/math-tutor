@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react';
-import { DefaultSizeStyle, Tldraw, type Editor, type TLComponents, type TLShapeId } from 'tldraw';
+import { AssetRecordType, Box, DefaultSizeStyle, Tldraw, createShapeId, type Editor, type TLComponents, type TLShape, type TLShapeId } from 'tldraw';
 import 'tldraw/tldraw.css';
 import { getAssetUrls } from '@tldraw/assets/selfHosted';
 import { useCanvasDispatch, useCanvasState, type CanvasLoad } from '@/context/CanvasContext';
@@ -36,6 +36,64 @@ const DEFAULT_PEN_SIZE = 's';
 function startDrawing(editor: Editor) {
   editor.setStyleForNextShapes(DefaultSizeStyle, DEFAULT_PEN_SIZE);
   editor.setCurrentTool('draw');
+}
+
+// The problem picture placed on the board is marked so it is placed only once.
+const PROBLEM_META = 'problemImage';
+// Gap between the picture and the edge of the view or the work already on the board.
+const PROBLEM_MARGIN = 32;
+// Clears tldraw's undo/redo bar in the top-left corner of the view.
+const PROBLEM_TOP = 64;
+
+function findProblemShape(editor: Editor): TLShape | undefined {
+  return editor.getCurrentPageShapes().find((shape) => shape.meta[PROBLEM_META] === true);
+}
+
+function imageSize(src: string): Promise<{ w: number; h: number }> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve({ w: image.naturalWidth, h: image.naturalHeight });
+    image.onerror = () => reject(new Error('Image could not be read'));
+    image.src = src;
+  });
+}
+
+// The picture goes in the top-left of the view on an empty board, or above the work already
+// there; it is locked so the pen and eraser leave it alone (unlock it from its menu to move it).
+async function placeProblemImage(editor: Editor, base64: string): Promise<boolean> {
+  const existing = findProblemShape(editor);
+  if (existing) {
+    const bounds = editor.getShapePageBounds(existing);
+    if (bounds) editor.zoomToBounds(bounds, { animation: { duration: 200 }, targetZoom: 1 });
+    return false;
+  }
+  const src = `data:image/png;base64,${base64}`;
+  const natural = await imageSize(src);
+  // A second tap while the picture loaded may have placed it already.
+  if (findProblemShape(editor)) return false;
+  const viewport = editor.getViewportPageBounds();
+  // Crops are rendered at twice their page size; never wider than most of the view.
+  const scale = Math.min(0.5, (viewport.w * 0.8) / natural.w);
+  const w = natural.w * scale;
+  const h = natural.h * scale;
+  const content = editor.getCurrentPageBounds();
+  const x = content ? content.minX : viewport.minX + PROBLEM_MARGIN / editor.getZoomLevel();
+  const y = content ? content.minY - h - PROBLEM_MARGIN : viewport.minY + PROBLEM_TOP / editor.getZoomLevel();
+  const assetId = AssetRecordType.createId();
+  editor.markHistoryStoppingPoint('problem image');
+  editor.run(() => {
+    editor.createAssets([AssetRecordType.create({
+      id: assetId, type: 'image',
+      props: { name: 'problem.png', src, w: natural.w, h: natural.h, mimeType: 'image/png', isAnimated: false },
+    })]);
+    editor.createShape({
+      id: createShapeId(), type: 'image', x, y, isLocked: true, meta: { [PROBLEM_META]: true },
+      props: { assetId, w, h },
+    });
+  });
+  if (content) editor.zoomToBounds(Box.Common([content, new Box(x, y, w, h)]), { animation: { duration: 200 }, targetZoom: 1 });
+  startDrawing(editor);
+  return true;
 }
 
 function shapesToExport(editor: Editor): TLShapeId[] {
@@ -133,6 +191,7 @@ export default function TldrawCanvas({ handleRef }: { handleRef: RefObject<Drawi
       const { blob } = await editor.toImage(ids, { format: 'png', background: true, pixelRatio: 1 });
       return blob;
     },
+    placeProblemImage: async (base64) => (editor ? placeProblemImage(editor, base64) : false),
     getRevision: () => documentRevision,
     getDocument: () => (editor && !loadPending.current ? editor.getSnapshot().document : null),
     clear: () => {
