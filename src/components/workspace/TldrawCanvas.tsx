@@ -114,6 +114,10 @@ function imagePixelRatio(editor: Editor, ids: TLShapeId[]): number {
   return Math.min(2, MAX_IMAGE_SIDE / side);
 }
 
+// Saved pictures of the board: sharp at 2x, but small enough for a tablet's canvas limits.
+const MAX_EXPORT_SIDE = 6000;
+const EXPORT_PADDING = 32;
+
 function applyLoad(editor: Editor, load: CanvasLoad) {
   if (load.document) {
     editor.loadSnapshot(load.document);
@@ -190,6 +194,15 @@ export default function TldrawCanvas({ handleRef, toolsHidden }: { handleRef: Re
       if (ids.length === 0) return null;
       const { blob } = await editor.toImage(ids, { format: 'png', background: true, pixelRatio: 1 });
       return blob;
+    },
+    exportImage: async (format) => {
+      if (!editor) return null;
+      const ids = [...editor.getCurrentPageShapeIds()];
+      const bounds = editor.getShapesPageBounds(ids);
+      if (!bounds) return null;
+      const pixelRatio = Math.min(2, MAX_EXPORT_SIDE / (Math.max(bounds.w, bounds.h) + EXPORT_PADDING * 2));
+      const { blob } = await editor.toImage(ids, { format, background: true, padding: EXPORT_PADDING, pixelRatio, quality: 0.92 });
+      return { blob, pixelRatio };
     },
     placeProblemImage: async (base64) => (editor ? placeProblemImage(editor, base64) : false),
     getRevision: () => documentRevision,

@@ -18,6 +18,7 @@ import DrawingCanvas, { type DrawingCanvasHandle } from '../workspace/DrawingCan
 import ChatPanel from '../chat/ChatPanel';
 import BoardFrame from './BoardFrame';
 import { KindIcon } from '@/components/common/Icons';
+import { saveBoardAs } from '@/lib/exportBoard';
 
 function AppContent() {
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
@@ -130,6 +131,7 @@ function AppContent() {
             fullScreen={{ on: fullScreen, toggle: toggleFullScreen }}
             tools={{ hidden: toolsHidden, toggle: toggleTools }}
             tutor={{ open: tutorOpen, toggle: () => setTutorOpen((open) => !open) }}
+            onSaveAs={(format) => void saveBoardAs(canvasHandle.current, format, problemStatement || (sessionType === 'note' ? 'Notes' : 'Problem'))}
           />
         )}
         tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel getCanvasImage={getFollowUpImage} /> }}

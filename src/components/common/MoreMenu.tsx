@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 export interface MoreMenuItem {
   label: string;
@@ -8,8 +8,18 @@ export interface MoreMenuItem {
   disabled?: boolean;
 }
 
+interface Props {
+  label: string;
+  items: MoreMenuItem[];
+  disabled?: boolean;
+  /** What the button shows instead of "⋯" (then `label` is only its accessible name if it differs). */
+  button?: ReactNode;
+  /** Opens upward, for a menu at the foot of the screen. */
+  above?: boolean;
+}
+
 /** A "⋯" button holding a card's or board's less common actions, such as Rename and Delete. */
-export default function MoreMenu({ label, items, disabled = false }: { label: string; items: MoreMenuItem[]; disabled?: boolean }) {
+export default function MoreMenu({ label, items, disabled = false, button, above = false }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -35,12 +45,12 @@ export default function MoreMenu({ label, items, disabled = false }: { label: st
         aria-label={label}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="flex items-center justify-center min-h-11 min-w-11 text-lg leading-none text-gray-700 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50"
+        className={`flex items-center justify-center min-h-11 min-w-11 ${button ? 'gap-1.5 px-3 text-sm text-gray-800' : 'text-lg leading-none text-gray-700'} border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50`}
       >
-        <span aria-hidden="true">⋯</span>
+        {button ?? <span aria-hidden="true">⋯</span>}
       </button>
       {open && (
-        <div role="menu" className="absolute right-0 top-full mt-1 w-40 py-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50">
+        <div role="menu" className={`absolute right-0 ${above ? 'bottom-full mb-1' : 'top-full mt-1'} w-40 py-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50`}>
           {items.map((item) => (
             <button
               key={item.label}

@@ -19,7 +19,7 @@ It has **two session modes**, and the distinction drives much of the codebase:
 - **Canvas:** tldraw 5 (pinned together with `@tldraw/assets`)
 - **Styling:** Tailwind CSS 4
 - **AI Providers:** Anthropic Claude, OpenAI, Google Gemini, Groq, Ollama (local), and the student's own ChatGPT plan via Sign in with ChatGPT
-- **Persistence:** IndexedDB (sessions, Shelf PDFs), localStorage (model config)
+- **Persistence:** IndexedDB (sessions, Shelf PDFs, backup settings), localStorage (model config); backups as a ZIP download or to a chosen folder
 - **PDFs:** PDF.js (`pdfjs-dist`, legacy build) for the Shelf
 
 ---
@@ -41,12 +41,13 @@ src/
 │   └── globals.css            # Global Tailwind styles
 ├── components/
 │   ├── layout/
-│   │   ├── AppBar.tsx         # The bar on every page: Home, Shelf, + New, Settings
+│   │   ├── AppBar.tsx         # The bar on every page: Home, Shelf, + New, Settings, and Back up / Backup paused when needed
 │   │   ├── AppShell.tsx       # The free board page; wires contexts + UI
 │   │   ├── TopBar.tsx         # AppBar on a free board, plus save status
 │   │   ├── BoardFrame.tsx     # The layout every board shares: source, board with header and toolbar, tutor drawer
-│   │   ├── BottomToolbar.tsx  # Full screen, Hide tools, Clear, Mark solved, Tutor, Ask tutor (drawing tools are tldraw's own)
-│   │   └── SettingsModal.tsx  # Model/provider configuration (defines PRESETS array)
+│   │   ├── BottomToolbar.tsx  # Full screen, Hide tools, Save as (PNG/PDF), Clear, Mark solved, Tutor, Ask tutor (drawing tools are tldraw's own)
+│   │   ├── BackupSettings.tsx # Settings' Backup tab: folder backup, download, restore, storage status
+│   │   └── SettingsModal.tsx  # Settings: Tutor tab (model/provider, defines PRESETS array) and Backup tab
 │   ├── workspace/
 │   │   ├── DrawingCanvas.tsx  # Client-only wrapper around TldrawCanvas; defines DrawingCanvasHandle
 │   │   ├── TldrawCanvas.tsx   # tldraw editor: loads documents, mirrors them to CanvasContext, exports images
@@ -75,6 +76,7 @@ src/
 │   ├── useSpeechRecognition.ts# Web Speech API wrapper with error recovery
 │   ├── useTutorChat.ts        # Sends requests to /api/tutor, handles SSE stream
 │   ├── useSessionAutosave.ts  # Main-page autosave, reload restore, New/Load switching
+│   ├── useBackupStatus.ts     # Shared folder-backup state (starts the backup on first use)
 │   └── useChatGPTConnection.ts# Sign in with ChatGPT state for SettingsModal
 ├── lib/
 │   ├── db.ts                  # IndexedDB CRUD for sessions via `idb`
@@ -82,6 +84,10 @@ src/
 │   ├── currentBoard.ts        # Which free board /board opens (`math-tutor:currentSession`)
 │   ├── pdf.ts                 # PDF.js loading (offline, from public/pdfjs), page render, crops, covers
 │   ├── shelf.ts               # Shelf actions: add PDF, mark/unmark exercises, single problem from a file
+│   ├── backup.ts              # Backup file: build (backup.json + pdfs/), ZIP download, restore from ZIP/folder/JSON
+│   ├── autoBackup.ts          # Folder backup (File System Access), persistent storage, the Back up reminder
+│   ├── zip.ts                 # Minimal stored (uncompressed) ZIP writer and reader
+│   ├── exportBoard.ts         # Save a board as PNG, or a one-page PDF written around a JPEG
 │   ├── modelConfig.ts         # localStorage get/set for ModelConfig
 │   ├── chatgpt.ts             # Server-only Sign in with ChatGPT client + OS-keychain token encryption
 │   ├── siwc/                  # Vendored OpenAI Sign in with ChatGPT SDK (noncommercial license, see below)
@@ -122,7 +128,7 @@ src/
 
 ### Canvas
 - The canvas is **tldraw**, mounted by `TldrawCanvas.tsx` through `DrawingCanvas.tsx`, which loads it with `next/dynamic` and `ssr: false`. `DrawingCanvas` fills its nearest positioned ancestor, so the wrapper in `AppShell` / `Workbook` must be `relative` with a size. Its wrapper is `isolate`d so tldraw's own z-indexes (up to 10000) stay under the app's dialogs.
-- `DrawingCanvasHandle` (pass a ref as `handleRef`): `captureImage()` exports the selected shapes, else every shape, trimmed to their bounds (PNG, pixelRatio 2 but at most 2048px on the longer side, since a board written zoomed out is thousands of units wide and ChatGPT rejected 6000px images; base64 without the `data:` prefix; `''` when empty); `captureThumbnail()`, `placeProblemImage(base64)`, `getDocument()`, `getRevision()` (bumped synchronously on every document change), and `clear()` (one undoable step).
+- `DrawingCanvasHandle` (pass a ref as `handleRef`): `captureImage()` exports the selected shapes, else every shape, trimmed to their bounds (PNG, pixelRatio 2 but at most 2048px on the longer side, since a board written zoomed out is thousands of units wide and ChatGPT rejected 6000px images; base64 without the `data:` prefix; `''` when empty); `captureThumbnail()`, `exportImage(format)` (the whole board for **Save as…**, at most 6000px a side), `placeProblemImage(base64)`, `getDocument()`, `getRevision()` (bumped synchronously on every document change), and `clear()` (one undoable step).
 - Every board starts with the pen at size **S** (`DEFAULT_PEN_SIZE` in `TldrawCanvas.tsx`); tldraw's default M is too heavy for writing math.
 - tldraw's UI supplies the tools, colors, undo/redo and their shortcuts. `MainMenu`, `PageMenu`, `HelpMenu` and debug panels are hidden and there is one page per session.
 - `CanvasContext.document` is a **debounced** (250ms) copy of the editor's document. When saving, read `getDocument()` from the handle (both `AppShell` and `Workbook` do), or the last stroke can be missed.
@@ -166,10 +172,11 @@ src/
 
 ### Session Persistence
 - Sessions are stored in IndexedDB using the `idb` library (`src/lib/db.ts`). Do not use `localStorage` for session data.
-- `db.ts` exports: `saveSession`, `loadSession`, `deleteSession`, `listSessions`, `renameSession`, and for the Shelf `listShelf`, `loadShelfDocument`, `saveShelfDocument`, `deleteShelfDocument`, `shelfSessionId`.
+- `db.ts` exports: `saveSession`, `loadSession`, `deleteSession`, `listSessions`, `renameSession`, for the Shelf `listShelf`, `loadShelfDocument`, `saveShelfDocument`, `deleteShelfDocument`, `shelfSessionId`, and for backup `onDataChange`, `restoreRecords`, `hasSavedWork`, `getSetting`, `setSetting`.
 - Session fields: `id`, `title`, `problemStatement`, `problemImage`, `canvasStrokes` (pre-tldraw only), `canvasDocument?`, `canvasImageBlob` (the History thumbnail), `chatHistory`, `createdAt`, `updatedAt`, `isSolved?`, `sessionType?`, `customTitle?`.
 - `customTitle` is the name given on Home. Pages that autosave don't know it, so `saveSession` keeps the stored one when a save omits it; `renameSession` is the only writer.
 - **Home** (`/`, `home/Home.tsx`) opens with a **Continue** card for the last board worked on, then lists free-form boards, workbook sessions (`workbook:<section>:exercise:<id>` / `:reading`) and Shelf exercises (`shelf:<document>:<exercise>`) that have work in them. A workbook entry opens `/workbook?open=<exercise id | reading>`, which the workbook reads once and then drops from the URL; a free board is set as the one `/board` opens (`setBoardToOpen`). Filters: All, Problems, Notes, In progress, Solved. Below the list, the Shelf's workbook card and newest PDFs.
+- **Backup** (Settings → Backup): a backup is `backup.json` (`BackupManifest`: sessions with thumbnails as data URLs, Shelf entries without their file) plus `pdfs/<id>.pdf`. The download is one stored ZIP (`zip.ts`); folder backup writes the same files into `Math Tutor backup/` in the chosen folder, plus `backup-YYYY-MM-DD.json` (last 7 days), 30s after a change (`onDataChange` in `db.ts` fires on every session/Shelf write). Restore (`restoreRecords`) writes a record only when this device has none or an older `updatedAt`. The folder handle and backup state live in the IndexedDB `settings` store (db version 3). Folder backup is Chromium-only; elsewhere (e.g. Android) only download/restore show. If you add a store or a field that holds work, add it to the backup.
 - `SessionMetadata` (used for session list): `id`, `title`, `problemStatement`, `createdAt`, `updatedAt`, `messageCount`, `isSolved?`, `sessionType?`.
 - `sessionType` and `isSolved` are optional for backward compatibility with sessions saved before those fields existed. Treat missing `sessionType` as `'problem'`.
 - Model configuration (provider, model ID, base URL) is stored in `localStorage` via `src/lib/modelConfig.ts`.
@@ -212,7 +219,7 @@ npm run start  # Production server
 npm run lint   # ESLint
 npm run typecheck  # tsc --noEmit
 npm test       # Unit tests
-npm run test:e2e   # Browser tests (workbook, tutor chat, Shelf, pen test); needs `npm run start -- -p 3100` running
+npm run test:e2e   # Browser tests (workbook, tutor chat, Shelf, backup, pen test); needs `npm run start -- -p 3100` running
 npm run handwriting  # Handwriting test: transcribe tests/handwriting/wacom/<page-id>.png with each model, score against tests/handwriting/pages.json (results in tests/handwriting/results/, gitignored). chatgpt:<model> entries go through the running app's /api/transcribe, so start the app and sign in first
 ```
 

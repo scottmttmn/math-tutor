@@ -4,7 +4,10 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { SessionType } from '@/types';
-import SettingsModal from './SettingsModal';
+import SettingsModal, { type SettingsTab } from './SettingsModal';
+import { RESTORE_RESULT_KEY } from './BackupSettings';
+import { useBackupStatus } from '@/hooks/useBackupStatus';
+import { backupDue, resumeBackup } from '@/lib/autoBackup';
 import { GearIcon, HomeIcon, NotesIcon, ProblemIcon, ShelfIcon } from '@/components/common/Icons';
 
 export type AppPlace = 'home' | 'shelf' | 'board';
@@ -27,11 +30,29 @@ const PLACES: { place: AppPlace; href: string; label: string; icon: ReactNode }[
   { place: 'shelf', href: '/shelf', label: 'Shelf', icon: <ShelfIcon /> },
 ];
 
+function takeRestoreResult(): { tab: SettingsTab; restored: string } | null {
+  try {
+    const restored = sessionStorage.getItem(RESTORE_RESULT_KEY);
+    if (!restored) return null;
+    sessionStorage.removeItem(RESTORE_RESULT_KEY);
+    return { tab: 'backup', restored };
+  } catch { return null; }
+}
+
 /** The bar on every page: Home and Shelf, New, and Settings. Full screen hides it. */
 export default function AppBar({ place, onNew, locked = false, beforeLeave, children }: Props) {
   const router = useRouter();
   const [newOpen, setNewOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  // The Settings dialog: which tab, and a restore's result to show on Backup.
+  const [settings, setSettings] = useState<{ tab: SettingsTab; restored?: string } | null>(null);
+  const backup = useBackupStatus();
+
+  // A restore reloads the page; show what it did in the Backup settings it was started from
+  // (after hydration, since sessionStorage is the browser's).
+  useEffect(() => {
+    const timer = setTimeout(() => setSettings((open) => open ?? takeRestoreResult()));
+    return () => clearTimeout(timer);
+  }, []);
   const newRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -78,6 +99,25 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, chil
       <div className="flex-1" />
       {children}
 
+      {/* Folder backup needs the browser's permission again after a restart, and it only asks from a click. */}
+      {backup.state === 'paused' ? (
+        <button
+          onClick={() => void resumeBackup()}
+          title="The browser needs your permission again to write the backup to its folder"
+          className="min-h-11 px-3 text-sm font-medium text-gray-900 border-2 border-gray-900 rounded-lg bg-white hover:bg-gray-50"
+        >
+          Backup paused
+        </button>
+      ) : backupDue(backup) && (
+        <button
+          onClick={() => setSettings({ tab: 'backup' })}
+          title="Your work has no backup from the last week. Download one or pick a folder to back up to."
+          className="min-h-11 px-3 text-sm text-gray-800 border border-gray-300 rounded-lg bg-white hover:bg-gray-50"
+        >
+          Back up
+        </button>
+      )}
+
       <div ref={newRef} className="relative">
         <button
           onClick={() => setNewOpen((open) => !open)}
@@ -100,14 +140,20 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, chil
       </div>
 
       <button
-        onClick={() => setSettingsOpen(true)}
+        onClick={() => setSettings({ tab: 'tutor' })}
         aria-label="Settings"
-        title="Tutor model and settings"
+        title="Tutor model and backup"
         className="flex items-center justify-center min-h-11 min-w-11 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
       >
         <GearIcon />
       </button>
-      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsModal
+        isOpen={settings !== null}
+        tab={settings?.tab}
+        onClose={() => setSettings(null)}
+        saveOpenBoard={beforeLeave}
+        restoredMessage={settings?.restored}
+      />
     </nav>
   );
 }

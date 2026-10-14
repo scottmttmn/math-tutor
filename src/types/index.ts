@@ -231,3 +231,45 @@ export interface PenTestStats {
   /** Longest gap between two handled events, in ms (a stall shows up here). */
   worstGapMs: number;
 }
+
+// === Backup ===
+
+/** A saved session in a backup: the thumbnail Blob as a data URL. */
+export type BackupSession = Omit<Session, 'canvasImageBlob'> & { canvasImage: string | null };
+
+/** A Shelf PDF in a backup: the cover as a data URL; the PDF itself is the file `pdfs/<id>.pdf`. */
+export type BackupShelfDocument = Omit<ShelfDocument, 'file' | 'cover'> & { cover: string | null };
+
+/** `backup.json`: everything the app keeps, apart from the Shelf's PDF files. */
+export interface BackupManifest {
+  app: 'math-tutor';
+  version: 1;
+  createdAt: number;
+  sessions: BackupSession[];
+  shelf: BackupShelfDocument[];
+}
+
+/** What a restore did: records added or updated, and those left alone because this device's copy is as new. */
+export interface RestoreResult {
+  restoredSessions: number;
+  restoredShelf: number;
+  skipped: number;
+  /** Shelf PDFs listed in the backup whose file wasn't with it (and isn't on this device). */
+  missingPdfs: string[];
+}
+
+/** Automatic backup to a folder, as the Backup settings and the top bar show it. */
+export interface BackupStatus {
+  /** False where the browser can't write to a folder (e.g. Android); downloads still work. */
+  folderSupported: boolean;
+  folderName: string | null;
+  /** off: no folder chosen; paused: the browser needs permission again; writing; ok; error. */
+  state: 'off' | 'ok' | 'paused' | 'writing' | 'error';
+  lastBackupAt: number | null;
+  lastDownloadAt: number | null;
+  error: string | null;
+  /** Whether the browser promised not to clear stored work; null until known or where it can't say. */
+  persisted: boolean | null;
+  /** Saved boards or Shelf PDFs exist, so there is something to lose. */
+  hasWork: boolean;
+}

@@ -5,6 +5,7 @@ import type { ModelConfig, Provider } from '@/types';
 import { DEFAULT_ANTHROPIC_MODEL, DEFAULT_GEMINI_MODEL, GEMINI_BASE_URL, getModelConfig, isGeminiEndpoint, saveModelConfig } from '@/lib/modelConfig';
 import { useChatGPTConnection } from '@/hooks/useChatGPTConnection';
 import { CHATGPT_DEFAULT_MODEL_PATTERN, CHATGPT_USAGE_URL } from '@/lib/constants';
+import BackupSettings from './BackupSettings';
 
 const PRESETS: { label: string; provider: Provider; model: string; baseUrl: string }[] = [
   { label: 'Anthropic (Claude)', provider: 'anthropic', model: DEFAULT_ANTHROPIC_MODEL, baseUrl: '' },
@@ -23,17 +24,51 @@ function findPresetIndex(config: ModelConfig): number {
   return idx >= 0 ? idx : PRESETS.length - 1; // fall back to Custom
 }
 
+export type SettingsTab = 'tutor' | 'backup';
+
 interface Props {
   isOpen: boolean;
   onClose: () => void;
+  /** The tab shown first; the tutor's model unless given. */
+  tab?: SettingsTab;
+  /** Saves the board open on this page before a backup or restore. */
+  saveOpenBoard?: () => Promise<unknown>;
+  /** A restore's result, shown on the Backup tab after the page reloaded. */
+  restoredMessage?: string;
 }
 
-export default function SettingsModal({ isOpen, onClose }: Props) {
+const TABS: { tab: SettingsTab; label: string }[] = [{ tab: 'tutor', label: 'Tutor' }, { tab: 'backup', label: 'Backup' }];
+
+export default function SettingsModal({ isOpen, tab = 'tutor', ...rest }: Props) {
   if (!isOpen) return null;
-  return <SettingsForm onClose={onClose} />;
+  return <SettingsDialog {...rest} initialTab={tab} />;
 }
 
-function SettingsForm({ onClose }: Pick<Props, 'onClose'>) {
+function SettingsDialog({ onClose, initialTab, saveOpenBoard, restoredMessage }: Omit<Props, 'isOpen' | 'tab'> & { initialTab: SettingsTab }) {
+  const [tab, setTab] = useState(initialTab);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div role="dialog" aria-label="Settings" className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6 max-h-[90vh] overflow-y-auto">
+        <div role="tablist" className="flex gap-1 mb-4 border-b border-gray-200">
+          {TABS.map((item) => (
+            <button
+              key={item.tab}
+              role="tab"
+              aria-selected={tab === item.tab}
+              onClick={() => setTab(item.tab)}
+              className={`min-h-11 px-3 -mb-px text-sm border-b-2 ${tab === item.tab ? 'font-semibold text-gray-900 border-gray-900' : 'text-gray-600 border-transparent hover:text-gray-900'}`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        {tab === 'tutor' ? <SettingsForm onClose={onClose} /> : <BackupSettings onClose={onClose} saveOpenBoard={saveOpenBoard} restoredMessage={restoredMessage} />}
+      </div>
+    </div>
+  );
+}
+
+function SettingsForm({ onClose }: { onClose: () => void }) {
   const [config, setConfig] = useState<ModelConfig>(getModelConfig);
   const [presetIdx, setPresetIdx] = useState(() => findPresetIndex(getModelConfig()));
   const isChatGPT = PRESETS[presetIdx]?.provider === 'chatgpt';
@@ -63,136 +98,132 @@ function SettingsForm({ onClose }: Pick<Props, 'onClose'>) {
   const isOpenAICompatible = PRESETS[presetIdx]?.provider === 'openai-compatible';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">Model Settings</h2>
+    <>
+      {/* Provider preset */}
+      <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+      <select
+        value={presetIdx}
+        onChange={(e) => handlePresetChange(Number(e.target.value))}
+        className="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+      >
+        {PRESETS.map((p, i) => (
+          <option key={p.label} value={i}>{p.label}</option>
+        ))}
+      </select>
 
-        {/* Provider preset */}
-        <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+      {/* ChatGPT plan connection */}
+      {isChatGPT && (
+        <div className="mb-4 p-3 border border-gray-200 rounded-lg bg-gray-50 text-sm">
+          {chatgpt.isLoading ? (
+            <p className="text-gray-500">Checking your ChatGPT connection...</p>
+          ) : chatgpt.status.status === 'connecting' ? (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-gray-600">Finish signing in in the browser tab that opened.</p>
+              <button
+                onClick={chatgpt.cancelSignIn}
+                className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-white"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : chatgpt.status.status === 'connected' ? (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-gray-700">
+                Signed in{chatgpt.status.email ? ` as ${chatgpt.status.email}` : ''}.
+                {!chatgpt.status.sharing && ' Plan usage is not enabled for this app yet.'}
+                {chatgpt.status.sharing && (
+                  <>
+                    {' '}
+                    <a href={CHATGPT_USAGE_URL} target="_blank" rel="noopener noreferrer" className="text-gray-900 underline">
+                      Manage usage
+                    </a>
+                  </>
+                )}
+              </p>
+              <button
+                onClick={chatgpt.status.sharing ? chatgpt.disconnect : chatgpt.signIn}
+                className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-white shrink-0"
+              >
+                {chatgpt.status.sharing ? 'Sign out' : 'Enable'}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={chatgpt.signIn}
+              className="w-full px-4 py-2 text-sm text-white bg-black rounded-lg hover:bg-gray-800"
+            >
+              Sign in with ChatGPT
+            </button>
+          )}
+          {chatgpt.status.error && (
+            <p className="mt-2 text-xs text-red-600">{chatgpt.status.error}</p>
+          )}
+        </div>
+      )}
+
+      {/* Model */}
+      <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
+      {isChatGPT && chatgptModels?.length ? (
         <select
-          value={presetIdx}
-          onChange={(e) => handlePresetChange(Number(e.target.value))}
+          value={chatgptModel}
+          onChange={(e) => setConfig({ ...config, model: e.target.value })}
           className="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
         >
-          {PRESETS.map((p, i) => (
-            <option key={p.label} value={i}>{p.label}</option>
+          {chatgptModels.map((m) => (
+            <option key={m.slug} value={m.slug}>{m.displayName}</option>
           ))}
         </select>
+      ) : (
+        <input
+          type="text"
+          value={config.model}
+          onChange={(e) => setConfig({ ...config, model: e.target.value })}
+          placeholder="Model name"
+          className="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+        />
+      )}
 
-        {/* ChatGPT plan connection */}
-        {isChatGPT && (
-          <div className="mb-4 p-3 border border-gray-200 rounded-lg bg-gray-50 text-sm">
-            {chatgpt.isLoading ? (
-              <p className="text-gray-500">Checking your ChatGPT connection...</p>
-            ) : chatgpt.status.status === 'connecting' ? (
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-gray-600">Finish signing in in the browser tab that opened.</p>
-                <button
-                  onClick={chatgpt.cancelSignIn}
-                  className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-white"
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : chatgpt.status.status === 'connected' ? (
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-gray-700">
-                  Signed in{chatgpt.status.email ? ` as ${chatgpt.status.email}` : ''}.
-                  {!chatgpt.status.sharing && ' Plan usage is not enabled for this app yet.'}
-                  {chatgpt.status.sharing && (
-                    <>
-                      {' '}
-                      <a href={CHATGPT_USAGE_URL} target="_blank" rel="noopener noreferrer" className="text-gray-900 underline">
-                        Manage usage
-                      </a>
-                    </>
-                  )}
-                </p>
-                <button
-                  onClick={chatgpt.status.sharing ? chatgpt.disconnect : chatgpt.signIn}
-                  className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-white shrink-0"
-                >
-                  {chatgpt.status.sharing ? 'Sign out' : 'Enable'}
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={chatgpt.signIn}
-                className="w-full px-4 py-2 text-sm text-white bg-black rounded-lg hover:bg-gray-800"
-              >
-                Sign in with ChatGPT
-              </button>
-            )}
-            {chatgpt.status.error && (
-              <p className="mt-2 text-xs text-red-600">{chatgpt.status.error}</p>
-            )}
-          </div>
-        )}
-
-        {/* Model */}
-        <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
-        {isChatGPT && chatgptModels?.length ? (
-          <select
-            value={chatgptModel}
-            onChange={(e) => setConfig({ ...config, model: e.target.value })}
-            className="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-          >
-            {chatgptModels.map((m) => (
-              <option key={m.slug} value={m.slug}>{m.displayName}</option>
-            ))}
-          </select>
-        ) : (
+      {/* Base URL (all non-Anthropic providers) */}
+      {isOpenAICompatible && (
+        <>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Base URL</label>
           <input
             type="text"
-            value={config.model}
-            onChange={(e) => setConfig({ ...config, model: e.target.value })}
-            placeholder="Model name"
+            value={config.baseUrl}
+            onChange={(e) => setConfig({ ...config, baseUrl: e.target.value })}
+            placeholder="http://192.168.x.x:11434/v1"
             className="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
           />
-        )}
+        </>
+      )}
 
-        {/* Base URL (all non-Anthropic providers) */}
-        {isOpenAICompatible && (
-          <>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Base URL</label>
-            <input
-              type="text"
-              value={config.baseUrl}
-              onChange={(e) => setConfig({ ...config, baseUrl: e.target.value })}
-              placeholder="http://192.168.x.x:11434/v1"
-              className="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-            />
-          </>
-        )}
+      <p className="text-xs text-gray-500 mb-4">
+        {config.provider === 'anthropic'
+          ? 'API key read from .env.local (ANTHROPIC_API_KEY)'
+          : config.provider === 'chatgpt'
+            ? 'No API key needed. Requests count against your ChatGPT plan limits.'
+            : isGeminiEndpoint(config.baseUrl)
+              ? 'Gemini API key read from .env.local (GEMINI_API_KEY or GOOGLE_API_KEY)'
+              : 'API key read from .env.local (OPENAI_API_KEY). Ollama does not need one.'}
+      </p>
+      {config.provider !== 'chatgpt' && isGeminiEndpoint(config.baseUrl) && <p className="text-xs text-gray-500 mb-4">
+        Flash models automatically fall back through older Flash models, then Flash-Lite, when a quota is exhausted. Replies identify any fallback used.
+      </p>}
 
-        <p className="text-xs text-gray-500 mb-4">
-          {config.provider === 'anthropic'
-            ? 'API key read from .env.local (ANTHROPIC_API_KEY)'
-            : config.provider === 'chatgpt'
-              ? 'No API key needed. Requests count against your ChatGPT plan limits.'
-              : isGeminiEndpoint(config.baseUrl)
-                ? 'Gemini API key read from .env.local (GEMINI_API_KEY or GOOGLE_API_KEY)'
-                : 'API key read from .env.local (OPENAI_API_KEY). Ollama does not need one.'}
-        </p>
-        {config.provider !== 'chatgpt' && isGeminiEndpoint(config.baseUrl) && <p className="text-xs text-gray-500 mb-4">
-          Flash models automatically fall back through older Flash models, then Flash-Lite, when a quota is exhausted. Replies identify any fallback used.
-        </p>}
-
-        <div className="flex justify-end gap-2 mt-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            className="min-h-11 px-4 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700"
-          >
-            Save
-          </button>
-        </div>
+      <div className="flex justify-end gap-2 mt-2">
+        <button
+          onClick={onClose}
+          className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSave}
+          className="min-h-11 px-4 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700"
+        >
+          Save
+        </button>
       </div>
-    </div>
+    </>
   );
 }
