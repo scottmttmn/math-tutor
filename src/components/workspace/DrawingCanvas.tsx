@@ -9,6 +9,8 @@ export interface DrawingCanvasHandle {
   captureImage: () => Promise<string>;
   /** Small PNG of the whole drawing for the saved session; null when nothing is drawn. */
   captureThumbnail: () => Promise<Blob | null>;
+  /** The whole board as a PNG or JPEG for saving, and how many pixels it has per board unit; null when empty. */
+  exportImage: (format: 'png' | 'jpeg') => Promise<{ blob: Blob; pixelRatio: number } | null>;
   /** Puts the problem picture (base64 PNG) on the board, locked; false when it is already there. */
   placeProblemImage: (base64: string) => Promise<boolean>;
   /** Changes whenever the drawing changes; compare it to know whether a new capture is needed. */

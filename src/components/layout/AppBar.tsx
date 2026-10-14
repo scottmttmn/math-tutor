@@ -4,7 +4,9 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { SessionType } from '@/types';
-import SettingsModal from './SettingsModal';
+import SettingsModal, { type SettingsTab } from './SettingsModal';
+import { useBackupStatus } from '@/hooks/useBackupStatus';
+import { backupDue, resumeBackup } from '@/lib/autoBackup';
 import { GearIcon, HomeIcon, NotesIcon, ProblemIcon, ShelfIcon } from '@/components/common/Icons';
 
 export type AppPlace = 'home' | 'shelf' | 'board';
@@ -31,7 +33,8 @@ const PLACES: { place: AppPlace; href: string; label: string; icon: ReactNode }[
 export default function AppBar({ place, onNew, locked = false, beforeLeave, children }: Props) {
   const router = useRouter();
   const [newOpen, setNewOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState<SettingsTab | null>(null);
+  const backup = useBackupStatus();
   const newRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -78,6 +81,25 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, chil
       <div className="flex-1" />
       {children}
 
+      {/* Folder backup needs the browser's permission again after a restart, and it only asks from a click. */}
+      {backup.state === 'paused' ? (
+        <button
+          onClick={() => void resumeBackup()}
+          title="The browser needs your permission again to write the backup to its folder"
+          className="min-h-11 px-3 text-sm font-medium text-gray-900 border-2 border-gray-900 rounded-lg bg-white hover:bg-gray-50"
+        >
+          Backup paused
+        </button>
+      ) : backupDue(backup) && (
+        <button
+          onClick={() => setSettingsOpen('backup')}
+          title="Your work has no backup from the last week. Download one or pick a folder to back up to."
+          className="min-h-11 px-3 text-sm text-gray-800 border border-gray-300 rounded-lg bg-white hover:bg-gray-50"
+        >
+          Back up
+        </button>
+      )}
+
       <div ref={newRef} className="relative">
         <button
           onClick={() => setNewOpen((open) => !open)}
@@ -100,14 +122,14 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, chil
       </div>
 
       <button
-        onClick={() => setSettingsOpen(true)}
+        onClick={() => setSettingsOpen('tutor')}
         aria-label="Settings"
-        title="Tutor model and settings"
+        title="Tutor model and backup"
         className="flex items-center justify-center min-h-11 min-w-11 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
       >
         <GearIcon />
       </button>
-      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsModal isOpen={settingsOpen !== null} tab={settingsOpen ?? undefined} onClose={() => setSettingsOpen(null)} />
     </nav>
   );
 }

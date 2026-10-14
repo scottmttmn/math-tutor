@@ -21,6 +21,7 @@ import ChatPanel from '@/components/chat/ChatPanel';
 import MoreMenu from '@/components/common/MoreMenu';
 import { ProblemIcon, SolvedCheck } from '@/components/common/Icons';
 import BoardFrame from '@/components/layout/BoardFrame';
+import { saveBoardAs } from '@/lib/exportBoard';
 import PdfPage from './PdfPage';
 
 // Whether the Exercises list beside the page is hidden, so the page gets the width.
@@ -389,6 +390,7 @@ export default function ShelfReader() {
               fullScreen={{ on: fullScreen, toggle: toggleFullScreen }}
               tools={{ hidden: toolsHidden, toggle: toggleTools }}
               tutor={{ open: tutorOpen, toggle: () => setTutorOpen((open) => !open) }}
+              onSaveAs={(format) => void saveBoardAs(canvasHandle.current, format, `${exercise.label} - ${shelfDocument.title}`)}
             />
           )}
           tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel getCanvasImage={followUpImage} getBookContext={getBookContext} /> }}

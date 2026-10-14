@@ -4,6 +4,7 @@ import { useCanvasState } from '@/context/CanvasContext';
 import { useRateLimit } from '@/hooks/useRateLimit';
 import { RATE_LIMIT_MS } from '@/lib/constants';
 import type { SessionType } from '@/types';
+import MoreMenu from '@/components/common/MoreMenu';
 import { FullScreenIcon, SolvedCheck, TutorIcon, UnsolvedCheck } from '@/components/common/Icons';
 
 // Drawing tools, colors and undo live in tldraw's own toolbar on the canvas.
@@ -20,9 +21,11 @@ interface Props {
   tools?: { hidden: boolean; toggle: () => void };
   /** Shows the Tutor button, which opens and closes the tutor beside the board. */
   tutor?: { open: boolean; toggle: () => void };
+  /** Shows Save as, which saves the whole board as a PNG or a PDF. */
+  onSaveAs?: (format: 'png' | 'pdf') => void;
 }
 
-export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor }: Props) {
+export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs }: Props) {
   const { hasContent } = useCanvasState();
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
   const helpDisabled = isLimited || isStreaming;
@@ -55,6 +58,19 @@ export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSo
 
       {/* Spacer */}
       <div className="flex-1" />
+
+      {onSaveAs && (
+        <MoreMenu
+          label="Save board as"
+          button="Save as…"
+          above
+          disabled={!hasContent}
+          items={[
+            { label: 'PNG picture', onSelect: () => onSaveAs('png') },
+            { label: 'PDF', onSelect: () => onSaveAs('pdf') },
+          ]}
+        />
+      )}
 
       <button onClick={onClear} disabled={!hasContent} className={plain} title="Erase the whole board (undo with Ctrl+Z)">
         Clear

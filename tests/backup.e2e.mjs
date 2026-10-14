@@ -1,0 +1,141 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { chromium } from 'playwright';
+import { makePdf } from './makePdf.mjs';
+
+const origin = process.env.WORKBOOK_TEST_URL || 'http://127.0.0.1:3100';
+const browserErrors = [];
+const folder = await mkdtemp(join(tmpdir(), 'backup-acceptance-'));
+const pdfPath = join(folder, 'Geometry.pdf');
+await writeFile(pdfPath, makePdf([['1. Prove the angles of a triangle add up to 180 degrees.']]));
+
+const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+
+// The folder picker can't be clicked through in a headless browser; the browser's private
+// file system gives the same kind of folder handle, so the picker returns a folder there.
+const fakePicker = () => {
+  window.showDirectoryPicker = async () => (await navigator.storage.getDirectory()).getDirectoryHandle('Dropbox', { create: true });
+};
+
+async function openPage() {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
+  await context.addInitScript(fakePicker);
+  const page = await context.newPage();
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  return { context, page };
+}
+
+async function download(page, action) {
+  const [file] = await Promise.all([page.waitForEvent('download'), action()]);
+  const path = join(folder, file.suggestedFilename());
+  await file.saveAs(path);
+  return { name: file.suggestedFilename(), bytes: await readFile(path), path };
+}
+
+const readOpfs = (page, path) => page.evaluate(async (parts) => {
+  let directory = await navigator.storage.getDirectory();
+  for (const part of parts.slice(0, -1)) directory = await directory.getDirectoryHandle(part);
+  const file = await (await directory.getFileHandle(parts.at(-1))).getFile();
+  return file.type === 'application/json' || parts.at(-1).endsWith('.json') ? file.text() : file.size;
+}, path.split('/'));
+
+const { context, page } = await openPage();
+try {
+  // Some work: a PDF on the Shelf and a board with a problem and a stroke.
+  await page.goto(`${origin}/shelf`);
+  await page.locator('input[aria-label="Add PDF"]').setInputFiles(pdfPath);
+  await page.getByRole('link', { name: 'Open Geometry' }).waitFor();
+
+  await page.goto(`${origin}/board`);
+  await page.getByPlaceholder("Type the math problem you're working on...").fill('Find x when 2x + 3 = 7');
+  await page.locator('.tl-canvas').waitFor();
+  const board = await page.locator('.tl-canvas').boundingBox();
+  await page.mouse.move(board.x + 120, board.y + 120);
+  await page.mouse.down();
+  await page.mouse.move(board.x + 300, board.y + 200, { steps: 8 });
+  await page.mouse.up();
+  await page.getByText('Saved', { exact: true }).waitFor();
+
+  // Save the board as a picture and as a PDF.
+  await page.getByRole('button', { name: 'Save board as' }).click();
+  const png = await download(page, () => page.getByRole('menuitem', { name: 'PNG picture' }).click());
+  assert.equal(png.name, 'Find x when 2x + 3 = 7.png');
+  assert.deepEqual([...png.bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  await page.getByRole('button', { name: 'Save board as' }).click();
+  const pdf = await download(page, () => page.getByRole('menuitem', { name: 'PDF' }).click());
+  assert.equal(pdf.name, 'Find x when 2x + 3 = 7.pdf');
+  assert.equal(pdf.bytes.subarray(0, 8).toString('latin1'), '%PDF-1.4');
+  console.log('PASS a board saves as a PNG and a PDF');
+
+  // Nothing is backed up yet, so the bar suggests it; it opens the Backup settings.
+  await page.getByRole('button', { name: 'Back up', exact: true }).click();
+  await page.getByRole('tab', { name: 'Backup', selected: true }).waitFor();
+  const zip = await download(page, () => page.getByRole('button', { name: 'Download backup' }).click());
+  assert.match(zip.name, /^math-tutor-backup-\d{4}-\d{2}-\d{2}\.zip$/);
+  await page.getByText(/Last downloaded just now/).waitFor();
+  await page.getByRole('button', { name: 'Done' }).click();
+  assert.equal(await page.getByRole('button', { name: 'Back up', exact: true }).count(), 0);
+  console.log('PASS the backup downloads as one ZIP and the reminder goes away');
+
+  // Back up to a folder: the files appear there at once.
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('tab', { name: 'Backup' }).click();
+  await page.getByRole('button', { name: 'Choose folder…' }).click();
+  await page.getByText(/Backing up to Dropbox\/Math Tutor backup\. Last backup just now\./).waitFor();
+  const manifest = JSON.parse(await readOpfs(page, 'Dropbox/Math Tutor backup/backup.json'));
+  assert.equal(manifest.sessions.length, 1);
+  assert.equal(manifest.sessions[0].problemStatement, 'Find x when 2x + 3 = 7');
+  assert.equal(manifest.shelf[0].title, 'Geometry');
+  assert.ok(await readOpfs(page, `Dropbox/Math Tutor backup/pdfs/${manifest.shelf[0].id}.pdf`) > 0);
+  const today = new Date();
+  const dated = `backup-${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}.json`;
+  assert.equal(JSON.parse(await readOpfs(page, `Dropbox/Math Tutor backup/${dated}`)).sessions.length, 1);
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  // The folder is remembered across visits.
+  await page.reload();
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('tab', { name: 'Backup' }).click();
+  await page.getByText(/Backing up to Dropbox\/Math Tutor backup/).waitFor();
+  await page.getByRole('button', { name: 'Stop' }).click();
+  await page.getByRole('button', { name: 'Choose folder…' }).waitFor();
+  await page.getByRole('button', { name: 'Done' }).click();
+  console.log('PASS automatic backup writes backup.json, a dated copy and the PDFs to the chosen folder');
+
+  // A new device (an empty browser): restoring the ZIP brings the board and the PDF back.
+  const fresh = await openPage();
+  try {
+    await fresh.page.goto(`${origin}/`);
+    await fresh.page.getByRole('button', { name: 'Settings' }).click();
+    await fresh.page.getByRole('tab', { name: 'Backup' }).click();
+    await fresh.page.getByTestId('restore-file').setInputFiles(zip.path);
+    await fresh.page.getByText('Restored 1 board and 1 Shelf PDF.').waitFor();
+    await fresh.page.getByTestId('restore-file').setInputFiles(zip.path);
+    await fresh.page.getByText('Nothing to restore: this device already has everything in the backup.').waitFor();
+    await fresh.page.getByRole('button', { name: 'Done' }).click();
+    await fresh.page.reload();
+    await fresh.page.getByText('Find x when 2x + 3 = 7').first().waitFor();
+    await fresh.page.goto(`${origin}/shelf`);
+    await fresh.page.getByRole('link', { name: 'Open Geometry' }).click();
+    await fresh.page.getByText('Page 1 of 1').waitFor();
+
+    // The saved board PDF is a real PDF: it goes on the Shelf like any other.
+    await fresh.page.goto(`${origin}/shelf`);
+    await fresh.page.locator('input[aria-label="Add PDF"]').setInputFiles(pdf.path);
+    const card = fresh.page.getByRole('link', { name: 'Open Find x when 2x + 3 = 7' });
+    await card.waitFor();
+    assert.match(await fresh.page.locator('li', { has: card }).innerText(), /1 page/);
+  } finally {
+    await fresh.context.close();
+  }
+  console.log('PASS restoring the ZIP on an empty browser brings back the board and the Shelf PDF');
+
+  assert.deepEqual(browserErrors, []);
+  console.log('PASS no browser exceptions');
+} finally {
+  await context.close();
+  await browser.close();
+  await rm(folder, { recursive: true, force: true });
+}

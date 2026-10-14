@@ -34,9 +34,9 @@ Every board has the same layout: what it works from beside it (the problem, the 
 
 ### 4. Export and auto-backup
 
-- Export a page as PNG or PDF.
-- Export and import every notebook as one file, and back up automatically to a folder the user picks (e.g. a Dropbox folder). No server or account.
-- Ask the browser for persistent storage so IndexedDB isn't evicted.
+Done: **Save as…** on every board saves the whole board as a PNG or a one-page PDF. **Settings → Backup** downloads everything (every board, note and Shelf PDF) as one ZIP and restores it, or a backup folder, on any device; a restore only adds what is missing or newer. In Chrome on a computer, pick a folder (e.g. in Dropbox) and the app backs up there shortly after each change, with a dated copy per day for the last week; after a browser restart the bar shows **Backup paused** until you allow it again. The app asks the browser for persistent storage, and the bar suggests **Back up** when there is work with no backup from the last week.
+
+- Still to do: on the BOOX (Android Chrome can't write to a folder) backup is the download; the Android shell can back up to a folder or a sync app instead.
 
 ### 5. Tutor memory
 

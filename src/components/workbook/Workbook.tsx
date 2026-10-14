@@ -14,6 +14,7 @@ import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/
 import BottomToolbar from '@/components/layout/BottomToolbar';
 import AppBar from '@/components/layout/AppBar';
 import BoardFrame from '@/components/layout/BoardFrame';
+import { saveBoardAs } from '@/lib/exportBoard';
 import { ProblemIcon, ShelfIcon, SolvedCheck, TutorIcon } from '@/components/common/Icons';
 import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
 import { useToolsHidden } from '@/hooks/useToolsHidden';
@@ -333,7 +334,7 @@ function WorkbookContent() {
             </>
           )}
           canvas={<DrawingCanvas handleRef={canvasRef} toolsHidden={toolsHidden} />}
-          toolbar={<BottomToolbar onAskForHelp={() => void reviewWhiteboard()} isStreaming={isStreaming} isSolved={isSolved} onToggleSolved={toggleComplete} onClear={() => canvasRef.current?.clear()} sessionType="problem" fullScreen={{ on: fullScreen, toggle: toggleFullScreen }} tools={{ hidden: toolsHidden, toggle: toggleTools }} tutor={{ open: tutorOpen, toggle: () => setTutorOpen((open) => !open) }} />}
+          toolbar={<BottomToolbar onAskForHelp={() => void reviewWhiteboard()} isStreaming={isStreaming} isSolved={isSolved} onToggleSolved={toggleComplete} onClear={() => canvasRef.current?.clear()} sessionType="problem" fullScreen={{ on: fullScreen, toggle: toggleFullScreen }} tools={{ hidden: toolsHidden, toggle: toggleTools }} tutor={{ open: tutorOpen, toggle: () => setTutorOpen((open) => !open) }} onSaveAs={(format) => void saveBoardAs(canvasRef.current, format, `Exercise ${exercise.number.replace('.', '')}`)} />}
           tutor={{
             open: tutorOpen,
             onClose: () => setTutorOpen(false),
