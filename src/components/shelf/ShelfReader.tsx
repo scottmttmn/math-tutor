@@ -268,19 +268,22 @@ export default function ShelfReader() {
             <div className="flex-1 min-h-0"><ChatPanel getCanvasImage={followUpImage} /></div>
           ) : (
             <div className="flex-1 min-h-0 overflow-y-auto p-3">
-              {marking && !pendingMark && <p className="mb-2 text-sm text-amber-800">Drag a box around an exercise on the page.</p>}
-              {pendingMark && (
-                <form onSubmit={(event) => { event.preventDefault(); void saveMark(); }} className="mb-2 flex flex-wrap items-center gap-2 p-2 rounded-lg bg-amber-50 border border-amber-200">
-                  <label className="text-sm text-amber-900" htmlFor="mark-label">Name</label>
-                  <input id="mark-label" value={markLabel} onChange={(event) => setMarkLabel(event.target.value)}
-                    className="flex-1 min-w-[8rem] px-2 py-1.5 text-sm border border-amber-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
-                  <button type="submit" className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700">Save and open</button>
-                  <button type="button" onClick={() => setPendingMark(null)} className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 bg-white rounded-lg hover:bg-gray-50">Cancel</button>
-                </form>
-              )}
+              {marking && <p className="mb-2 text-sm text-amber-800">{pendingMark ? 'Name it and save, or drag again to redraw the box.' : 'Drag a box around an exercise on the page.'}</p>}
               <PdfPage
-                pdf={pdf} pageNumber={page} marks={marksOnPage} solvedIds={solvedIds} activeId={openId} marking={marking && !pendingMark}
-                onMark={(rect) => { setPendingMark(rect); setMarkLabel(nextLabel(shelfDocument)); }}
+                pdf={pdf} pageNumber={page} marks={marksOnPage} solvedIds={solvedIds} activeId={openId} marking={marking}
+                pending={pendingMark}
+                pendingForm={(
+                  <form onSubmit={(event) => { event.preventDefault(); void saveMark(); }}
+                    onKeyDown={(event) => { if (event.key === 'Escape') setPendingMark(null); }}
+                    className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-amber-50 border border-amber-200 shadow-md w-max max-w-[22rem]">
+                    <label className="text-sm text-amber-900" htmlFor="mark-label">Name</label>
+                    <input id="mark-label" value={markLabel} onChange={(event) => setMarkLabel(event.target.value)}
+                      className="w-36 px-2 py-1.5 text-sm border border-amber-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
+                    <button type="submit" className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700">Save and open</button>
+                    <button type="button" onClick={() => setPendingMark(null)} className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 bg-white rounded-lg hover:bg-gray-50">Cancel</button>
+                  </form>
+                )}
+                onMark={(rect) => { if (!pendingMark) setMarkLabel(nextLabel(shelfDocument)); setPendingMark(rect); }}
                 onOpenMark={(mark) => void openExercise(mark)}
               />
             </div>

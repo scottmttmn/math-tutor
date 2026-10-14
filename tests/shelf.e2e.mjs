@@ -92,7 +92,33 @@ try {
   await page.getByRole('button', { name: 'Next page' }).click();
   await page.getByText('Page 2 of 2').waitFor();
   await page.getByRole('button', { name: 'Mark exercise' }).click();
-  const overlay2 = await page.getByTestId('page-overlay').boundingBox();
+
+  // A box near the foot of a scrolled page stays drawn, its form opens beside it in view, and
+  // dragging again redraws it.
+  await page.setViewportSize({ width: 1280, height: 600 });
+  let overlay2 = await page.getByTestId('page-overlay').boundingBox();
+  await page.mouse.move(overlay2.x + overlay2.width / 2, overlay2.y + 200);
+  await page.mouse.wheel(0, 400);
+  await page.waitForTimeout(200);
+  overlay2 = await page.getByTestId('page-overlay').boundingBox();
+  assert.ok(overlay2.y < 0, 'the page is scrolled');
+  const footY = Math.min(overlay2.y + overlay2.height * 0.9, 560);
+  await page.mouse.move(overlay2.x + overlay2.width * 0.1, footY - 40);
+  await page.mouse.down();
+  await page.mouse.move(overlay2.x + overlay2.width * 0.5, footY, { steps: 5 });
+  await page.mouse.up();
+  const saveBox = await page.getByRole('button', { name: 'Save and open' }).boundingBox();
+  assert.ok(saveBox.y >= 0 && saveBox.y + saveBox.height <= 600, 'the save form is in view');
+  assert.equal(await page.getByTestId('page-overlay').locator('.border-dashed').count(), 1, 'the box stays drawn');
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  assert.equal(await page.getByTestId('page-overlay').locator('.border-dashed').count(), 0);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.getByTestId('page-overlay').evaluate((element) => element.closest('.overflow-y-auto').scrollTo(0, 0));
+  overlay2 = await page.getByTestId('page-overlay').boundingBox();
+  await page.mouse.move(overlay2.x + overlay2.width * 0.1, overlay2.y + overlay2.height * 0.3);
+  await page.mouse.down();
+  await page.mouse.move(overlay2.x + overlay2.width * 0.5, overlay2.y + overlay2.height * 0.35, { steps: 5 });
+  await page.mouse.up();
   await page.mouse.move(overlay2.x + overlay2.width * 0.1, overlay2.y + overlay2.height * 0.07);
   await page.mouse.down();
   await page.mouse.move(overlay2.x + overlay2.width * 0.5, overlay2.y + overlay2.height * 0.11, { steps: 5 });
@@ -126,7 +152,8 @@ try {
   // Removing a mark removes its board.
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
   await page.getByRole('heading', { name: 'Exercises', exact: true }).waitFor();
-  assert.equal(await page.getByRole('button', { name: 'Open Exercise 1' }).count(), 0);
+  // The board closes before the mark's removal is written, so wait for the mark to go.
+  await page.getByRole('button', { name: 'Open Exercise 1' }).waitFor({ state: 'detached' });
   console.log('PASS History opens Shelf exercises; removing a mark removes its board');
 
   // A single problem goes straight onto a new board as its problem image.
