@@ -28,9 +28,14 @@ const clamp = (value: number) => Math.min(1, Math.max(0, value));
 const box = (a: { x: number; y: number }, b: { x: number; y: number }): PageRect => ({
   x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y),
 });
-// Below the box, or above it near the bottom of the page; lined up with whichever side has room.
+// Room the form needs below a box, and (more, since it may wrap on a narrow page) above it.
+const ROOM_BELOW = 0.1;
+const ROOM_ABOVE = 0.25;
+
+// Below the box, or above it when it reaches the foot of the page and there is room above (past
+// the page's foot the reader scrolls on; past its top it can't). Lined up with whichever side has room.
 const formPosition = (rect: PageRect): React.CSSProperties => ({
-  ...(rect.y + rect.height > 0.8 ? { bottom: `${(1 - rect.y) * 100}%` } : { top: `${(rect.y + rect.height) * 100}%` }),
+  ...(1 - rect.y - rect.height < ROOM_BELOW && rect.y >= ROOM_ABOVE ? { bottom: `${(1 - rect.y) * 100}%` } : { top: `${(rect.y + rect.height) * 100}%` }),
   ...(rect.x > 0.5 ? { right: `${(1 - rect.x - rect.width) * 100}%` } : { left: `${rect.x * 100}%` }),
 });
 const percent = (rect: PageRect) => ({ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%` });
