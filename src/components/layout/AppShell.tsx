@@ -16,21 +16,23 @@ import ProblemStatement from '../workspace/ProblemStatement';
 import NoteHeader from '../workspace/NoteHeader';
 import DrawingCanvas, { type DrawingCanvasHandle } from '../workspace/DrawingCanvas';
 import ChatPanel from '../chat/ChatPanel';
+import BoardFrame from './BoardFrame';
 
 function AppContent() {
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
   // The board revision the tutor last saw, so follow-ups only attach a snapshot when it changed.
   const sentRevision = useRef<number | null>(null);
-  const [chatOpen, setChatOpen] = useState(false);
+  const [tutorOpen, setTutorOpen] = useState(false);
   const { fullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
   const { toolsHidden, toggleTools } = useToolsHidden();
 
-  const { isStreaming, isSolved, sessionType } = useSessionState();
+  const { isStreaming, isSolved, sessionType, problemStatement } = useSessionState();
   const sessionDispatch = useSessionDispatch();
   const { sendHelp } = useTutorChat();
   const { status: saveStatus, saveNow, startNew } = useSessionAutosave(canvasHandle);
 
-  const handleNew = useCallback((type: SessionType = 'problem') => { void startNew(type); }, [startNew]);
+  // A new board opens with its tutor closed, so the problem or topic is in view.
+  const handleNew = useCallback((type: SessionType = 'problem') => { setTutorOpen(false); void startNew(type); }, [startNew]);
 
   // New from another page arrives as /board?new=problem|note; start it once, then drop it from the URL.
   useEffect(() => {
@@ -48,7 +50,7 @@ function AppContent() {
     const image = await handle?.captureImage() ?? '';
     // The reply shows in the chat beside the board.
     leaveFullScreen();
-    setChatOpen(true);
+    setTutorOpen(true);
     await sendHelp(image);
   }, [sendHelp, leaveFullScreen]);
 
@@ -94,22 +96,29 @@ function AppContent() {
         saveStatus={saveStatus}
         onSave={saveNow}
         isStreaming={isStreaming}
-        chatOpen={chatOpen}
-        onToggleChat={() => setChatOpen((o) => !o)}
       />}
 
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left panel: workspace */}
-        <div className="flex-[3] flex flex-col min-w-0">
-          {!fullScreen && (sessionType === 'note'
-            ? <NoteHeader />
-            : <ProblemStatement
-                onCaptureProblemImage={handleSetProblemImage}
-                onPutOnBoard={(image) => void canvasHandle.current?.placeProblemImage(image)}
-              />)}
-          <div className="flex-1 relative min-h-0">
-            <DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} />
-          </div>
+      <BoardFrame
+        fullScreen={fullScreen}
+        source={sessionType === 'note'
+          ? { label: 'Topic', content: <NoteHeader /> }
+          : {
+              label: 'Problem',
+              content: (
+                <ProblemStatement
+                  onCaptureProblemImage={handleSetProblemImage}
+                  onPutOnBoard={(image) => void canvasHandle.current?.placeProblemImage(image)}
+                />
+              ),
+            }}
+        title={(
+          <>
+            <p className="text-xs text-gray-500">{sessionType === 'note' ? 'Notes' : 'Problem'}</p>
+            <h1 className="font-semibold text-gray-900 truncate">{problemStatement.split('\n')[0].trim() || (sessionType === 'note' ? 'New notes' : 'New problem')}</h1>
+          </>
+        )}
+        canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} />}
+        toolbar={(
           <BottomToolbar
             onAskForHelp={handleAskForHelp}
             onClear={() => canvasHandle.current?.clear()}
@@ -119,17 +128,11 @@ function AppContent() {
             sessionType={sessionType}
             fullScreen={{ on: fullScreen, toggle: toggleFullScreen }}
             tools={{ hidden: toolsHidden, toggle: toggleTools }}
+            tutor={{ open: tutorOpen, toggle: () => setTutorOpen((open) => !open) }}
           />
-        </div>
-
-        {/* Right panel: chat (collapsible) */}
-        {chatOpen && !fullScreen && (
-          <div className="flex-[2] min-w-[300px] border-l border-gray-200">
-            <ChatPanel getCanvasImage={getFollowUpImage} />
-          </div>
         )}
-      </div>
-
+        tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel getCanvasImage={getFollowUpImage} /> }}
+      />
     </div>
   );
 }

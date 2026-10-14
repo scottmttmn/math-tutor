@@ -18,6 +18,7 @@ import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/
 import BottomToolbar from '@/components/layout/BottomToolbar';
 import AppBar from '@/components/layout/AppBar';
 import ChatPanel from '@/components/chat/ChatPanel';
+import BoardFrame from '@/components/layout/BoardFrame';
 import PdfPage from './PdfPage';
 
 // Whether the Exercises list beside the page is hidden, so the page gets the width.
@@ -49,7 +50,7 @@ export default function ShelfReader() {
   const [markLabel, setMarkLabel] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [solvedIds, setSolvedIds] = useState<string[]>([]);
-  const [tab, setTab] = useState<'page' | 'tutor'>('page');
+  const [tutorOpen, setTutorOpen] = useState(false);
   const [sectionStarts, setSectionStarts] = useState<SectionStart[]>([]);
   const [bookHasText, setBookHasText] = useState(true);
   const { fullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
@@ -172,7 +173,7 @@ export default function ShelfReader() {
     try {
       if (!await startNew('problem')) { setError('Your board could not be saved. Try again.'); return; }
       setOpenId(null);
-      setTab('page');
+      setTutorOpen(false);
       writeUrl(shelfDocument.id, null);
     } finally { switching.current = false; }
   };
@@ -202,7 +203,7 @@ export default function ShelfReader() {
       await saveNow();
       if (!await startNew('problem', { discardCurrent: true })) return;
       setOpenId(null);
-      setTab('page');
+      setTutorOpen(false);
       writeUrl(current.id, null);
     }
     try {
@@ -240,7 +241,7 @@ export default function ShelfReader() {
     const image = await handle?.captureImage() ?? '';
     // The reply shows beside the board.
     leaveFullScreen();
-    setTab('tutor');
+    setTutorOpen(true);
     await sendHelp(image);
   };
 
@@ -269,6 +270,47 @@ export default function ShelfReader() {
   const marksOnPage = shelfDocument.exercises.filter((item) => item.page === page);
   const pageCount = pdf.numPages;
 
+  // The page and its controls: beside an open board, or beside the list of exercises.
+  const pageToolbar = (
+    <>
+      <button onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} aria-label="Previous page"
+        className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40">‹ Prev</button>
+      <span className="text-sm text-gray-600 tabular-nums">Page {page} of {pageCount}</span>
+      <button onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page >= pageCount} aria-label="Next page"
+        className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40">Next ›</button>
+      <div className="flex-1" />
+      <button
+        onClick={() => { setMarking((on) => !on); setPendingMark(null); }}
+        aria-pressed={marking}
+        className={`px-3 py-2 text-sm font-medium rounded-lg border ${marking ? 'bg-amber-500 border-amber-500 text-white' : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'}`}
+      >
+        {marking ? 'Done marking' : 'Mark exercise'}
+      </button>
+    </>
+  );
+  const pageView = (
+    <div className="p-3">
+      {marking && <p className="mb-2 text-sm text-amber-800">{pendingMark ? 'Name it and save, or drag again to redraw the box.' : 'Drag a box around an exercise on the page.'}</p>}
+      <PdfPage
+        pdf={pdf} pageNumber={page} marks={marksOnPage} solvedIds={solvedIds} activeId={openId} marking={marking}
+        pending={pendingMark}
+        pendingForm={(
+          <form onSubmit={(event) => { event.preventDefault(); void saveMark(); }}
+            onKeyDown={(event) => { if (event.key === 'Escape') setPendingMark(null); }}
+            className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-amber-50 border border-amber-200 shadow-md w-max max-w-[22rem]">
+            <label className="text-sm text-amber-900" htmlFor="mark-label">Name</label>
+            <input id="mark-label" value={markLabel} onChange={(event) => setMarkLabel(event.target.value)}
+              className="w-36 px-2 py-1.5 text-sm border border-amber-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
+            <button type="submit" className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700">Save and open</button>
+            <button type="button" onClick={() => setPendingMark(null)} className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 bg-white rounded-lg hover:bg-gray-50">Cancel</button>
+          </form>
+        )}
+        onMark={(rect) => { if (!pendingMark) setMarkLabel(nextLabel(shelfDocument)); setPendingMark(rect); }}
+        onOpenMark={(mark) => void openExercise(mark)}
+      />
+    </div>
+  );
+
   return (
     <div className="h-screen flex flex-col bg-gray-50">
       {!fullScreen && <AppBar place="shelf" locked={isStreaming} beforeLeave={saveNow} />}
@@ -288,120 +330,77 @@ export default function ShelfReader() {
 
       {error && <div role="alert" className="px-4 py-2 text-sm text-red-700 bg-red-50 border-b border-red-100">{error}</div>}
 
-      {/* Side by side on wide screens; page above board on a tablet held upright, both in view. */}
-      <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
-        <section className={`${fullScreen ? 'hidden' : 'flex'} ${pageOnly ? 'flex-1' : 'basis-[45%]'} lg:basis-auto lg:flex-1 min-w-0 min-h-0 flex-col border-b lg:border-b-0 border-gray-200`}>
-          <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-white border-b border-gray-200">
-            {exercise && (
-              <div className="flex rounded-lg border border-gray-300 overflow-hidden" role="group" aria-label="Show">
-                {(['page', 'tutor'] as const).map((value) => (
-                  <button key={value} onClick={() => setTab(value)} aria-pressed={tab === value}
-                    className={`px-3 py-2 text-sm ${tab === value ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
-                    {value === 'page' ? 'Page' : 'Tutor'}
-                  </button>
-                ))}
-              </div>
-            )}
-            {tab === 'page' && (
-              <>
-                <button onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} aria-label="Previous page"
-                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40">‹ Prev</button>
-                <span className="text-sm text-gray-600 tabular-nums">Page {page} of {pageCount}</span>
-                <button onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page >= pageCount} aria-label="Next page"
-                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40">Next ›</button>
-                <div className="flex-1" />
-                {pageOnly && (
-                  <button onClick={() => changeListHidden(false)} title="Show the list of marked exercises beside the page"
-                    className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50">Exercises</button>
-                )}
-                <button
-                  onClick={() => { setMarking((on) => !on); setPendingMark(null); }}
-                  aria-pressed={marking}
-                  className={`px-3 py-2 text-sm font-medium rounded-lg border ${marking ? 'bg-amber-500 border-amber-500 text-white' : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'}`}
-                >
-                  {marking ? 'Done marking' : 'Mark exercise'}
-                </button>
-              </>
-            )}
-          </div>
-
-          {tab === 'tutor' && exercise ? (
-            <div className="flex-1 min-h-0"><ChatPanel getCanvasImage={followUpImage} getBookContext={getBookContext} /></div>
-          ) : (
-            <div className="flex-1 min-h-0 overflow-y-auto p-3">
-              {marking && <p className="mb-2 text-sm text-amber-800">{pendingMark ? 'Name it and save, or drag again to redraw the box.' : 'Drag a box around an exercise on the page.'}</p>}
-              <PdfPage
-                pdf={pdf} pageNumber={page} marks={marksOnPage} solvedIds={solvedIds} activeId={openId} marking={marking}
-                pending={pendingMark}
-                pendingForm={(
-                  <form onSubmit={(event) => { event.preventDefault(); void saveMark(); }}
-                    onKeyDown={(event) => { if (event.key === 'Escape') setPendingMark(null); }}
-                    className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-amber-50 border border-amber-200 shadow-md w-max max-w-[22rem]">
-                    <label className="text-sm text-amber-900" htmlFor="mark-label">Name</label>
-                    <input id="mark-label" value={markLabel} onChange={(event) => setMarkLabel(event.target.value)}
-                      className="w-36 px-2 py-1.5 text-sm border border-amber-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
-                    <button type="submit" className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700">Save and open</button>
-                    <button type="button" onClick={() => setPendingMark(null)} className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 bg-white rounded-lg hover:bg-gray-50">Cancel</button>
-                  </form>
-                )}
-                onMark={(rect) => { if (!pendingMark) setMarkLabel(nextLabel(shelfDocument)); setPendingMark(rect); }}
-                onOpenMark={(mark) => void openExercise(mark)}
-              />
-            </div>
-          )}
-        </section>
-
-        <section className={`${pageOnly ? 'hidden' : 'flex'} flex-1 ${fullScreen ? '' : 'lg:flex-none lg:w-1/2'} min-h-0 flex-col lg:border-l border-gray-200 bg-white`}>
-          {exercise ? (
+      {exercise ? (
+        <BoardFrame
+          fullScreen={fullScreen}
+          source={{ label: 'Page', wide: true, toolbar: pageToolbar, content: pageView }}
+          title={(
             <>
-              <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200">
-                <div className="min-w-0 flex-1">
-                  <h2 className="font-semibold text-gray-900 truncate">{exercise.label}</h2>
-                  <p className="text-xs text-gray-500">
-                    Page {exercise.page} ·{' '}
-                    <label>
-                      Tutor reads{' '}
-                      <select
-                        value={range?.from ?? 0}
-                        onChange={(event) => void changeReadFrom(exercise.id, Number(event.target.value))}
-                        title={range?.section ? `Section: ${range.section}` : undefined}
-                        className="px-1 py-0.5 text-xs text-gray-700 border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value={0}>no pages</option>
-                        {Array.from({ length: Math.min(MAX_BOOK_PAGES, exercise.page) }, (_, index) => exercise.page - index).reverse().map((from) => (
-                          <option key={from} value={from}>{from === exercise.page ? `p. ${from}` : `pp. ${from}–${exercise.page}`}</option>
-                        ))}
-                      </select>
-                    </label>
-                    {range && !bookHasText && <span className="text-amber-700"> · no text in this PDF to read</span>}
-                  </p>
-                </div>
-                {problemImage && (
-                  <button onClick={() => void canvasHandle.current?.placeProblemImage(problemImage)}
-                    title="Put the marked problem on the board to write on and around it"
-                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Put on board</button>
-                )}
-                {!fullScreen && exercise.page !== page && (
-                  <button onClick={() => { setPage(exercise.page); setTab('page'); }} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Show page</button>
-                )}
-                {!fullScreen && <button onClick={() => void removeMark(exercise)} disabled={isStreaming} className="px-3 py-1.5 text-sm text-red-600 border border-red-200 bg-red-50 rounded-lg hover:bg-red-100 disabled:opacity-50">Remove</button>}
-                <button onClick={() => void closeExercise()} disabled={isStreaming} aria-label="Close board" className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">Close</button>
-              </div>
-              <div className="relative flex-1 min-h-0">
-                <DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} />
-              </div>
-              <BottomToolbar
-                onAskForHelp={() => void askForHelp()}
-                onClear={() => canvasHandle.current?.clear()}
-                isStreaming={isStreaming}
-                isSolved={isSolved}
-                onToggleSolved={() => sessionDispatch({ type: 'TOGGLE_SOLVED' })}
-                sessionType="problem"
-                fullScreen={{ on: fullScreen, toggle: toggleFullScreen }}
-                tools={{ hidden: toolsHidden, toggle: toggleTools }}
-              />
+              <h2 className="font-semibold text-gray-900 truncate">{exercise.label}</h2>
+              <p className="text-xs text-gray-500">
+                Page {exercise.page} ·{' '}
+                <label>
+                  Tutor reads{' '}
+                  <select
+                    value={range?.from ?? 0}
+                    onChange={(event) => void changeReadFrom(exercise.id, Number(event.target.value))}
+                    title={range?.section ? `Section: ${range.section}` : undefined}
+                    className="px-1 py-0.5 text-xs text-gray-700 border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value={0}>no pages</option>
+                    {Array.from({ length: Math.min(MAX_BOOK_PAGES, exercise.page) }, (_, index) => exercise.page - index).reverse().map((from) => (
+                      <option key={from} value={from}>{from === exercise.page ? `p. ${from}` : `pp. ${from}–${exercise.page}`}</option>
+                    ))}
+                  </select>
+                </label>
+                {range && !bookHasText && <span className="text-amber-700"> · no text in this PDF to read</span>}
+              </p>
             </>
-          ) : (
+          )}
+          actions={(
+            <>
+              {problemImage && (
+                <button onClick={() => void canvasHandle.current?.placeProblemImage(problemImage)}
+                  title="Put the marked problem on the board to write on and around it"
+                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Put on board</button>
+              )}
+              {!fullScreen && exercise.page !== page && (
+                <button onClick={() => { setPage(exercise.page); setTutorOpen(false); }} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Back to p. {exercise.page}</button>
+              )}
+              {!fullScreen && <button onClick={() => void removeMark(exercise)} disabled={isStreaming} className="px-3 py-1.5 text-sm text-red-600 border border-red-200 bg-red-50 rounded-lg hover:bg-red-100 disabled:opacity-50">Remove</button>}
+              <button onClick={() => void closeExercise()} disabled={isStreaming} aria-label="Close board" className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">Close</button>
+            </>
+          )}
+          canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} />}
+          toolbar={(
+            <BottomToolbar
+              onAskForHelp={() => void askForHelp()}
+              onClear={() => canvasHandle.current?.clear()}
+              isStreaming={isStreaming}
+              isSolved={isSolved}
+              onToggleSolved={() => sessionDispatch({ type: 'TOGGLE_SOLVED' })}
+              sessionType="problem"
+              fullScreen={{ on: fullScreen, toggle: toggleFullScreen }}
+              tools={{ hidden: toolsHidden, toggle: toggleTools }}
+              tutor={{ open: tutorOpen, toggle: () => setTutorOpen((open) => !open) }}
+            />
+          )}
+          tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel getCanvasImage={followUpImage} getBookContext={getBookContext} /> }}
+        />
+      ) : (
+        // No board open: the page, and the list of marked exercises beside it (which can make way).
+        <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
+          <section className={`flex ${pageOnly ? 'flex-1' : 'basis-[45%]'} lg:basis-auto lg:flex-1 min-w-0 min-h-0 flex-col border-b lg:border-b-0 border-gray-200`}>
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-white border-b border-gray-200">
+              {pageToolbar}
+              {pageOnly && (
+                <button onClick={() => changeListHidden(false)} title="Show the list of marked exercises beside the page"
+                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50">Exercises</button>
+              )}
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto">{pageView}</div>
+          </section>
+          <section className={`${pageOnly ? 'hidden' : 'flex'} flex-1 lg:flex-none lg:w-1/2 min-h-0 flex-col lg:border-l border-gray-200 bg-white`}>
             <div className="flex-1 overflow-y-auto p-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="font-semibold text-gray-900">Exercises</h2>
@@ -425,9 +424,9 @@ export default function ShelfReader() {
                 </ul>
               )}
             </div>
-          )}
-        </section>
-      </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

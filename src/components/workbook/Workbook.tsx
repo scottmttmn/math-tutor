@@ -13,6 +13,7 @@ import type { Session, WorkbookContext } from '@/types';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
 import AppBar from '@/components/layout/AppBar';
+import BoardFrame from '@/components/layout/BoardFrame';
 import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
 import { useToolsHidden } from '@/hooks/useToolsHidden';
 import ChatMessage from '@/components/chat/ChatMessage';
@@ -40,6 +41,7 @@ function WorkbookContent() {
   const [draft, setDraft] = useState('');
   const [saveError, setSaveError] = useState('');
   const [completedIds, setCompletedIds] = useState<string[]>([]);
+  const [tutorOpen, setTutorOpen] = useState(false);
   const canvasRef = useRef<DrawingCanvasHandle>(null);
   const { toolsHidden, toggleTools } = useToolsHidden();
   const { fullScreen: boardFullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
@@ -224,6 +226,8 @@ function WorkbookContent() {
       else localStorage.removeItem(ACTIVE_EXERCISE_KEY);
       restore(nextExerciseId, saved);
       setDraft('');
+      // Each board opens with its tutor closed, as on the Shelf.
+      setTutorOpen(false);
     } catch {
       setSaveError('Could not open that exercise.');
       setReady(true);
@@ -254,6 +258,7 @@ function WorkbookContent() {
     const image = await canvasRef.current?.captureImage() ?? '';
     // The reply shows in the tutor panel beside the board.
     leaveFullScreen();
+    setTutorOpen(true);
     await sendHelp(image, 'Please look at my current work and give me a hint about the next step.');
   };
 
@@ -271,8 +276,23 @@ function WorkbookContent() {
     if (passage) setSelectedPassage(passage.slice(0, 1200));
   };
 
+  // The conversation, in the reading's side panel or in an exercise board's tutor column.
+  const tutorChat = (
+    <>
+      <div ref={chatScrollRef} aria-live="polite" aria-busy={isStreaming} className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+        {chatHistory.length === 0 ? <p className="text-sm text-gray-400 text-center mt-6">{exercise ? 'Your conversation for this exercise starts here.' : 'What would you like to understand better?'}</p> : chatHistory.map((message) => <ChatMessage key={message.id} message={message} />)}
+      </div>
+      {selectedPassage && !exercise && <div className="mx-3 mb-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-800 flex gap-2"><span className="line-clamp-2 flex-1">Selected: {selectedPassage}</span><button onClick={() => setSelectedPassage('')} aria-label="Clear selected passage">×</button></div>}
+      <form onSubmit={sendQuestion} className="p-3 border-t border-gray-200 flex items-end gap-2">
+        <ChatTextarea aria-label={exercise ? `Question about exercise ${exercise.number}` : 'Question about the reading'} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={isStreaming} placeholder={exercise ? 'Ask about this problem…' : 'Ask about the reading…'} className="flex-1 min-w-0 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <button type="submit" disabled={!draft.trim() || isStreaming || isLimited} title={isLimited ? 'Please wait a moment before asking again.' : undefined} className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-40">Ask</button>
+      </form>
+      {isLimited && !isStreaming && <p className="px-3 pb-2 text-xs text-gray-500">Please wait a moment before asking again.</p>}
+    </>
+  );
+
   return (
-    <div className={`${exercise && !fullScreen ? 'min-h-screen lg:h-screen' : 'h-screen'} flex flex-col bg-gray-50`}>
+    <div className="h-screen flex flex-col bg-gray-50">
       {!fullScreen && <AppBar place="shelf" locked={isStreaming} beforeLeave={persistCurrent} />}
       <header className={`${fullScreen ? 'hidden' : 'flex'} items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-white`}>
         <div className="min-w-0">
@@ -280,74 +300,81 @@ function WorkbookContent() {
             <Link href="/shelf" onClick={(event) => { if (isStreaming) event.preventDefault(); }} aria-disabled={isStreaming} className="text-blue-700 hover:underline">Shelf</Link>
             <span>›</span><span>Workbook</span><span>›</span><span>Complex Analysis</span>
           </div>
-          <h1 className="font-semibold text-gray-900 truncate">{exercise ? `Exercise ${exercise.number.replace('.', '')}` : '1.3 · The Geometry of Complex Numbers'}</h1>
+          <h1 className="font-semibold text-gray-900 truncate">1.3 · The Geometry of Complex Numbers</h1>
         </div>
         {exercise && <button onClick={() => void openView(null)} disabled={!ready || isStreaming} className="shrink-0 px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50">Back to reading</button>}
       </header>
 
       {saveError && <div role="alert" className="px-4 py-2 text-sm text-red-700 bg-red-50 border-b border-red-100">{saveError}</div>}
 
-      {!ready ? <div className="p-6 text-gray-500">{saveError ? <button className="text-blue-700 underline" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Retry loading progress</button> : 'Loading workbook…'}</div> : (
-        <div className={`flex-1 flex flex-col lg:flex-row ${exercise && !fullScreen ? 'lg:min-h-0' : 'min-h-0'}`}>
-          <main className={`flex-1 min-w-0 flex flex-col ${exercise && !fullScreen ? 'min-h-[650px] lg:min-h-0' : 'min-h-0'}`}>
-            {exercise ? (
-              <>
-                <div className={`${fullScreen ? 'hidden' : ''} overflow-y-auto max-h-48 bg-white border-b border-gray-200 px-6 py-4`}>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Exercise {exercise.number}</div>
-                  <SourceCredit exerciseId={exercise.id} />
-                  <div className={contentClasses} onClick={(event) => {
-                    const link = (event.target as Element).closest('a[href^="#"]');
-                    if (!link) return;
-                    const anchor = link.getAttribute('href')?.slice(1);
-                    if (anchor) { event.preventDefault(); void openView(null, anchor); }
-                  }} dangerouslySetInnerHTML={{ __html: exercise.html }} />
-                </div>
-                <div className={`order-2 lg:order-none relative ${fullScreen ? 'flex-1 min-h-0' : 'h-[60vh] min-h-[400px] flex-none lg:h-auto lg:min-h-0 lg:flex-1'}`}>
-                  <DrawingCanvas handleRef={canvasRef} toolsHidden={toolsHidden} />
-                </div>
-                <div className="order-1 lg:order-none">
-                  <BottomToolbar onAskForHelp={() => void reviewWhiteboard()} isStreaming={isStreaming} isSolved={isSolved} onToggleSolved={toggleComplete} onClear={() => canvasRef.current?.clear()} sessionType="problem" completionLabel="attempt" fullScreen={{ on: fullScreen, toggle: toggleFullScreen }} tools={{ hidden: toolsHidden, toggle: toggleTools }} />
-                </div>
-              </>
-            ) : (
-              <div ref={readingScrollRef} className="overflow-y-auto px-6 py-5" onMouseUp={selectPassage} onScroll={(event) => { readingScrollTop.current = event.currentTarget.scrollTop; localStorage.setItem(READING_SCROLL_KEY, String(readingScrollTop.current)); }}>
-                <div className="max-w-3xl mx-auto">
-                  <SourceCredit />
-                  <p className="text-sm text-gray-600 mb-4">Select a passage to ask about it, or ask a question at any time.</p>
-                  <div className={contentClasses} dangerouslySetInnerHTML={{ __html: content.readingHtml }} />
-                  <section className="mt-10 mb-8 border-t border-gray-200 pt-6">
-                    <h2 className="text-xl font-semibold text-gray-900">Exercises</h2>
-                    <p className="text-sm text-gray-600 mt-1 mb-4">Recommended problems give you a path through the section. Every problem has its own whiteboard.</p>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {content.exercises.map((item) => (
-                        <button key={item.id} onClick={() => void openView(item.id)} disabled={isStreaming} className="text-left p-3 rounded-lg border border-gray-200 bg-white hover:border-blue-400 hover:bg-blue-50 disabled:opacity-50">
-                          <span className="font-medium text-gray-900">Exercise {item.number}</span>
-                          {content.recommendedIds.includes(item.id) && <span className="ml-2 text-xs text-blue-700">Recommended{recommendedPart[item.id] ? `: ${recommendedPart[item.id]}` : ''}</span>}
-                          {completedIds.includes(item.id) && <span className="ml-2 text-xs text-green-700">Complete</span>}
-                          <span className="block text-xs text-gray-500 truncate mt-1">{item.text}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                </div>
+      {!ready ? <div className="p-6 text-gray-500">{saveError ? <button className="text-blue-700 underline" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Retry loading progress</button> : 'Loading workbook…'}</div> : exercise ? (
+        <BoardFrame
+          fullScreen={fullScreen}
+          source={{
+            label: 'Exercise',
+            content: (
+              <div className="px-4 py-3 bg-white min-h-full">
+                <SourceCredit exerciseId={exercise.id} />
+                <div className={contentClasses} onClick={(event) => {
+                  const link = (event.target as Element).closest('a[href^="#"]');
+                  if (!link) return;
+                  const anchor = link.getAttribute('href')?.slice(1);
+                  if (anchor) { event.preventDefault(); void openView(null, anchor); }
+                }} dangerouslySetInnerHTML={{ __html: exercise.html }} />
               </div>
-            )}
+            ),
+          }}
+          title={(
+            <>
+              <h2 className="font-semibold text-gray-900 truncate">Exercise {exercise.number.replace('.', '')}</h2>
+              <p className="text-xs text-gray-500">Complex Analysis §1.3 · workbook</p>
+            </>
+          )}
+          canvas={<DrawingCanvas handleRef={canvasRef} toolsHidden={toolsHidden} />}
+          toolbar={<BottomToolbar onAskForHelp={() => void reviewWhiteboard()} isStreaming={isStreaming} isSolved={isSolved} onToggleSolved={toggleComplete} onClear={() => canvasRef.current?.clear()} sessionType="problem" completionLabel="attempt" fullScreen={{ on: fullScreen, toggle: toggleFullScreen }} tools={{ hidden: toolsHidden, toggle: toggleTools }} tutor={{ open: tutorOpen, toggle: () => setTutorOpen((open) => !open) }} />}
+          tutor={{
+            open: tutorOpen,
+            onClose: () => setTutorOpen(false),
+            content: (
+              <>
+                <p className="px-3 pt-2 text-xs text-gray-500">Ask about your approach or submit your whiteboard for a hint. The tutor will not give a complete solution.</p>
+                {tutorChat}
+              </>
+            ),
+          }}
+        />
+      ) : (
+        <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
+          <main className="flex-1 min-w-0 min-h-0 flex flex-col">
+            <div ref={readingScrollRef} className="overflow-y-auto px-6 py-5" onMouseUp={selectPassage} onScroll={(event) => { readingScrollTop.current = event.currentTarget.scrollTop; localStorage.setItem(READING_SCROLL_KEY, String(readingScrollTop.current)); }}>
+              <div className="max-w-3xl mx-auto">
+                <SourceCredit />
+                <p className="text-sm text-gray-600 mb-4">Select a passage to ask about it, or ask a question at any time.</p>
+                <div className={contentClasses} dangerouslySetInnerHTML={{ __html: content.readingHtml }} />
+                <section className="mt-10 mb-8 border-t border-gray-200 pt-6">
+                  <h2 className="text-xl font-semibold text-gray-900">Exercises</h2>
+                  <p className="text-sm text-gray-600 mt-1 mb-4">Recommended problems give you a path through the section. Every problem has its own whiteboard.</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {content.exercises.map((item) => (
+                      <button key={item.id} onClick={() => void openView(item.id)} disabled={isStreaming} className="text-left p-3 rounded-lg border border-gray-200 bg-white hover:border-blue-400 hover:bg-blue-50 disabled:opacity-50">
+                        <span className="font-medium text-gray-900">Exercise {item.number}</span>
+                        {content.recommendedIds.includes(item.id) && <span className="ml-2 text-xs text-blue-700">Recommended{recommendedPart[item.id] ? `: ${recommendedPart[item.id]}` : ''}</span>}
+                        {completedIds.includes(item.id) && <span className="ml-2 text-xs text-green-700">Complete</span>}
+                        <span className="block text-xs text-gray-500 truncate mt-1">{item.text}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              </div>
+            </div>
           </main>
 
-          <aside className={`${fullScreen ? 'hidden' : 'flex'} ${exercise ? 'h-[320px]' : 'h-[38vh]'} lg:h-auto lg:w-[380px] lg:border-l border-t lg:border-t-0 border-gray-200 bg-white flex-col shrink-0`}>
+          <aside className="flex h-[38vh] lg:h-auto lg:w-[380px] lg:border-l border-t lg:border-t-0 border-gray-200 bg-white flex-col shrink-0">
             <div className="px-4 py-3 border-b border-gray-200">
-              <h2 className="font-semibold text-gray-900">{exercise ? 'Problem tutor' : 'Reading tutor'}</h2>
-              <p className="text-xs text-gray-500">{exercise ? 'Ask about your approach or submit your whiteboard for a hint. The tutor will not give a complete solution.' : 'Ask about the text or a selected passage as you read.'}</p>
+              <h2 className="font-semibold text-gray-900">Reading tutor</h2>
+              <p className="text-xs text-gray-500">Ask about the text or a selected passage as you read.</p>
             </div>
-            <div ref={chatScrollRef} aria-live="polite" aria-busy={isStreaming} className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-              {chatHistory.length === 0 ? <p className="text-sm text-gray-400 text-center mt-6">{exercise ? 'Your conversation for this exercise starts here.' : 'What would you like to understand better?'}</p> : chatHistory.map((message) => <ChatMessage key={message.id} message={message} />)}
-            </div>
-            {selectedPassage && !exercise && <div className="mx-3 mb-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-800 flex gap-2"><span className="line-clamp-2 flex-1">Selected: {selectedPassage}</span><button onClick={() => setSelectedPassage('')} aria-label="Clear selected passage">×</button></div>}
-            <form onSubmit={sendQuestion} className="p-3 border-t border-gray-200 flex items-end gap-2">
-              <ChatTextarea aria-label={exercise ? `Question about exercise ${exercise.number}` : 'Question about the reading'} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={isStreaming} placeholder={exercise ? 'Ask about this problem…' : 'Ask about the reading…'} className="flex-1 min-w-0 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              <button type="submit" disabled={!draft.trim() || isStreaming || isLimited} title={isLimited ? 'Please wait a moment before asking again.' : undefined} className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-40">Ask</button>
-            </form>
-            {isLimited && !isStreaming && <p className="px-3 pb-2 text-xs text-gray-500">Please wait a moment before asking again.</p>}
+            {tutorChat}
           </aside>
         </div>
       )}

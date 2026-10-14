@@ -42,8 +42,9 @@ src/
 │   ├── layout/
 │   │   ├── AppBar.tsx         # The bar on every page: Home, Shelf, + New, Settings
 │   │   ├── AppShell.tsx       # The free board page; wires contexts + UI
-│   │   ├── TopBar.tsx         # AppBar on a free board, plus save status and the Chat toggle
-│   │   ├── BottomToolbar.tsx  # Clear, Mark Solved, Ask for Help (drawing tools are tldraw's own)
+│   │   ├── TopBar.tsx         # AppBar on a free board, plus save status
+│   │   ├── BoardFrame.tsx     # The layout every board shares: source, board with header and toolbar, tutor drawer
+│   │   ├── BottomToolbar.tsx  # Full screen, Hide tools, Clear, Mark Solved, Tutor, Ask for Help (drawing tools are tldraw's own)
 │   │   ├── SettingsModal.tsx  # Model/provider configuration (defines PRESETS array)
 │   │   └── HelpQuestionModal.tsx  # Custom question input with voice
 │   ├── workspace/
@@ -243,7 +244,13 @@ ESLint uses the Next.js core web vitals config. Run `npm run lint` before commit
 ### Navigation
 - `AppBar` is on every page (hidden in full screen): **Home** and **Shelf** tabs, **+ New**, and a Settings gear. Pass `locked` while a tutor reply streams so links can't leave the page.
 - The built-in workbook sits on the Shelf as a card (`WorkbookCover`) beside the PDFs; its and the reader's breadcrumbs lead back to the Shelf.
-- Design direction (agreed 2026-10-14): boards, the Shelf, and a tutor you call. Next steps are one board frame for all boards, modelled on Shelf boards, and an ink-on-paper visual language where only the tutor has a color.
+- Design direction (agreed 2026-10-14): boards, the Shelf, and a tutor you call. Next step is an ink-on-paper visual language where only the tutor has a color.
+
+### Board frame
+- Every board (free board, workbook exercise, Shelf exercise) renders `BoardFrame`: the **source** it works from (typed problem or topic, workbook exercise, PDF page with its page toolbar; `wide` for the page), then the board with a header (title, actions, a **Hide/Show {source}** toggle) and the `BottomToolbar`, then the **tutor**.
+- The tutor is a drawer, closed until asked: **Ask for Help** opens it, the toolbar's **Tutor** button toggles it, **Close** in its header shuts it. A new or switched board opens with it closed.
+- Below 2xl (96rem) the open tutor takes the source's place (above the board on narrow screens), so the board keeps its room; the header toggle then reads **Show {source}** and closes the tutor. On 2xl screens all three sit side by side.
+- The workbook's reading view is not a board: it keeps its always-open **Reading tutor** column.
 
 ### Full screen and tools
 - **Hide tools** (`BottomToolbar` `tools` prop, `useToolsHidden`, remembered in `localStorage` as `math-tutor:toolsHidden` for every board) passes `hideUi` to tldraw: toolbars and style panel go, the current tool (the pen) keeps working.

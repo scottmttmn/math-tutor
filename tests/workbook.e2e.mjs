@@ -55,10 +55,16 @@ async function openBrowser() {
   await page.goto(`${origin}/workbook`);
 }
 const waitReading = () => page.getByRole('heading', { name: 'Reading tutor', exact: true }).waitFor();
-const waitExercise = () => page.getByRole('heading', { name: 'Problem tutor', exact: true }).waitFor();
+const waitExercise = () => page.getByRole('region', { name: 'Exercise', exact: true }).waitFor();
+// The tutor is a drawer on every board, closed until asked.
+async function openTutor() {
+  const closed = page.getByRole('button', { name: 'Tutor', exact: true, pressed: false });
+  if (await closed.count()) await closed.click();
+}
 const exerciseButton = (number) => page.getByRole('button', { name: new RegExp(`^Exercise ${number}\\.`) });
 async function ask(question, reply) {
   const before = requests.length;
+  await openTutor();
   await page.getByRole('textbox').fill(question);
   const responseReady = page.waitForResponse((response) => response.url() === `${origin}/api/tutor`);
   await page.getByRole('button', { name: 'Ask', exact: true }).click();
@@ -143,7 +149,7 @@ try {
   assert.doesNotMatch(JSON.stringify(request.messages), /Reading explanation/);
   await draw();
   await page.getByRole('button', { name: 'Mark attempt complete', exact: true }).click();
-  await page.reload(); await waitExercise();
+  await page.reload(); await waitExercise(); await openTutor();
   assert.ok(await page.getByRole('button', { name: 'Attempt complete', exact: true }).isVisible());
   assert.ok(await page.getByRole('button', { name: 'Clear', exact: true }).isEnabled());
   assert.ok(await page.getByText('Exercise hint.', { exact: true }).isVisible());
@@ -193,10 +199,18 @@ try {
   // Full screen hides the header, exercise and tutor; the board keeps its strokes.
   await page.getByRole('button', { name: 'Full screen' }).click();
   await page.getByRole('button', { name: 'Back to reading' }).waitFor({ state: 'hidden' });
-  assert.equal(await page.getByRole('heading', { name: 'Problem tutor' }).isVisible(), false);
+  assert.equal(await page.getByRole('complementary', { name: 'Tutor' }).count(), 0);
+  assert.equal(await page.getByRole('region', { name: 'Exercise' }).count(), 0);
   await page.locator('.tl-shape').first().waitFor();
   await page.getByRole('button', { name: 'Exit full screen' }).click();
-  await page.getByRole('heading', { name: 'Problem tutor' }).waitFor();
+  await page.getByRole('complementary', { name: 'Tutor' }).waitFor();
+  // The open tutor stands in the exercise's place; Show exercise closes it.
+  await page.getByRole('button', { name: 'Show exercise' }).click(); await waitExercise();
+  assert.equal(await page.getByRole('complementary', { name: 'Tutor' }).count(), 0);
+  // The exercise can give the board its room, and comes back.
+  await page.getByRole('button', { name: 'Hide exercise' }).click();
+  assert.equal(await page.getByRole('region', { name: 'Exercise' }).count(), 0);
+  await page.getByRole('button', { name: 'Show exercise' }).click(); await waitExercise();
   console.log('PASS full-screen exercise board');
 
   await page.getByRole('button', { name: 'Back to reading' }).click(); await waitReading();
@@ -210,7 +224,7 @@ try {
   assert.match(JSON.stringify(request.messages), /Current exercise 2\./);
   assert.doesNotMatch(JSON.stringify(request.messages), /Does this approach make sense/);
   await page.getByRole('button', { name: 'Back to reading' }).click(); await waitReading();
-  await exerciseButton(1).click(); await waitExercise();
+  await exerciseButton(1).click(); await waitExercise(); await openTutor();
   assert.ok(await page.getByRole('button', { name: 'Clear', exact: true }).isEnabled());
   assert.ok(await page.getByText('Does this approach make sense?', { exact: true }).isVisible());
   console.log('PASS switching keeps boards and conversations separate and restores the reading position');
@@ -247,7 +261,7 @@ try {
   await page.getByRole('textbox').fill('Hold this reply while I reload.');
   await page.getByRole('button', { name: 'Ask', exact: true }).click();
   await page.waitForFunction(() => !!document.querySelector('[aria-busy="true"]'));
-  await page.reload(); await waitExercise();
+  await page.reload(); await waitExercise(); await openTutor();
   await page.getByText('The tutor response was interrupted. Ask again to continue.', { exact: true }).waitFor();
   assert.equal(await page.locator('.animate-bounce').count(), 0);
   console.log('PASS SSE failures and reload during streaming recover without a stuck typing indicator');
@@ -268,7 +282,7 @@ try {
   // Free-form sessions save themselves and come back after a reload.
   await page.getByRole('status').getByText('Saved', { exact: true }).waitFor();
   await page.reload();
-  await page.getByRole('button', { name: 'Chat', exact: true }).click();
+  await openTutor();
   await page.getByText('Exercise hint.', { exact: true }).waitFor();
   assert.equal(await page.getByPlaceholder("Type the math problem you're working on...").inputValue(), 'Find a strategy for a quadratic.');
   await page.waitForFunction(() => document.querySelectorAll('.tl-shape').length > 0);
@@ -315,7 +329,7 @@ try {
 
   // Opening a workbook entry from History goes to that exercise.
   await workbookCard.getByRole('button', { name: /^Open / }).click(); await waitExercise();
-  assert.equal(await page.getByRole('heading', { level: 1 }).innerText(), 'Exercise 1');
+  await page.getByRole('heading', { name: 'Exercise 1', exact: true }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.getByRole('button', { name: 'Mark attempt complete', exact: true }).isVisible());
   await page.getByRole('button', { name: 'Back to reading' }).click(); await waitReading();

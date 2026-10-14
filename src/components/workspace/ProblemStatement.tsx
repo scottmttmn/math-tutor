@@ -26,7 +26,7 @@ export default function ProblemStatement({ onCaptureProblemImage, onPutOnBoard }
         value={problemStatement}
         onChange={(e) => dispatch({ type: 'SET_PROBLEM', text: e.target.value })}
         placeholder="Type the math problem you're working on..."
-        className="w-full h-20 px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        className="w-full h-20 lg:h-40 px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
       />
       <div className={`mt-1 flex gap-2 ${enlarged && problemImage ? 'items-start' : 'items-center'}`}>
         {problemImage ? (
