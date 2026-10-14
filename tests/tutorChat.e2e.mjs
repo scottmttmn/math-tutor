@@ -49,7 +49,7 @@ try {
   await page.screenshot({ path: join(tmpdir(), 'tutor-math-mobile.png') });
   console.log('PASS workbook math, fallback metadata, reload, and mobile layout');
 
-  await page.goto(`${origin}/`);
+  await page.goto(`${origin}/board`);
   await page.evaluate(() => localStorage.removeItem('lastHelpTimestamp'));
   await page.reload();
   await page.getByRole('button', { name: 'New', exact: true }).click();
@@ -66,7 +66,7 @@ try {
     wideRequests.push(route.request().postDataJSON());
     route.fulfill({ contentType: 'text/event-stream', body: frames });
   });
-  await wide.goto(`${origin}/`);
+  await wide.goto(`${origin}/board`);
   const canvas = wide.locator('.tl-canvas');
   await canvas.waitFor();
   const canvasBox = await canvas.boundingBox();

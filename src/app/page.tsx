@@ -1,5 +1,5 @@
-import AppShell from '@/components/layout/AppShell';
+import Home from '@/components/home/Home';
 
-export default function Home() {
-  return <AppShell />;
+export default function HomePage() {
+  return <Home />;
 }

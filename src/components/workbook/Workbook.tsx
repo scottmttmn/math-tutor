@@ -12,6 +12,7 @@ import { loadRecoveredSession, saveRecoverableSession, settleInterruptedReplies,
 import type { Session, WorkbookContext } from '@/types';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
+import AppBar from '@/components/layout/AppBar';
 import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
 import { useToolsHidden } from '@/hooks/useToolsHidden';
 import ChatMessage from '@/components/chat/ChatMessage';
@@ -47,7 +48,7 @@ function WorkbookContent() {
   const readingTargetRef = useRef<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const latestSnapshot = useRef<Session | null>(null);
-  // The exercise's last board picture, for History; refreshed on each save.
+  // The exercise's last board picture, for Home; refreshed on each save.
   const thumbnail = useRef<Blob | null>(null);
   const sentRevision = useRef<number | null>(null);
   const { document: canvasDocument, pendingLoad } = useCanvasState();
@@ -89,7 +90,7 @@ function WorkbookContent() {
     let active = true;
     async function loadProgress() {
       try {
-        // History opens a page with ?open=<exercise id or "reading">; after that, reloads resume as usual.
+        // Home opens a page with ?open=<exercise id or "reading">; after that, reloads resume as usual.
         const requested = new URLSearchParams(window.location.search).get('open');
         if (requested) {
           if (requested === 'reading') localStorage.removeItem(ACTIVE_EXERCISE_KEY);
@@ -272,10 +273,11 @@ function WorkbookContent() {
 
   return (
     <div className={`${exercise && !fullScreen ? 'min-h-screen lg:h-screen' : 'h-screen'} flex flex-col bg-gray-50`}>
+      {!fullScreen && <AppBar place="shelf" locked={isStreaming} beforeLeave={persistCurrent} />}
       <header className={`${fullScreen ? 'hidden' : 'flex'} items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-white`}>
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs text-gray-500">
-            <Link href="/" onClick={(event) => { if (isStreaming) event.preventDefault(); }} aria-disabled={isStreaming} className="text-blue-700 hover:underline">Math Tutor</Link>
+            <Link href="/shelf" onClick={(event) => { if (isStreaming) event.preventDefault(); }} aria-disabled={isStreaming} className="text-blue-700 hover:underline">Shelf</Link>
             <span>›</span><span>Workbook</span><span>›</span><span>Complex Analysis</span>
           </div>
           <h1 className="font-semibold text-gray-900 truncate">{exercise ? `Exercise ${exercise.number.replace('.', '')}` : '1.3 · The Geometry of Complex Numbers'}</h1>

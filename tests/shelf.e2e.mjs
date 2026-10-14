@@ -48,8 +48,11 @@ const exerciseHeading = (name) => page.getByRole('heading', { name, exact: true 
 try {
   await page.goto(`${origin}/`);
   await page.evaluate((config) => localStorage.setItem('mathTutor_modelConfig', JSON.stringify(config)), model);
-  await page.getByRole('link', { name: 'Shelf' }).click();
-  await page.getByText('Your Shelf is empty.').waitFor();
+  // The app opens on Home; the Shelf is in the bar, with the built-in workbook already on it.
+  await page.getByRole('heading', { name: 'Problems and notes' }).waitFor();
+  await page.getByRole('link', { name: 'Shelf', exact: true }).click();
+  await page.getByText('No PDFs yet.').waitFor();
+  await page.getByRole('link', { name: 'Open Complex Analysis §1.3' }).waitFor();
 
   // Add a PDF; it lands on the Shelf with its page count.
   await page.locator('input[aria-label="Add PDF"]').setInputFiles(pdfPath);
@@ -197,9 +200,8 @@ try {
   await page.reload();
   await page.getByRole('button', { name: 'Exercises', exact: true }).click();
   await page.getByRole('heading', { name: 'Exercises', exact: true }).waitFor();
-  await page.goto(`${origin}/`);
-  await page.getByRole('button', { name: 'History' }).click();
-  const history = page.getByRole('dialog', { name: 'History' });
+  await page.getByRole('link', { name: 'Home', exact: true }).click();
+  const history = page.locator('[aria-labelledby="boards-heading"]');
   await history.getByRole('button', { name: /^Open Exercise 1/ }).waitFor();
   assert.equal(await history.getByRole('button', { name: /^Open Problem 3/ }).count(), 0);
   assert.match(await history.locator('li').first().innerText(), /Shelf/);
@@ -219,24 +221,24 @@ try {
   // Any picture will do as the problem; take one of the Shelf header.
   await writeFile(imagePath, await page.screenshot({ clip: { x: 0, y: 0, width: 240, height: 80 } }));
   await page.locator('input[aria-label="Single problem"]').setInputFiles(imagePath);
-  await page.waitForURL(`${origin}/`, { waitUntil: 'commit' });
+  await page.waitForURL(`${origin}/board`, { waitUntil: 'commit' });
   await page.getByAltText(/problem/i).first().waitFor();
   // Its picture can go on the board, and the board can take the whole screen.
   await page.locator('.tl-canvas').waitFor();
   await page.getByRole('button', { name: 'Put on board' }).click();
   await page.locator('.tl-image').waitFor();
   await page.getByRole('button', { name: 'Full screen' }).click();
-  await page.getByRole('button', { name: 'History' }).waitFor({ state: 'hidden' });
+  await page.getByRole('link', { name: 'Home' }).waitFor({ state: 'hidden' });
   assert.equal(await page.getByAltText(/problem/i).count(), 0, 'the problem header is hidden');
   await page.getByRole('button', { name: 'Exit full screen' }).click();
-  await page.getByRole('button', { name: 'History' }).waitFor();
+  await page.getByRole('link', { name: 'Home' }).waitFor();
   console.log('PASS a single problem opens on a new board; it goes on the board; full screen main board');
 
   // Removing the PDF takes its remaining boards with it.
   await page.goto(`${origin}/shelf`);
   await page.getByRole('button', { name: 'Remove Algebra drills' }).click();
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
-  await page.getByText('Your Shelf is empty.').waitFor();
+  await page.getByText('No PDFs yet.').waitFor();
   const shelfSessions = await page.evaluate(() => new Promise((resolve) => {
     const open = indexedDB.open('math-tutor');
     open.onsuccess = () => {
