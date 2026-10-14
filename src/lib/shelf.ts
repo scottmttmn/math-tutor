@@ -73,6 +73,16 @@ export async function markExercise(pdf: PDFDocumentProxy, document: ShelfDocumen
   return { document: updated, exercise };
 }
 
+/** Sets the first page the tutor reads for an exercise (0 for none). Returns the updated document. */
+export async function setReadFrom(document: ShelfDocument, exerciseId: string, readFrom: number): Promise<ShelfDocument> {
+  const updated = {
+    ...document, updatedAt: Date.now(),
+    exercises: document.exercises.map((item) => (item.id === exerciseId ? { ...item, readFrom } : item)),
+  };
+  await saveShelfDocument(updated);
+  return updated;
+}
+
 /** A name for the next mark: one past the highest "Exercise N" so far. */
 export function nextLabel(document: ShelfDocument) {
   const numbers = document.exercises.map((item) => Number(/^Exercise (\d+)$/.exec(item.label)?.[1] ?? 0));

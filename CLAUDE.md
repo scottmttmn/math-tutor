@@ -126,6 +126,7 @@ src/
 ### Shelf
 - PDFs live in the IndexedDB store `shelf` (db version 2) as `ShelfDocument`s: the file Blob, a cover, the last page read, and the marked `exercises` (`page` plus a `rect` in fractions of the page).
 - Marking an exercise crops that region to a PNG (`cropPage`) and creates its board, the session `shelf:<document id>:<exercise id>`, with the crop as `problemImage` (so the tutor gets it as the problem figure) and `exerciseStatement` as the problem text. History lists these once they hold work and opens them at `/shelf/read?doc=…&open=…`.
+- **Book pages for the tutor** (`src/lib/bookContext.ts`): with every question on a Shelf board, the reader sends the text of the pages leading up to the exercise as `bookContext`. They run from the last PDF bookmark at or before the exercise's page (skipping "Exercises"/"Answers" bookmarks), or the 6 pages before it without bookmarks, to the exercise's page; never past it (answer keys sit later), at most `MAX_BOOK_PAGES` (15). The student can change the start or turn it off on the board (`ShelfExercise.readFrom`, 0 = off), and later exercises in the same section reuse that choice. Scans with no text layer send nothing.
 - The reader uses `useSessionAutosave(handle, { reopenLast: false })`: the same autosave as the main page, but it never touches `math-tutor:currentSession`; the URL says which board is open.
 - Removing a mark or a PDF deletes the boards with it (and their recovery copies).
 - **Single problem** saves a new free-form session whose `problemImage` is the picture (or a PDF's first page), sets it as the main page's current session and goes to `/`.
@@ -137,9 +138,10 @@ src/
 - **Two system prompts**, selected by `sessionType`:
   - `SYSTEM_PROMPT` (default / `'problem'`) — Socratic, hints only, never the answer.
   - `NOTE_SYSTEM_PROMPT` (`'note'`) — direct explanations, may state answers.
+- `bookContext` (Shelf pages) comes from the student's PDF, so it is untrusted: the pages open the conversation as a user message (cached on the Anthropic path) and only the rule about them (`BOOK_RULE`) goes in the system prompt. Requests with it always use `SYSTEM_PROMPT`.
 - Images are passed as base64 PNG. When `problemImage` is present it is sent **first** and described to the model as the problem figure; the canvas image follows as the student's work.
 - The API cleans message history to ensure valid alternating user/assistant turns before sending to the model (Anthropic path only).
-- Request body shape: `{ problemStatement, chatHistory, canvasImage, modelConfig, userQuestion?, problemImage?, sessionType? }` (see `TutorRequest` in `src/types/index.ts`).
+- Request body shape: `{ problemStatement, chatHistory, canvasImage, modelConfig, userQuestion?, problemImage?, sessionType?, workbookContext?, bookContext? }` (see `TutorRequest` in `src/types/index.ts`).
 - Google Gemini uses `GOOGLE_API_KEY` or `GEMINI_API_KEY` at its OpenAI-compatible endpoint. Other OpenAI-compatible providers use `OPENAI_API_KEY` and fall back to `'ollama'` when it is unset, so local Ollama works with no key.
 - A third path, `provider: 'chatgpt'`, uses Sign in with ChatGPT: the Responses API with the student's OAuth token, billed to their ChatGPT plan instead of an API key. Images go as `input_image` parts.
 

@@ -4,12 +4,14 @@ import { useRef, useEffect } from 'react';
 import { useSessionState } from '@/context/SessionContext';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
+import type { BookContext } from '@/types';
 
 interface ChatPanelProps {
   getCanvasImage?: () => Promise<string>;
+  getBookContext?: () => Promise<BookContext | null>;
 }
 
-export default function ChatPanel({ getCanvasImage }: ChatPanelProps) {
+export default function ChatPanel({ getCanvasImage, getBookContext }: ChatPanelProps) {
   const { chatHistory } = useSessionState();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -41,7 +43,7 @@ export default function ChatPanel({ getCanvasImage }: ChatPanelProps) {
         )}
       </div>
 
-      <ChatInput getCanvasImage={getCanvasImage} />
+      <ChatInput getCanvasImage={getCanvasImage} getBookContext={getBookContext} />
     </div>
   );
 }

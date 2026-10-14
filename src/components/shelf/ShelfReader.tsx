@@ -9,8 +9,9 @@ import { useTutorChat } from '@/hooks/useTutorChat';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
 import { loadShelfDocument, saveShelfDocument, shelfSessionId } from '@/lib/db';
 import { openPdf } from '@/lib/pdf';
-import { ensureExerciseBoard, markExercise, nextLabel, solvedExercises, unmarkExercise } from '@/lib/shelf';
-import type { PageRect, ShelfDocument, ShelfExercise } from '@/types';
+import { ensureExerciseBoard, markExercise, nextLabel, setReadFrom, solvedExercises, unmarkExercise } from '@/lib/shelf';
+import { MAX_BOOK_PAGES, loadSectionStarts, readBookPages, readingRange, type ReadingRange, type SectionStart } from '@/lib/bookContext';
+import type { BookContext, PageRect, ShelfDocument, ShelfExercise } from '@/types';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
 import ChatPanel from '@/components/chat/ChatPanel';
@@ -43,13 +44,21 @@ export default function ShelfReader() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [solvedIds, setSolvedIds] = useState<string[]>([]);
   const [tab, setTab] = useState<'page' | 'tutor'>('page');
+  const [sectionStarts, setSectionStarts] = useState<SectionStart[]>([]);
+  const [bookHasText, setBookHasText] = useState(true);
   const switching = useRef(false);
+  const book = useRef<{ pdf: PDFDocumentProxy; document: ShelfDocument; range: ReadingRange } | null>(null);
 
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
   const sentRevision = useRef<number | null>(null);
   const { isStreaming, isSolved, currentSessionId } = useSessionState();
   const sessionDispatch = useSessionDispatch();
-  const { sendHelp } = useTutorChat();
+  // The pages before the open exercise, read when a question is sent (each page's text is kept).
+  const getBookContext = useCallback(async (): Promise<BookContext | null> => {
+    const current = book.current;
+    return current ? readBookPages(current.pdf, current.document, current.range) : null;
+  }, []);
+  const { sendHelp } = useTutorChat(undefined, getBookContext);
   const { status: saveStatus, saveNow, openSession, startNew } = useSessionAutosave(canvasHandle, { reopenLast: false });
 
   const updateDocument = useCallback((next: ShelfDocument) => {
@@ -100,6 +109,7 @@ export default function ShelfReader() {
       if (!active) { void opened.loadingTask.destroy(); return; }
       updateDocument(stored);
       setPdf(opened);
+      void loadSectionStarts(opened).then((starts) => { if (active) setSectionStarts(starts); });
       setPage(Math.min(Math.max(1, stored.lastPage), opened.numPages));
       setSolvedIds(await solvedExercises(stored));
       const exercise = stored.exercises.find((item) => item.id === exerciseId);
@@ -180,6 +190,28 @@ export default function ShelfReader() {
     } catch { setError('The exercise could not be removed. Try again.'); }
   };
 
+  const changeReadFrom = async (exerciseId: string, readFrom: number) => {
+    try {
+      await writeDocument(async (latest) => updateDocument(await setReadFrom(latest, exerciseId, readFrom)));
+    } catch { setError('That could not be saved. Try again.'); }
+  };
+
+  const openExerciseForBook = shelfDocument?.exercises.find((item) => item.id === openId) ?? null;
+  const range = shelfDocument && openExerciseForBook ? readingRange(shelfDocument, openExerciseForBook, sectionStarts) : null;
+  book.current = pdf && shelfDocument && range ? { pdf, document: shelfDocument, range } : null;
+
+  // Say so when the pages have no text to read (a scanned book).
+  const rangeKey = range ? `${range.from}-${range.to}` : '';
+  useEffect(() => {
+    setBookHasText(true);
+    const current = book.current;
+    if (!current) return;
+    let active = true;
+    void readBookPages(current.pdf, current.document, current.range)
+      .then((context) => { if (active) setBookHasText(context !== null); }, () => undefined);
+    return () => { active = false; };
+  }, [pdf, rangeKey]);
+
   const askForHelp = async () => {
     if (getTutorWaitMs() > 0) return;
     const handle = canvasHandle.current;
@@ -208,7 +240,7 @@ export default function ShelfReader() {
   }
   if (!shelfDocument || !pdf) return <div className="p-6 text-gray-500">Opening PDF…</div>;
 
-  const exercise = shelfDocument.exercises.find((item) => item.id === openId) ?? null;
+  const exercise = openExerciseForBook;
   const marksOnPage = shelfDocument.exercises.filter((item) => item.page === page);
   const pageCount = pdf.numPages;
 
@@ -265,7 +297,7 @@ export default function ShelfReader() {
           </div>
 
           {tab === 'tutor' && exercise ? (
-            <div className="flex-1 min-h-0"><ChatPanel getCanvasImage={followUpImage} /></div>
+            <div className="flex-1 min-h-0"><ChatPanel getCanvasImage={followUpImage} getBookContext={getBookContext} /></div>
           ) : (
             <div className="flex-1 min-h-0 overflow-y-auto p-3">
               {marking && <p className="mb-2 text-sm text-amber-800">{pendingMark ? 'Name it and save, or drag again to redraw the box.' : 'Drag a box around an exercise on the page.'}</p>}
@@ -296,7 +328,24 @@ export default function ShelfReader() {
               <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200">
                 <div className="min-w-0 flex-1">
                   <h2 className="font-semibold text-gray-900 truncate">{exercise.label}</h2>
-                  <p className="text-xs text-gray-500">Page {exercise.page}</p>
+                  <p className="text-xs text-gray-500">
+                    Page {exercise.page} ·{' '}
+                    <label>
+                      Tutor reads{' '}
+                      <select
+                        value={range?.from ?? 0}
+                        onChange={(event) => void changeReadFrom(exercise.id, Number(event.target.value))}
+                        title={range?.section ? `Section: ${range.section}` : undefined}
+                        className="px-1 py-0.5 text-xs text-gray-700 border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value={0}>no pages</option>
+                        {Array.from({ length: Math.min(MAX_BOOK_PAGES, exercise.page) }, (_, index) => exercise.page - index).reverse().map((from) => (
+                          <option key={from} value={from}>{from === exercise.page ? `p. ${from}` : `pp. ${from}–${exercise.page}`}</option>
+                        ))}
+                      </select>
+                    </label>
+                    {range && !bookHasText && <span className="text-amber-700"> · no text in this PDF to read</span>}
+                  </p>
                 </div>
                 {exercise.page !== page && (
                   <button onClick={() => { setPage(exercise.page); setTab('page'); }} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Show page</button>
