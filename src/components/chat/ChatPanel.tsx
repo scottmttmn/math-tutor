@@ -22,10 +22,8 @@ export default function ChatPanel({ getCanvasImage, getBookContext }: ChatPanelP
   }, [chatHistory]);
 
   return (
-    <div className="flex flex-col h-full bg-white border-l border-gray-200">
-      <div className="px-4 py-3 border-b border-gray-200">
-        <h2 className="text-sm font-semibold text-gray-700">Tutor Chat</h2>
-      </div>
+    // Sits in the board's tutor column, which carries the heading.
+    <div className="flex flex-col h-full bg-white">
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3">
         {chatHistory.length === 0 ? (

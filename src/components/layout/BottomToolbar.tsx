@@ -18,9 +18,11 @@ interface Props {
   fullScreen?: { on: boolean; toggle: () => void };
   /** Shows the Hide tools button (see useToolsHidden). */
   tools?: { hidden: boolean; toggle: () => void };
+  /** Shows the Tutor button, which opens and closes the tutor beside the board. */
+  tutor?: { open: boolean; toggle: () => void };
 }
 
-export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSolved, onToggleSolved, sessionType, completionLabel, fullScreen, tools }: Props) {
+export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSolved, onToggleSolved, sessionType, completionLabel, fullScreen, tools, tutor }: Props) {
   const { hasContent } = useCanvasState();
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
   const helpDisabled = isLimited || isStreaming;
@@ -74,6 +76,21 @@ export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSo
         >
           <CheckIcon solved={isSolved} />
           {completionLabel ? isSolved ? 'Attempt complete' : 'Mark attempt complete' : isSolved ? 'Solved!' : 'Mark Solved'}
+        </button>
+      )}
+
+      {tutor && (
+        <button
+          onClick={() => {
+            // Full screen hides the tutor, so opening it leaves full screen (as Ask for Help does).
+            if (fullScreen?.on) { fullScreen.toggle(); if (!tutor.open) tutor.toggle(); }
+            else tutor.toggle();
+          }}
+          aria-pressed={tutor.open && !fullScreen?.on}
+          className={`px-3 py-1.5 text-sm border rounded-lg ${tutor.open ? 'bg-blue-50 text-blue-700 border-blue-200' : 'text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+          title={tutor.open ? 'Close the tutor' : 'Show the conversation with the tutor'}
+        >
+          Tutor
         </button>
       )}
 

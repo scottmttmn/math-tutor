@@ -93,7 +93,9 @@ try {
   assert.doesNotMatch(pages.content, /Compute \(1\+i\)\^8/);
 
   // Solving shows on the page's mark; a reload returns to the same board with the stroke.
-  await page.getByRole('button', { name: 'Page', exact: true }).click();
+  // The tutor opened in its drawer; closing it leaves the page and the board.
+  await page.getByRole('complementary', { name: 'Tutor' }).waitFor();
+  await page.getByRole('button', { name: 'Close tutor' }).click();
   await page.getByRole('button', { name: /Mark Solved/ }).click();
   await page.getByRole('button', { name: 'Open Exercise 1' }).filter({ hasText: '✓' }).waitFor();
   await page.waitForTimeout(1200);
