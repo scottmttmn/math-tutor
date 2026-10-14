@@ -13,6 +13,7 @@ import type { Session, WorkbookContext } from '@/types';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
 import ChatMessage from '@/components/chat/ChatMessage';
+import ChatTextarea from '@/components/chat/ChatTextarea';
 
 const READING_ID = `workbook:${content.id}:reading`;
 const exerciseKey = (id: string) => `workbook:${content.id}:exercise:${id}`;
@@ -331,8 +332,8 @@ function WorkbookContent() {
               {chatHistory.length === 0 ? <p className="text-sm text-gray-400 text-center mt-6">{exercise ? 'Your conversation for this exercise starts here.' : 'What would you like to understand better?'}</p> : chatHistory.map((message) => <ChatMessage key={message.id} message={message} />)}
             </div>
             {selectedPassage && !exercise && <div className="mx-3 mb-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-800 flex gap-2"><span className="line-clamp-2 flex-1">Selected: {selectedPassage}</span><button onClick={() => setSelectedPassage('')} aria-label="Clear selected passage">×</button></div>}
-            <form onSubmit={sendQuestion} className="p-3 border-t border-gray-200 flex gap-2">
-              <input aria-label={exercise ? `Question about exercise ${exercise.number}` : 'Question about the reading'} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={isStreaming} placeholder={exercise ? 'Ask about this problem…' : 'Ask about the reading…'} className="flex-1 min-w-0 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <form onSubmit={sendQuestion} className="p-3 border-t border-gray-200 flex items-end gap-2">
+              <ChatTextarea aria-label={exercise ? `Question about exercise ${exercise.number}` : 'Question about the reading'} value={draft} onChange={(event) => setDraft(event.target.value)} disabled={isStreaming} placeholder={exercise ? 'Ask about this problem…' : 'Ask about the reading…'} className="flex-1 min-w-0 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
               <button type="submit" disabled={!draft.trim() || isStreaming || isLimited} title={isLimited ? 'Please wait a moment before asking again.' : undefined} className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-40">Ask</button>
             </form>
             {isLimited && !isStreaming && <p className="px-3 pb-2 text-xs text-gray-500">Please wait a moment before asking again.</p>}

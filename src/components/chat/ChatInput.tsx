@@ -5,6 +5,7 @@ import { useSessionState } from '@/context/SessionContext';
 import { useTutorChat } from '@/hooks/useTutorChat';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import type { BookContext } from '@/types';
+import ChatTextarea from '@/components/chat/ChatTextarea';
 
 interface ChatInputProps {
   /** Returns a snapshot to attach to the follow-up, or '' when the tutor has already seen the drawing. */
@@ -44,14 +45,13 @@ export default function ChatInput({ getCanvasImage, getBookContext }: ChatInputP
 
   return (
     <form onSubmit={handleSubmit} className="px-3 py-2 border-t border-gray-200">
-      <div className="flex gap-2">
-        <input
-          type="text"
+      <div className="flex items-end gap-2">
+        <ChatTextarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder={chatHistory.length === 0 ? 'Ask for help first...' : 'Type or speak a follow-up...'}
           disabled={inputDisabled}
-          className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:bg-gray-50"
+          className="flex-1 min-w-0 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:bg-gray-50"
         />
         {isSupported && (
           <button
