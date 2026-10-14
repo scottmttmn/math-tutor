@@ -6,9 +6,11 @@ import { useCanvasState } from '@/context/CanvasContext';
 
 interface Props {
   onCaptureProblemImage: () => Promise<void> | void;
+  /** Places the problem figure on the board, to write on and around it. */
+  onPutOnBoard: (image: string) => void;
 }
 
-export default function ProblemStatement({ onCaptureProblemImage }: Props) {
+export default function ProblemStatement({ onCaptureProblemImage, onPutOnBoard }: Props) {
   const { problemStatement, problemImage } = useSessionState();
   const dispatch = useSessionDispatch();
   const { hasContent } = useCanvasState();
@@ -38,6 +40,13 @@ export default function ProblemStatement({ onCaptureProblemImage }: Props) {
               />
             </button>
             <span className="text-xs text-green-700 font-medium">Problem captured</span>
+            <button
+              onClick={() => onPutOnBoard(problemImage)}
+              className="text-xs px-2 py-1 border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50"
+              title="Put the problem figure on the board to write on and around it"
+            >
+              Put on board
+            </button>
             <button
               onClick={() => dispatch({ type: 'SET_PROBLEM_IMAGE', image: null })}
               className="text-xs text-gray-400 hover:text-red-500 ml-auto"

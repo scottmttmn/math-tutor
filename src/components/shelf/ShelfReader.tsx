@@ -6,6 +6,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { useSessionDispatch, useSessionState } from '@/context/SessionContext';
 import { useSessionAutosave } from '@/hooks/useSessionAutosave';
 import { useTutorChat } from '@/hooks/useTutorChat';
+import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
 import { loadShelfDocument, saveShelfDocument, shelfSessionId } from '@/lib/db';
 import { openPdf } from '@/lib/pdf';
@@ -16,6 +17,9 @@ import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/
 import BottomToolbar from '@/components/layout/BottomToolbar';
 import ChatPanel from '@/components/chat/ChatPanel';
 import PdfPage from './PdfPage';
+
+// Whether marks are hidden on the page, remembered on this device for every PDF.
+const MARKS_HIDDEN_KEY = 'math-tutor:shelfMarksHidden';
 
 // Reading position is saved once the student stops turning pages.
 const PAGE_SAVE_DELAY_MS = 1000;
@@ -46,7 +50,8 @@ export default function ShelfReader() {
   const [tab, setTab] = useState<'page' | 'tutor'>('page');
   const [sectionStarts, setSectionStarts] = useState<SectionStart[]>([]);
   const [bookHasText, setBookHasText] = useState(true);
-  const [fullScreen, setFullScreen] = useState(false);
+  const { fullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
+  const [marksHidden, setMarksHidden] = useState(false);
   const switching = useRef(false);
   const book = useRef<{ pdf: PDFDocumentProxy; document: ShelfDocument; range: ReadingRange } | null>(null);
 
@@ -122,6 +127,16 @@ export default function ShelfReader() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [updateDocument]);
 
+  // Read in an effect: localStorage isn't there during server rendering.
+  useEffect(() => {
+    try { setMarksHidden(localStorage.getItem(MARKS_HIDDEN_KEY) === '1'); } catch { /* stays shown */ }
+  }, []);
+  const toggleMarksHidden = () => {
+    const next = !marksHidden;
+    setMarksHidden(next);
+    try { localStorage.setItem(MARKS_HIDDEN_KEY, next ? '1' : '0'); } catch { /* only for this visit */ }
+  };
+
   // Remember the page for next time.
   useEffect(() => {
     const current = documentRef.current;
@@ -146,21 +161,6 @@ export default function ShelfReader() {
     });
   }, [isSolved, openId, shelfDocument, currentSessionId]);
 
-  // Full screen gives the board the whole window, and the whole screen where the browser allows
-  // it (hiding its own bars on a tablet). Leaving the browser's full screen (Esc) leaves both.
-  const leaveFullScreen = useCallback(() => {
-    setFullScreen(false);
-    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
-  }, []);
-  const enterFullScreen = () => {
-    setFullScreen(true);
-    void document.documentElement.requestFullscreen?.().catch(() => undefined);
-  };
-  useEffect(() => {
-    const onChange = () => { if (!document.fullscreenElement) setFullScreen(false); };
-    document.addEventListener('fullscreenchange', onChange);
-    return () => document.removeEventListener('fullscreenchange', onChange);
-  }, []);
   // Only a board can be full screen.
   useEffect(() => { if (!openId) leaveFullScreen(); }, [openId, leaveFullScreen]);
 
@@ -262,7 +262,8 @@ export default function ShelfReader() {
   if (!shelfDocument || !pdf) return <div className="p-6 text-gray-500">Opening PDF…</div>;
 
   const exercise = openExerciseForBook;
-  const marksOnPage = shelfDocument.exercises.filter((item) => item.page === page);
+  // Hidden marks come back while marking, so the same exercise isn't marked twice.
+  const marksOnPage = marksHidden && !marking ? [] : shelfDocument.exercises.filter((item) => item.page === page);
   const pageCount = pdf.numPages;
 
   return (
@@ -306,6 +307,13 @@ export default function ShelfReader() {
                 <button onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page >= pageCount} aria-label="Next page"
                   className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40">Next ›</button>
                 <div className="flex-1" />
+                {shelfDocument.exercises.length > 0 && (
+                  <button onClick={toggleMarksHidden} aria-pressed={marksHidden} disabled={marking}
+                    title={marksHidden ? 'Show the marked exercises on the page' : 'Hide the marked exercises to read the page clean'}
+                    className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40">
+                    {marksHidden ? 'Show marks' : 'Hide marks'}
+                  </button>
+                )}
                 <button
                   onClick={() => { setMarking((on) => !on); setPendingMark(null); }}
                   aria-pressed={marking}
@@ -373,10 +381,6 @@ export default function ShelfReader() {
                     title="Put the marked problem on the board to write on and around it"
                     className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Put on board</button>
                 )}
-                <button onClick={() => (fullScreen ? leaveFullScreen() : enterFullScreen())} aria-pressed={fullScreen}
-                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
-                  {fullScreen ? 'Exit full screen' : 'Full screen'}
-                </button>
                 {!fullScreen && exercise.page !== page && (
                   <button onClick={() => { setPage(exercise.page); setTab('page'); }} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Show page</button>
                 )}
@@ -393,6 +397,7 @@ export default function ShelfReader() {
                 isSolved={isSolved}
                 onToggleSolved={() => sessionDispatch({ type: 'TOGGLE_SOLVED' })}
                 sessionType="problem"
+                fullScreen={{ on: fullScreen, toggle: toggleFullScreen }}
               />
             </>
           ) : (

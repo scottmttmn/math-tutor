@@ -6,6 +6,7 @@ import { SessionProvider, useSessionState, useSessionDispatch } from '@/context/
 import { useTutorChat } from '@/hooks/useTutorChat';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
 import { useSessionAutosave } from '@/hooks/useSessionAutosave';
+import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
 
 import { getModelLabel, subscribeModelConfig } from '@/lib/modelConfig';
 
@@ -27,6 +28,7 @@ function AppContent() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const modelLabel = useSyncExternalStore(subscribeModelConfig, getModelLabel, () => '');
   const [chatOpen, setChatOpen] = useState(false);
+  const { fullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
 
   const { currentSessionId, isStreaming, isSolved, sessionType } = useSessionState();
   const sessionDispatch = useSessionDispatch();
@@ -46,9 +48,11 @@ function AppContent() {
     const handle = canvasHandle.current;
     sentRevision.current = handle?.getRevision() ?? null;
     const image = await handle?.captureImage() ?? '';
+    // The reply shows in the chat beside the board.
+    leaveFullScreen();
     setChatOpen(true);
     await sendHelp(image);
-  }, [sendHelp]);
+  }, [sendHelp, leaveFullScreen]);
 
   const getFollowUpImage = useCallback(async (): Promise<string> => {
     const handle = canvasHandle.current;
@@ -87,7 +91,7 @@ function AppContent() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      <TopBar
+      {!fullScreen && <TopBar
         onNew={handleNew}
         saveStatus={saveStatus}
         onSave={() => void saveNow()}
@@ -97,14 +101,17 @@ function AppContent() {
         modelLabel={modelLabel}
         chatOpen={chatOpen}
         onToggleChat={() => setChatOpen((o) => !o)}
-      />
+      />}
 
       <div className="flex-1 flex overflow-hidden">
         {/* Left panel: workspace */}
         <div className="flex-[3] flex flex-col min-w-0">
-          {sessionType === 'note'
+          {!fullScreen && (sessionType === 'note'
             ? <NoteHeader />
-            : <ProblemStatement onCaptureProblemImage={handleSetProblemImage} />}
+            : <ProblemStatement
+                onCaptureProblemImage={handleSetProblemImage}
+                onPutOnBoard={(image) => void canvasHandle.current?.placeProblemImage(image)}
+              />)}
           <div className="flex-1 relative min-h-0">
             <DrawingCanvas handleRef={canvasHandle} />
           </div>
@@ -115,11 +122,12 @@ function AppContent() {
             isSolved={isSolved}
             onToggleSolved={() => sessionDispatch({ type: 'TOGGLE_SOLVED' })}
             sessionType={sessionType}
+            fullScreen={{ on: fullScreen, toggle: toggleFullScreen }}
           />
         </div>
 
         {/* Right panel: chat (collapsible) */}
-        {chatOpen && (
+        {chatOpen && !fullScreen && (
           <div className="flex-[2] min-w-[300px] border-l border-gray-200">
             <ChatPanel getCanvasImage={getFollowUpImage} />
           </div>

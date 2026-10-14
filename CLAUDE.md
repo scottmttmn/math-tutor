@@ -127,7 +127,8 @@ src/
 - PDFs live in the IndexedDB store `shelf` (db version 2) as `ShelfDocument`s: the file Blob, a cover, the last page read, and the marked `exercises` (`page` plus a `rect` in fractions of the page).
 - Marking an exercise crops that region to a PNG (`cropPage`) and creates its board, the session `shelf:<document id>:<exercise id>`, with the crop as `problemImage` (so the tutor gets it as the problem figure) and `exerciseStatement` as the problem text. History lists these once they hold work and opens them at `/shelf/read?doc=…&open=…`.
 - **Book pages for the tutor** (`src/lib/bookContext.ts`): with every question on a Shelf board, the reader sends the text of the pages leading up to the exercise as `bookContext`. They run from the last PDF bookmark at or before the exercise's page (skipping "Exercises"/"Answers" bookmarks), or the 6 pages before it without bookmarks, to the exercise's page; never past it (answer keys sit later), at most `MAX_BOOK_PAGES` (15). The student can change the start or turn it off on the board (`ShelfExercise.readFrom`, 0 = off), and later exercises in the same section reuse that choice. Scans with no text layer send nothing.
-- On a Shelf board, **Put on board** places the crop on the canvas as a locked image shape (`meta.problemImage`, once per board; Clear leaves it). The tutor then sees it twice: as `problemImage` and inside the board export, which is what lets it read work written on the figure. **Full screen** hides the page and header and asks the browser for full screen; Esc or Ask for Help leaves it.
+- **Put on board** (Shelf board header; main page beside the captured problem) places `problemImage` on the canvas as a locked image shape (`meta.problemImage`, once per board; Clear leaves it). The tutor then sees it twice: as `problemImage` and inside the board export, which is what lets it read work written on the figure.
+- **Hide marks** (page toolbar) hides the exercise marks on every page, remembered in `localStorage` (`math-tutor:shelfMarksHidden`); they come back while marking. Page notes, when added, should hide and show with them.
 - The reader uses `useSessionAutosave(handle, { reopenLast: false })`: the same autosave as the main page, but it never touches `math-tutor:currentSession`; the URL says which board is open.
 - Removing a mark or a PDF deletes the boards with it (and their recovery copies).
 - **Single problem** saves a new free-form session whose `problemImage` is the picture (or a PDF's first page), sets it as the main page's current session and goes to `/`.
@@ -235,6 +236,9 @@ ESLint uses the Next.js core web vitals config. Run `npm run lint` before commit
 - **Reload:** the open session's id is kept in `localStorage` (`math-tutor:currentSession`) and reopened on load. On `pagehide`/hidden it stages a synchronous recovery copy via `src/lib/sessionRecovery.ts` (shared with the workbook); a session reopened from that copy is written back to IndexedDB.
 - **Open / New:** `openSession` (from History) / `startNew` save the current session first, then load. Deleting the open session starts a new one without saving it again.
 - **New:** the **New** button in `TopBar` is a dropdown — *New Problem* or *New Notes* — which passes a `SessionType` to `AppShell.handleNew()`.
+
+### Full screen
+- Every board (main page, workbook exercise, Shelf) has a **Full screen** button in `BottomToolbar` (`fullScreen` prop), driven by `useBoardFullScreen`: the page hides everything but the board and toolbar and asks the browser for full screen. Esc, Exit full screen or Ask for Help (so the reply is visible) leaves it.
 
 ### Keyboard Shortcuts
 Registered once in `AppShell` (handlers read latest values through refs):

@@ -12,6 +12,7 @@ import { loadRecoveredSession, saveRecoverableSession, settleInterruptedReplies,
 import type { Session, WorkbookContext } from '@/types';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
+import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
 import ChatMessage from '@/components/chat/ChatMessage';
 import ChatTextarea from '@/components/chat/ChatTextarea';
 
@@ -38,6 +39,7 @@ function WorkbookContent() {
   const [saveError, setSaveError] = useState('');
   const [completedIds, setCompletedIds] = useState<string[]>([]);
   const canvasRef = useRef<DrawingCanvasHandle>(null);
+  const { fullScreen: boardFullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
   const readingScrollRef = useRef<HTMLDivElement>(null);
   const readingScrollTop = useRef(0);
   const readingTargetRef = useRef<string | null>(null);
@@ -52,6 +54,9 @@ function WorkbookContent() {
   const sessionDispatch = useSessionDispatch();
 
   const exercise = content.exercises.find((item) => item.id === exerciseId) ?? null;
+  // Only an exercise has a board to give the screen to.
+  const fullScreen = boardFullScreen && Boolean(exercise);
+  useEffect(() => { if (!exercise && boardFullScreen) leaveFullScreen(); }, [exercise, boardFullScreen, leaveFullScreen]);
   const workbookContext: WorkbookContext = useMemo(() => exercise
     ? { kind: 'exercise', sectionId: content.id, exerciseId: exercise.id }
     : { kind: 'reading', sectionId: content.id, selectedPassage },
@@ -244,6 +249,8 @@ function WorkbookContent() {
     if (!exercise || isStreaming || getTutorWaitMs() > 0) return;
     sentRevision.current = canvasRef.current?.getRevision() ?? null;
     const image = await canvasRef.current?.captureImage() ?? '';
+    // The reply shows in the tutor panel beside the board.
+    leaveFullScreen();
     await sendHelp(image, 'Please look at my current work and give me a hint about the next step.');
   };
 
@@ -262,8 +269,8 @@ function WorkbookContent() {
   };
 
   return (
-    <div className={`${exercise ? 'min-h-screen lg:h-screen' : 'h-screen'} flex flex-col bg-gray-50`}>
-      <header className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-white">
+    <div className={`${exercise && !fullScreen ? 'min-h-screen lg:h-screen' : 'h-screen'} flex flex-col bg-gray-50`}>
+      <header className={`${fullScreen ? 'hidden' : 'flex'} items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-white`}>
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <Link href="/" onClick={(event) => { if (isStreaming) event.preventDefault(); }} aria-disabled={isStreaming} className="text-blue-700 hover:underline">Math Tutor</Link>
@@ -277,11 +284,11 @@ function WorkbookContent() {
       {saveError && <div role="alert" className="px-4 py-2 text-sm text-red-700 bg-red-50 border-b border-red-100">{saveError}</div>}
 
       {!ready ? <div className="p-6 text-gray-500">{saveError ? <button className="text-blue-700 underline" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Retry loading progress</button> : 'Loading workbook…'}</div> : (
-        <div className={`flex-1 flex flex-col lg:flex-row ${exercise ? 'lg:min-h-0' : 'min-h-0'}`}>
-          <main className={`flex-1 min-w-0 flex flex-col ${exercise ? 'min-h-[650px] lg:min-h-0' : 'min-h-0'}`}>
+        <div className={`flex-1 flex flex-col lg:flex-row ${exercise && !fullScreen ? 'lg:min-h-0' : 'min-h-0'}`}>
+          <main className={`flex-1 min-w-0 flex flex-col ${exercise && !fullScreen ? 'min-h-[650px] lg:min-h-0' : 'min-h-0'}`}>
             {exercise ? (
               <>
-                <div className="overflow-y-auto max-h-48 bg-white border-b border-gray-200 px-6 py-4">
+                <div className={`${fullScreen ? 'hidden' : ''} overflow-y-auto max-h-48 bg-white border-b border-gray-200 px-6 py-4`}>
                   <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Exercise {exercise.number}</div>
                   <SourceCredit exerciseId={exercise.id} />
                   <div className={contentClasses} onClick={(event) => {
@@ -291,11 +298,11 @@ function WorkbookContent() {
                     if (anchor) { event.preventDefault(); void openView(null, anchor); }
                   }} dangerouslySetInnerHTML={{ __html: exercise.html }} />
                 </div>
-                <div className="order-2 lg:order-none relative h-[60vh] min-h-[400px] flex-none lg:h-auto lg:min-h-0 lg:flex-1">
+                <div className={`order-2 lg:order-none relative ${fullScreen ? 'flex-1 min-h-0' : 'h-[60vh] min-h-[400px] flex-none lg:h-auto lg:min-h-0 lg:flex-1'}`}>
                   <DrawingCanvas handleRef={canvasRef} />
                 </div>
                 <div className="order-1 lg:order-none">
-                  <BottomToolbar onAskForHelp={() => void reviewWhiteboard()} isStreaming={isStreaming} isSolved={isSolved} onToggleSolved={toggleComplete} onClear={() => canvasRef.current?.clear()} sessionType="problem" completionLabel="attempt" />
+                  <BottomToolbar onAskForHelp={() => void reviewWhiteboard()} isStreaming={isStreaming} isSolved={isSolved} onToggleSolved={toggleComplete} onClear={() => canvasRef.current?.clear()} sessionType="problem" completionLabel="attempt" fullScreen={{ on: fullScreen, toggle: toggleFullScreen }} />
                 </div>
               </>
             ) : (
@@ -323,7 +330,7 @@ function WorkbookContent() {
             )}
           </main>
 
-          <aside className={`${exercise ? 'h-[320px]' : 'h-[38vh]'} lg:h-auto lg:w-[380px] lg:border-l border-t lg:border-t-0 border-gray-200 bg-white flex flex-col shrink-0`}>
+          <aside className={`${fullScreen ? 'hidden' : 'flex'} ${exercise ? 'h-[320px]' : 'h-[38vh]'} lg:h-auto lg:w-[380px] lg:border-l border-t lg:border-t-0 border-gray-200 bg-white flex-col shrink-0`}>
             <div className="px-4 py-3 border-b border-gray-200">
               <h2 className="font-semibold text-gray-900">{exercise ? 'Problem tutor' : 'Reading tutor'}</h2>
               <p className="text-xs text-gray-500">{exercise ? 'Ask about your approach or submit your whiteboard for a hint. The tutor will not give a complete solution.' : 'Ask about the text or a selected passage as you read.'}</p>

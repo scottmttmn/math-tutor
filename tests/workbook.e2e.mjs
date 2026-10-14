@@ -190,6 +190,15 @@ try {
   assert.ok(imageOf(request)?.startsWith('data:image/png;base64,'));
   console.log('PASS selected shapes reach the provider trimmed; follow-ups attach the board only after it changes; five-second limit rejects bursts');
 
+  // Full screen hides the header, exercise and tutor; the board keeps its strokes.
+  await page.getByRole('button', { name: 'Full screen' }).click();
+  await page.getByRole('button', { name: 'Back to reading' }).waitFor({ state: 'hidden' });
+  assert.equal(await page.getByRole('heading', { name: 'Problem tutor' }).isVisible(), false);
+  await page.locator('.tl-shape').first().waitFor();
+  await page.getByRole('button', { name: 'Exit full screen' }).click();
+  await page.getByRole('heading', { name: 'Problem tutor' }).waitFor();
+  console.log('PASS full-screen exercise board');
+
   await page.getByRole('button', { name: 'Back to reading' }).click(); await waitReading();
   assert.ok(await page.getByText('Reading explanation.', { exact: true }).last().isVisible());
   assert.equal(await page.locator('main > div').evaluate((reader) => reader.scrollTop), readingPosition);
