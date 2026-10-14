@@ -111,6 +111,10 @@ test('the tutor memory goes into the backup and comes back; a malformed one is l
   written.length = 0;
   await backup.restoreFromFiles([asFile(new Blob([JSON.stringify({ ...manifest, profile: { aboutMe: 3 } })]), 'backup.json')]);
   assert.equal(written[0].profile, undefined);
+  // Malformed topics are dropped; the rest of the memory comes back.
+  written.length = 0;
+  await backup.restoreFromFiles([asFile(new Blob([JSON.stringify({ ...manifest, profile: { ...profile, topics: [null, { id: 1 }, { ...profile.topics[0], rating: 'great' }, ...profile.topics] } })]), 'backup.json')]);
+  assert.deepEqual(written[0].profile, profile);
   assert.notEqual(backup.backupFingerprint([], [], profile), backup.backupFingerprint([], [], { updatedAt: 8 }));
   assert.notEqual(backup.backupFingerprint([], [], profile), backup.backupFingerprint([], []));
 });

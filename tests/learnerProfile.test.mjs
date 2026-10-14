@@ -29,6 +29,10 @@ test("the student's own topics stay until removed, rated or not", () => {
   assert.deepEqual(profile.topics, [{ id: topicId(OWN_AREA, 'Fourier series'), name: 'Fourier series', area: OWN_AREA, rating: null }]);
   assert.equal(addOwnTopic(profile, 'Fourier series'), profile);
   assert.equal(addOwnTopic(profile, '   '), profile);
+  assert.equal(addOwnTopic(profile, 'FOURIER SERIES'), profile);
+  // Names that slug alike, or have no ASCII letters, are still different topics.
+  const own = ['C++', 'C#', 'Théorie de Galois', '群论'].reduce((current, name) => addOwnTopic(current, name), emptyProfile());
+  assert.equal(new Set(own.topics.map((topic) => topic.id)).size, 4);
   assert.equal(isProfileEmpty(profile), true);
   profile = rateTopic(profile, OWN_AREA, 'Fourier series', 'learning', 2);
   profile = rateTopic(profile, OWN_AREA, 'Fourier series', null, 3);

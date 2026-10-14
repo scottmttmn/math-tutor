@@ -1,6 +1,9 @@
 import { listSessions, listShelf, loadProfile, restoreRecords } from '@/lib/db';
 import { readZip, writeZip } from '@/lib/zip';
-import type { BackupManifest, LearnerProfile, RestoreResult, Session, ShelfDocument } from '@/types';
+import { RATINGS } from '@/lib/learnerProfile';
+import type { BackupManifest, LearnerProfile, ProfileTopic, RestoreResult, Session, ShelfDocument, TopicRating } from '@/types';
+
+const TOPIC_RATINGS: (TopicRating | null)[] = RATINGS.map((option) => option.rating);
 
 // A backup is backup.json (every board, with its thumbnail and problem picture, and every Shelf
 // entry with its cover and marks) plus each Shelf PDF as pdfs/<id>.pdf. The download is all of it
@@ -106,7 +109,13 @@ export async function restoreManifest(manifest: BackupManifest, pdfs: Map<string
 function validProfile(profile: unknown): LearnerProfile | undefined {
   const candidate = profile as LearnerProfile | undefined;
   if (!candidate || typeof candidate.aboutMe !== 'string' || !Array.isArray(candidate.topics) || !Number.isFinite(candidate.updatedAt)) return undefined;
-  return { ...candidate, shareWithTutor: candidate.shareWithTutor !== false };
+  // A malformed topic is dropped rather than losing the rest.
+  const topics = (candidate.topics as unknown[]).filter((topic): topic is ProfileTopic => {
+    const t = topic as ProfileTopic | null;
+    return !!t && typeof t.id === 'string' && typeof t.name === 'string' && typeof t.area === 'string'
+      && (t.rating === null || TOPIC_RATINGS.includes(t.rating));
+  }).map(({ id, name, area, rating }) => ({ id, name, area, rating }));
+  return { aboutMe: candidate.aboutMe, topics, shareWithTutor: candidate.shareWithTutor !== false, updatedAt: candidate.updatedAt };
 }
 
 // A folder picked with <input webkitdirectory> names files from the picked folder ("Backup/pdfs/x.pdf").

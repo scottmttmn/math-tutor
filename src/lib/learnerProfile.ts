@@ -19,7 +19,9 @@ export const TOPIC_AREAS: { area: string; topics: string[] }[] = [
 export const OWN_AREA = 'Your topics';
 
 const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-export const topicId = (area: string, name: string) => `${slug(area)}/${slug(name)}`;
+/** Catalog ids are readable slugs; the student's own keep the whole name (lowercased), so "C++" and "C#" stay apart. */
+export const topicId = (area: string, name: string) =>
+  `${slug(area)}/${area === OWN_AREA ? encodeURIComponent(name.trim().toLowerCase()) : slug(name)}`;
 
 export const RATINGS: { rating: TopicRating; label: string; meaning: string }[] = [
   { rating: 'solid', label: 'Solid', meaning: 'I know this well' },
