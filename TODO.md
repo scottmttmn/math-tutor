@@ -37,6 +37,14 @@ Done: **Shelf** (top bar) holds PDFs added or dropped in. Open one to read it pa
 
 - A local, user-editable learner profile, summarized after each session and sent with tutor requests (not the raw history).
 - Kept in app storage, so it moves with the app to the tablet.
+- **Self-assessment** (optional): pick topics and rate each one (solid, rusty, learning, never seen), plus a free-text "About me". This is the tutor's starting picture of the learner.
+- Each topic in the profile has a level and how sure the tutor is of it. Everyday boards keep updating it, so one old answer never fixes a wrong picture in place.
+
+### 6. Skill check-in
+
+- Optional and short, never required. Starting from the self-assessment, the tutor skips topics rated solid or never seen and asks a few problems on the uncertain ones: harder after a right answer, easier after a miss, stopping once it is confident.
+- Answers are handwritten on a normal board, so it stays pen-first and reuses the existing tutor flow.
+- Results write into the tutor-memory profile (levels and confidence), which the learner can see and edit. Also available later as **Check me on this topic** for one area.
 
 ## After the MVP
 
