@@ -46,12 +46,13 @@ export default function ShelfReader() {
   const [tab, setTab] = useState<'page' | 'tutor'>('page');
   const [sectionStarts, setSectionStarts] = useState<SectionStart[]>([]);
   const [bookHasText, setBookHasText] = useState(true);
+  const [fullScreen, setFullScreen] = useState(false);
   const switching = useRef(false);
   const book = useRef<{ pdf: PDFDocumentProxy; document: ShelfDocument; range: ReadingRange } | null>(null);
 
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
   const sentRevision = useRef<number | null>(null);
-  const { isStreaming, isSolved, currentSessionId } = useSessionState();
+  const { isStreaming, isSolved, currentSessionId, problemImage } = useSessionState();
   const sessionDispatch = useSessionDispatch();
   // The pages before the open exercise, read when a question is sent (each page's text is kept).
   const getBookContext = useCallback(async (): Promise<BookContext | null> => {
@@ -145,6 +146,24 @@ export default function ShelfReader() {
     });
   }, [isSolved, openId, shelfDocument, currentSessionId]);
 
+  // Full screen gives the board the whole window, and the whole screen where the browser allows
+  // it (hiding its own bars on a tablet). Leaving the browser's full screen (Esc) leaves both.
+  const leaveFullScreen = useCallback(() => {
+    setFullScreen(false);
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+  }, []);
+  const enterFullScreen = () => {
+    setFullScreen(true);
+    void document.documentElement.requestFullscreen?.().catch(() => undefined);
+  };
+  useEffect(() => {
+    const onChange = () => { if (!document.fullscreenElement) setFullScreen(false); };
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  // Only a board can be full screen.
+  useEffect(() => { if (!openId) leaveFullScreen(); }, [openId, leaveFullScreen]);
+
   const closeExercise = async () => {
     if (!shelfDocument || isStreaming || switching.current) return;
     switching.current = true;
@@ -217,6 +236,8 @@ export default function ShelfReader() {
     const handle = canvasHandle.current;
     sentRevision.current = handle?.getRevision() ?? null;
     const image = await handle?.captureImage() ?? '';
+    // The reply shows beside the board.
+    leaveFullScreen();
     setTab('tutor');
     await sendHelp(image);
   };
@@ -246,7 +267,7 @@ export default function ShelfReader() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-white">
+      <header className={`${fullScreen ? 'hidden' : 'flex'} flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-white`}>
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <Link href="/" className="text-blue-700 hover:underline">Math Tutor</Link><span>›</span>
@@ -265,7 +286,7 @@ export default function ShelfReader() {
 
       {/* Side by side on wide screens; page above board on a tablet held upright, both in view. */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
-        <section className="basis-[45%] lg:basis-auto lg:flex-1 min-w-0 min-h-0 flex flex-col border-b lg:border-b-0 border-gray-200">
+        <section className={`${fullScreen ? 'hidden' : 'flex'} basis-[45%] lg:basis-auto lg:flex-1 min-w-0 min-h-0 flex-col border-b lg:border-b-0 border-gray-200`}>
           <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-white border-b border-gray-200">
             {exercise && (
               <div className="flex rounded-lg border border-gray-300 overflow-hidden" role="group" aria-label="Show">
@@ -322,7 +343,7 @@ export default function ShelfReader() {
           )}
         </section>
 
-        <section className="flex-1 lg:flex-none lg:w-1/2 min-h-0 flex flex-col lg:border-l border-gray-200 bg-white">
+        <section className={`flex-1 ${fullScreen ? '' : 'lg:flex-none lg:w-1/2'} min-h-0 flex flex-col lg:border-l border-gray-200 bg-white`}>
           {exercise ? (
             <>
               <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200">
@@ -347,10 +368,19 @@ export default function ShelfReader() {
                     {range && !bookHasText && <span className="text-amber-700"> · no text in this PDF to read</span>}
                   </p>
                 </div>
-                {exercise.page !== page && (
+                {problemImage && (
+                  <button onClick={() => void canvasHandle.current?.placeProblemImage(problemImage)}
+                    title="Put the marked problem on the board to write on and around it"
+                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Put on board</button>
+                )}
+                <button onClick={() => (fullScreen ? leaveFullScreen() : enterFullScreen())} aria-pressed={fullScreen}
+                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+                  {fullScreen ? 'Exit full screen' : 'Full screen'}
+                </button>
+                {!fullScreen && exercise.page !== page && (
                   <button onClick={() => { setPage(exercise.page); setTab('page'); }} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Show page</button>
                 )}
-                <button onClick={() => void removeMark(exercise)} disabled={isStreaming} className="px-3 py-1.5 text-sm text-red-600 border border-red-200 bg-red-50 rounded-lg hover:bg-red-100 disabled:opacity-50">Remove</button>
+                {!fullScreen && <button onClick={() => void removeMark(exercise)} disabled={isStreaming} className="px-3 py-1.5 text-sm text-red-600 border border-red-200 bg-red-50 rounded-lg hover:bg-red-100 disabled:opacity-50">Remove</button>}
                 <button onClick={() => void closeExercise()} disabled={isStreaming} aria-label="Close board" className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">Close</button>
               </div>
               <div className="relative flex-1 min-h-0">
