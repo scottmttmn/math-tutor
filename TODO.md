@@ -25,9 +25,9 @@ Done: **History** (top bar) replaces the Load popup with a full-screen grid of e
 
 Done: **Shelf** (top bar) holds PDFs added or dropped in. Open one to read it page by page; **Mark exercise** and drag a box around a problem, and it opens on its own board beside the page (below it on an upright tablet), stays marked on the page (✓ once solved), and shows in History. **Single problem** puts a picture or a PDF's first page straight onto a new board. Works offline; the tutor gets the marked region as the problem figure, plus the text of the book pages leading up to it (from the section's bookmark, at most 15 pages, never past the exercise; adjustable or off on the board).
 
-Every board has **Full screen** (in its toolbar), and a problem picture can be **put on the board**. **Hide marks** reads a Shelf page clean.
+Every board has **Full screen** (in its toolbar), and a problem picture can be **put on the board**. **Hide tools** collapses the drawing tools, and the Shelf's Exercises list can be hidden so the page gets the full width.
 
-- Next: **notes on Shelf pages**, marked like exercises and hidden and shown with them.
+- Next: **notes on Shelf pages**, listed beside the page with the exercises and hidden with that list.
 - Still to do: a PDF's pages scroll one at a time (no continuous scroll or zoom yet); marks can't be moved or renamed after saving.
 
 ### 4. Export and auto-backup

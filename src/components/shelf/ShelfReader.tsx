@@ -7,6 +7,7 @@ import { useSessionDispatch, useSessionState } from '@/context/SessionContext';
 import { useSessionAutosave } from '@/hooks/useSessionAutosave';
 import { useTutorChat } from '@/hooks/useTutorChat';
 import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
+import { useToolsHidden } from '@/hooks/useToolsHidden';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
 import { loadShelfDocument, saveShelfDocument, shelfSessionId } from '@/lib/db';
 import { openPdf } from '@/lib/pdf';
@@ -18,8 +19,6 @@ import BottomToolbar from '@/components/layout/BottomToolbar';
 import ChatPanel from '@/components/chat/ChatPanel';
 import PdfPage from './PdfPage';
 
-// Whether marks are hidden on the page, remembered on this device for every PDF.
-const MARKS_HIDDEN_KEY = 'math-tutor:shelfMarksHidden';
 // Whether the Exercises list beside the page is hidden, so the page gets the width.
 const LIST_HIDDEN_KEY = 'math-tutor:shelfListHidden';
 
@@ -53,7 +52,7 @@ export default function ShelfReader() {
   const [sectionStarts, setSectionStarts] = useState<SectionStart[]>([]);
   const [bookHasText, setBookHasText] = useState(true);
   const { fullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
-  const [marksHidden, setMarksHidden] = useState(false);
+  const { toolsHidden, toggleTools } = useToolsHidden();
   const [listHidden, setListHidden] = useState(false);
   const switching = useRef(false);
   const book = useRef<{ pdf: PDFDocumentProxy; document: ShelfDocument; range: ReadingRange } | null>(null);
@@ -132,19 +131,11 @@ export default function ShelfReader() {
 
   // Read in an effect: localStorage isn't there during server rendering.
   useEffect(() => {
-    try {
-      setMarksHidden(localStorage.getItem(MARKS_HIDDEN_KEY) === '1');
-      setListHidden(localStorage.getItem(LIST_HIDDEN_KEY) === '1');
-    } catch { /* stays shown */ }
+    try { setListHidden(localStorage.getItem(LIST_HIDDEN_KEY) === '1'); } catch { /* stays shown */ }
   }, []);
   const changeListHidden = (next: boolean) => {
     setListHidden(next);
     try { localStorage.setItem(LIST_HIDDEN_KEY, next ? '1' : '0'); } catch { /* only for this visit */ }
-  };
-  const toggleMarksHidden = () => {
-    const next = !marksHidden;
-    setMarksHidden(next);
-    try { localStorage.setItem(MARKS_HIDDEN_KEY, next ? '1' : '0'); } catch { /* only for this visit */ }
   };
 
   // Remember the page for next time.
@@ -272,10 +263,9 @@ export default function ShelfReader() {
   if (!shelfDocument || !pdf) return <div className="p-6 text-gray-500">Opening PDF…</div>;
 
   const exercise = openExerciseForBook;
-  // Hidden marks come back while marking, so the same exercise isn't marked twice.
   // An open board always shows; with none open, the list can make way for the page.
   const pageOnly = listHidden && !exercise;
-  const marksOnPage = marksHidden && !marking ? [] : shelfDocument.exercises.filter((item) => item.page === page);
+  const marksOnPage = shelfDocument.exercises.filter((item) => item.page === page);
   const pageCount = pdf.numPages;
 
   return (
@@ -319,13 +309,6 @@ export default function ShelfReader() {
                 <button onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page >= pageCount} aria-label="Next page"
                   className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40">Next ›</button>
                 <div className="flex-1" />
-                {shelfDocument.exercises.length > 0 && (
-                  <button onClick={toggleMarksHidden} aria-pressed={marksHidden} disabled={marking}
-                    title={marksHidden ? 'Show the marked exercises on the page' : 'Hide the marked exercises to read the page clean'}
-                    className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40">
-                    {marksHidden ? 'Show marks' : 'Hide marks'}
-                  </button>
-                )}
                 {pageOnly && (
                   <button onClick={() => changeListHidden(false)} title="Show the list of marked exercises beside the page"
                     className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50">Exercises</button>
@@ -404,7 +387,7 @@ export default function ShelfReader() {
                 <button onClick={() => void closeExercise()} disabled={isStreaming} aria-label="Close board" className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">Close</button>
               </div>
               <div className="relative flex-1 min-h-0">
-                <DrawingCanvas handleRef={canvasHandle} />
+                <DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} />
               </div>
               <BottomToolbar
                 onAskForHelp={() => void askForHelp()}
@@ -414,6 +397,7 @@ export default function ShelfReader() {
                 onToggleSolved={() => sessionDispatch({ type: 'TOGGLE_SOLVED' })}
                 sessionType="problem"
                 fullScreen={{ on: fullScreen, toggle: toggleFullScreen }}
+                tools={{ hidden: toolsHidden, toggle: toggleTools }}
               />
             </>
           ) : (

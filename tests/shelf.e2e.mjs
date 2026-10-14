@@ -171,22 +171,19 @@ try {
   await page.getByRole('button', { name: 'Ask for Help' }).click();
   await page.getByRole('button', { name: 'Full screen' }).waitFor();
   await page.getByText('Shelf hint.').last().waitFor();
+  // Hiding the tools leaves the pen writing; the choice survives a reload.
+  await page.locator('.tlui-layout').waitFor();
+  await page.getByRole('button', { name: 'Hide tools' }).click();
+  await page.locator('.tlui-layout').waitFor({ state: 'detached' });
+  const before = await shapeCount();
+  await drawStroke(200);
+  await page.waitForTimeout(300);
+  assert.equal(await shapeCount(), before + 1, 'the pen still writes');
+  await page.reload();
+  await page.getByRole('button', { name: 'Show tools' }).click();
+  await page.locator('.tlui-layout').waitFor();
   console.log('PASS the problem goes on the board; full screen board');
 
-  // Marks can be hidden to read the page clean; marking brings them back.
-  await page.getByRole('button', { name: 'Page', exact: true }).click();
-  await page.getByRole('button', { name: 'Open Exercise 1' }).waitFor();
-  await page.getByRole('button', { name: 'Hide marks' }).click();
-  await page.getByRole('button', { name: 'Open Exercise 1' }).waitFor({ state: 'detached' });
-  await page.getByRole('button', { name: 'Mark exercise' }).click();
-  await page.getByRole('button', { name: 'Open Exercise 1' }).waitFor();
-  await page.getByRole('button', { name: 'Done marking' }).click();
-  await page.getByRole('button', { name: 'Open Exercise 1' }).waitFor({ state: 'detached' });
-  await page.reload();
-  await exerciseHeading('Exercise 1').waitFor();
-  await page.getByRole('button', { name: 'Show marks' }).click();
-  await page.getByRole('button', { name: 'Open Exercise 1' }).waitFor();
-  console.log('PASS marks hide, stay hidden after reload, and show while marking');
 
   // History lists the exercise with work in it (not the empty one) and opens it beside its page.
   await page.getByRole('button', { name: 'Close board' }).click();
