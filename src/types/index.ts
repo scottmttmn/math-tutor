@@ -221,3 +221,13 @@ export interface TutorStreamEvent {
   usage?: TokenUsage;
   error?: string;
 }
+
+/** What /pen-test measured while the pen was down. */
+export interface PenTestStats {
+  /** Pen samples per second, coalesced ones included. */
+  samplesPerSecond: number;
+  /** Average time from a pen sample to the page handling it, in ms (screen refresh not included). */
+  inputDelayMs: number;
+  /** Longest gap between two handled events, in ms (a stall shows up here). */
+  worstGapMs: number;
+}

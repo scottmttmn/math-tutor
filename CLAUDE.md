@@ -36,6 +36,7 @@ src/
 │   ├── board/page.tsx         # A free board (renders AppShell; ?new=problem|note starts one)
 │   ├── shelf/page.tsx         # The Shelf: what you work from (PDFs of any kind, plus the built-in workbook)
 │   ├── shelf/read/page.tsx    # One Shelf PDF beside the open exercise's board (?doc=<id>&open=<exercise id>)
+│   ├── pen-test/page.tsx      # Bare canvas (no tldraw) for judging pen latency on a device, e.g. the BOOX
 │   ├── layout.tsx             # Root layout (metadata, fonts)
 │   └── globals.css            # Global Tailwind styles
 ├── components/
@@ -57,6 +58,8 @@ src/
 │   │   └── ChatInput.tsx      # Follow-up message input
 │   ├── home/
 │   │   └── Home.tsx           # Home page: Continue card, every board, workbook and Shelf exercise (thumbnails, search, filter, sort, rename), Shelf row
+│   ├── pentest/
+│   │   └── PenTest.tsx        # /pen-test: draws straight to a canvas, reports samples/s, event delay, longest gap
 │   ├── shelf/
 │   │   ├── Shelf.tsx          # Shelf grid: add PDFs, Single problem (image/PDF straight onto a new board), remove
 │   │   ├── ShelfReader.tsx    # Page viewer + mark exercises + the open exercise's board and tutor
@@ -207,7 +210,7 @@ npm run start  # Production server
 npm run lint   # ESLint
 npm run typecheck  # tsc --noEmit
 npm test       # Unit tests
-npm run test:e2e   # Browser tests (workbook, tutor chat, Shelf); needs `npm run start -- -p 3100` running
+npm run test:e2e   # Browser tests (workbook, tutor chat, Shelf, pen test); needs `npm run start -- -p 3100` running
 npm run handwriting  # Handwriting test: transcribe tests/handwriting/wacom/<page-id>.png with each model, score against tests/handwriting/pages.json (results in tests/handwriting/results/, gitignored). chatgpt:<model> entries go through the running app's /api/transcribe, so start the app and sign in first
 ```
 
