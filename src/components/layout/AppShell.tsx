@@ -92,7 +92,8 @@ function AppContent() {
       {!fullScreen && <TopBar
         onNew={handleNew}
         saveStatus={saveStatus}
-        onSave={() => void saveNow()}
+        onSave={saveNow}
+        isStreaming={isStreaming}
         chatOpen={chatOpen}
         onToggleChat={() => setChatOpen((o) => !o)}
       />}

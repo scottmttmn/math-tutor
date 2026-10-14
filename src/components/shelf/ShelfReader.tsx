@@ -271,7 +271,7 @@ export default function ShelfReader() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      {!fullScreen && <AppBar place="shelf" locked={isStreaming} />}
+      {!fullScreen && <AppBar place="shelf" locked={isStreaming} beforeLeave={saveNow} />}
       <header className={`${fullScreen ? 'hidden' : 'flex'} flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-white`}>
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs text-gray-500">

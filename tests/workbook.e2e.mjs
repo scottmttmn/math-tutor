@@ -306,11 +306,11 @@ try {
   await history.getByRole('button', { name: 'Open Modulus notes' }).waitFor();
   await history.getByRole('button', { name: 'Open Modulus notes' }).click();
   await page.waitForURL(`${origin}/board`);
+  // Leaving straight after an edit, inside the autosave delay, still saves before Home lists it.
   await page.getByPlaceholder("Topic or concept you're studying...").fill('Complex modulus and argument');
-  await page.waitForTimeout(1500); // Past the autosave delay.
-  await page.getByRole('status').getByText('Saved', { exact: true }).waitFor();
   await page.getByRole('link', { name: 'Home', exact: true }).click();
   await history.getByRole('button', { name: 'Open Modulus notes' }).waitFor();
+  await history.getByText('Complex modulus and argument').first().waitFor();
   console.log('PASS free-form Problem/Notes policies, autosave and reload, dictated follow-ups, and History search and rename');
 
   // Opening a workbook entry from History goes to that exercise.

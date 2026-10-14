@@ -6,19 +6,22 @@ import AppBar from './AppBar';
 interface Props {
   onNew: (type: SessionType) => void;
   saveStatus: AutosaveStatus;
-  onSave: () => void;
+  onSave: () => Promise<unknown>;
   chatOpen: boolean;
   onToggleChat: () => void;
+  /** A tutor reply is streaming in; leaving or starting a new board would lose it. */
+  isStreaming: boolean;
 }
 
 /** The app bar on a free board, with its save status and the chat toggle. */
-export default function TopBar({ onNew, saveStatus, onSave, chatOpen, onToggleChat }: Props) {
+export default function TopBar({ onNew, saveStatus, onSave, chatOpen, onToggleChat, isStreaming }: Props) {
   return (
-    <AppBar place="board" onNew={onNew}>
+    // Save before leaving, so Home lists the latest work.
+    <AppBar place="board" onNew={onNew} locked={isStreaming} beforeLeave={onSave}>
       {/* Sessions save themselves; this only reports it, or offers a retry after a failure. */}
       {saveStatus === 'error' ? (
         <button
-          onClick={onSave}
+          onClick={() => void onSave()}
           className="min-h-10 px-3 text-sm font-medium text-red-600 border border-red-200 bg-red-50 rounded-lg hover:bg-red-100"
           title="Your latest changes aren't saved"
         >

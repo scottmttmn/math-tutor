@@ -15,6 +15,8 @@ interface Props {
   onNew?: (type: SessionType) => void;
   /** Blocks leaving the page, e.g. while a tutor reply streams in. */
   locked?: boolean;
+  /** Runs before Home or Shelf opens, e.g. saving the board so Home lists the latest work. */
+  beforeLeave?: () => Promise<unknown>;
   /** Page-specific controls, shown before New. */
   children?: ReactNode;
 }
@@ -25,7 +27,7 @@ const PLACES: { place: AppPlace; href: string; label: string; icon: ReactNode }[
 ];
 
 /** The bar on every page: Home and Shelf, New, and Settings. Full screen hides it. */
-export default function AppBar({ place, onNew, locked = false, children }: Props) {
+export default function AppBar({ place, onNew, locked = false, beforeLeave, children }: Props) {
   const router = useRouter();
   const [newOpen, setNewOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -43,7 +45,7 @@ export default function AppBar({ place, onNew, locked = false, children }: Props
   const startNew = (type: SessionType) => {
     setNewOpen(false);
     if (onNew) onNew(type);
-    else router.push(`/board?new=${type}`);
+    else void (beforeLeave?.() ?? Promise.resolve()).catch(() => undefined).then(() => router.push(`/board?new=${type}`));
   };
 
   return (
@@ -56,7 +58,13 @@ export default function AppBar({ place, onNew, locked = false, children }: Props
           aria-label={item.label}
           aria-current={place === item.place ? 'page' : undefined}
           aria-disabled={locked}
-          onClick={(event) => { if (locked) event.preventDefault(); }}
+          onClick={(event) => {
+            if (locked) { event.preventDefault(); return; }
+            if (!beforeLeave) return;
+            event.preventDefault();
+            // Leave even if the save fails: the page's recovery copy keeps the work.
+            void beforeLeave().catch(() => undefined).then(() => router.push(item.href));
+          }}
           className={`flex items-center gap-1.5 min-h-10 px-3 text-sm rounded-lg ${
             place === item.place ? 'font-semibold text-gray-900 bg-gray-100' : 'text-gray-600 hover:bg-gray-50'
           } ${locked ? 'opacity-50' : ''}`}
