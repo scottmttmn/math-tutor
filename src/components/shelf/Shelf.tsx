@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { listShelf } from '@/lib/db';
 import { addToShelf, removeFromShelf, startProblemFromFile } from '@/lib/shelf';
 import type { ShelfDocument } from '@/types';
+import AppBar from '@/components/layout/AppBar';
 import BlobImage from '@/components/common/BlobImage';
 
 /** PDFs (books, assignments) kept for working through, plus a way to drop a single problem onto a board. */
@@ -47,7 +48,7 @@ export default function Shelf() {
     setBusy(`Opening ${file.name}…`);
     try {
       await startProblemFromFile(file);
-      router.push('/');
+      router.push('/board');
     } catch {
       setBusy('');
       setError(`${file.name} could not be opened. Use a PDF or an image.`);
@@ -70,10 +71,11 @@ export default function Shelf() {
         void add([...event.dataTransfer.files]);
       }}
     >
+      <AppBar place="shelf" />
       <header className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-white">
         <div className="min-w-0">
-          <div className="text-xs text-gray-500"><Link href="/" className="text-blue-700 hover:underline">Math Tutor</Link> <span>›</span> Shelf</div>
           <h1 className="font-semibold text-gray-900">Shelf</h1>
+          <p className="text-xs text-gray-500">What you work from: textbooks, problem sets, handouts.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => problemInput.current?.click()} disabled={Boolean(busy)} className="px-3 py-2 text-sm font-medium text-gray-700 border border-gray-300 bg-white rounded-lg hover:bg-gray-50 disabled:opacity-50">
@@ -96,16 +98,18 @@ export default function Shelf() {
       )}
 
       <main className={`flex-1 p-4 ${dragging ? 'outline-2 outline-dashed outline-blue-400 -outline-offset-8 bg-blue-50' : ''}`}>
-        {documents === null ? null : documents.length === 0 ? (
-          <div className="max-w-md mx-auto text-center text-sm text-gray-500 py-16 space-y-2">
-            <p className="text-base text-gray-700">Your Shelf is empty.</p>
-            <p>Add a book or an assignment as a PDF, or drop one here. Mark exercises on its pages and each one gets its own board beside the page.</p>
-            <p>For one problem, <strong>Single problem</strong> puts a picture or PDF straight onto a new board.</p>
-          </div>
-        ) : (
+        {documents === null ? null : (
           <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            <li><WorkbookCover /></li>
             {documents.map((document) => <ShelfCard key={document.id} document={document} onRemove={() => remove(document)} />)}
           </ul>
+        )}
+        {documents?.length === 0 && (
+          <div className="max-w-md mx-auto text-center text-sm text-gray-500 py-12 space-y-2">
+            <p className="text-base text-gray-700">No PDFs yet.</p>
+            <p>Add a textbook, a problem set or a handout as a PDF, or drop one here. Mark exercises on its pages and each one gets its own board beside the page.</p>
+            <p>For one problem, <strong>Single problem</strong> puts a picture or PDF straight onto a new board.</p>
+          </div>
         )}
       </main>
     </div>
@@ -117,18 +121,7 @@ function ShelfCard({ document, onRemove }: { document: ShelfDocument; onRemove: 
   const marked = document.exercises.length;
   return (
     <li className="flex flex-col bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <Link href={`/shelf/read?doc=${encodeURIComponent(document.id)}`} aria-label={`Open ${document.title}`} className="hover:bg-gray-50">
-        <div className="aspect-[3/4] bg-gray-100 border-b border-gray-100 flex items-center justify-center overflow-hidden">
-          {document.cover ? <BlobImage blob={document.cover} className="w-full h-full object-contain" /> : <span className="text-xs text-gray-400">PDF</span>}
-        </div>
-        <div className="px-3 pt-2">
-          <p className="text-sm font-medium text-gray-800 line-clamp-2">{document.title}</p>
-          <p className="text-xs text-gray-500">
-            {document.pageCount} {document.pageCount === 1 ? 'page' : 'pages'}
-            {marked > 0 ? ` · ${marked} ${marked === 1 ? 'exercise' : 'exercises'}` : ''}
-          </p>
-        </div>
-      </Link>
+      <ShelfCover document={document} />
       <div className="mt-auto flex justify-end gap-1.5 px-3 py-2">
         {confirming ? (
           <>
@@ -143,5 +136,41 @@ function ShelfCard({ document, onRemove }: { document: ShelfDocument; onRemove: 
         )}
       </div>
     </li>
+  );
+}
+
+/** A PDF's cover, name and size, opening it in the reader. Also used on Home. */
+export function ShelfCover({ document }: { document: ShelfDocument }) {
+  const marked = document.exercises.length;
+  return (
+    <Link href={`/shelf/read?doc=${encodeURIComponent(document.id)}`} aria-label={`Open ${document.title}`} className="block bg-white hover:bg-gray-50">
+      <div className="aspect-[3/4] bg-gray-100 border-b border-gray-100 flex items-center justify-center overflow-hidden">
+        {document.cover ? <BlobImage blob={document.cover} className="w-full h-full object-contain" /> : <span className="text-xs text-gray-400">PDF</span>}
+      </div>
+      <div className="px-3 py-2">
+        <p className="text-sm font-medium text-gray-800 line-clamp-2">{document.title}</p>
+        <p className="text-xs text-gray-500">
+          {document.pageCount} {document.pageCount === 1 ? 'page' : 'pages'}
+          {marked > 0 ? ` · ${marked} ${marked === 1 ? 'exercise' : 'exercises'}` : ''}
+        </p>
+      </div>
+    </Link>
+  );
+}
+
+/** The built-in workbook section, which sits on the Shelf like a PDF. */
+export function WorkbookCover() {
+  return (
+    <Link href="/workbook" aria-label="Open Complex Analysis §1.3" className="block h-full bg-white border border-gray-200 rounded-xl overflow-hidden hover:bg-gray-50">
+      <div className="aspect-[3/4] bg-gray-100 border-b border-gray-100 flex flex-col justify-center gap-1 px-4 border-l-8 border-l-gray-900">
+        <span className="text-xs uppercase tracking-wide text-gray-500">Workbook</span>
+        <span className="text-lg font-semibold text-gray-900 leading-tight">The Geometry of Complex Numbers</span>
+        <span className="text-xs text-gray-500">§1.3</span>
+      </div>
+      <div className="px-3 py-2">
+        <p className="text-sm font-medium text-gray-800 line-clamp-2">Complex Analysis §1.3</p>
+        <p className="text-xs text-gray-500">Built-in workbook · reading and exercises</p>
+      </div>
+    </Link>
   );
 }

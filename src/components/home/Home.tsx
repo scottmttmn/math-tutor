@@ -143,7 +143,9 @@ export default function Home() {
           </div>
           <ul className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <li><WorkbookCover /></li>
-            {shelf.slice(0, SHELF_PREVIEW).map((document) => <li key={document.id}><ShelfCover document={document} /></li>)}
+            {shelf.slice(0, SHELF_PREVIEW).map((document) => (
+              <li key={document.id} className="border border-gray-200 rounded-xl overflow-hidden"><ShelfCover document={document} /></li>
+            ))}
           </ul>
         </section>
       </main>

@@ -52,4 +52,5 @@ test('search matches every word in the name or problem; filters and sorts apply'
   assert.deepEqual(ids({ show: 'solved' }), ['1']);
   assert.deepEqual(ids({ show: 'inProgress' }), ['2']);
   assert.deepEqual(ids({ show: 'notes' }), ['3']);
+  assert.deepEqual(ids({ show: 'problems' }), ['2', '1']);
 });

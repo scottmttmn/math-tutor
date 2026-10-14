@@ -16,6 +16,7 @@ import { MAX_BOOK_PAGES, loadSectionStarts, readBookPages, readingRange, type Re
 import type { BookContext, PageRect, ShelfDocument, ShelfExercise } from '@/types';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
+import AppBar from '@/components/layout/AppBar';
 import ChatPanel from '@/components/chat/ChatPanel';
 import PdfPage from './PdfPage';
 
@@ -270,10 +271,10 @@ export default function ShelfReader() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
+      {!fullScreen && <AppBar place="shelf" locked={isStreaming} />}
       <header className={`${fullScreen ? 'hidden' : 'flex'} flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-white`}>
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs text-gray-500">
-            <Link href="/" className="text-blue-700 hover:underline">Math Tutor</Link><span>›</span>
             <Link href="/shelf" className="text-blue-700 hover:underline">Shelf</Link>
           </div>
           <h1 className="font-semibold text-gray-900 truncate">{shelfDocument.title}</h1>

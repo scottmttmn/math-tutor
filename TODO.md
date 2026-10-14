@@ -17,13 +17,13 @@ Done: the handwriting test, autosave on the main page, the 5-second request limi
 
 ### 2. Problem history
 
-Done: **History** (top bar) replaces the Load popup with a full-screen grid of every free-form board and every workbook exercise or reading that has work in it, with thumbnails, search, rename, sort, and filters (All / In progress / Solved / Notes). Workbook entries open in the workbook.
+Done: **Home** is the page the app opens on: a Continue card for the last board, then a grid of every free-form board, workbook exercise or reading, and Shelf exercise that has work in it, with thumbnails, search, rename, sort, and filters (All / Problems / Notes / In progress / Solved). Every page has the same bar: Home, Shelf, + New, Settings.
 
-- Shelf exercises join History too.
+- Later: more ways to organize problems and notes, probably folders.
 
 ### 3. PDF Shelf
 
-Done: **Shelf** (top bar) holds PDFs added or dropped in. Open one to read it page by page; **Mark exercise** and drag a box around a problem, and it opens on its own board beside the page (below it on an upright tablet), stays marked on the page (✓ once solved), and shows in History. **Single problem** puts a picture or a PDF's first page straight onto a new board. Works offline; the tutor gets the marked region as the problem figure, plus the text of the book pages leading up to it (from the section's bookmark, at most 15 pages, never past the exercise; adjustable or off on the board).
+Done: **Shelf** (in the bar) holds what you work from: PDFs of any kind (textbooks, problem sets, handouts) added or dropped in, and the built-in workbook. Open one to read it page by page; **Mark exercise** and drag a box around a problem, and it opens on its own board beside the page (below it on an upright tablet), stays marked on the page (✓ once solved), and shows on Home. **Single problem** puts a picture or a PDF's first page straight onto a new board. Works offline; the tutor gets the marked region as the problem figure, plus the text of the book pages leading up to it (from the section's bookmark, at most 15 pages, never past the exercise; adjustable or off on the board).
 
 Every board has **Full screen** (in its toolbar), and a problem picture can be **put on the board**. **Hide tools** collapses the drawing tools, and the Shelf's Exercises list can be hidden so the page gets the full width.
 

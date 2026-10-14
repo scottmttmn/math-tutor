@@ -32,15 +32,17 @@ src/
 │   ├── api/tutor/route.ts     # Streaming API endpoint (Anthropic + OpenAI-compat + ChatGPT plan)
 │   ├── api/chatgpt/route.ts   # Sign in with ChatGPT: status, sign-in, sign-out
 │   ├── api/transcribe/route.ts# One image read by the ChatGPT plan (used by the handwriting test)
-│   ├── page.tsx               # Root page (renders AppShell)
-│   ├── shelf/page.tsx         # The Shelf: PDFs added for working through
+│   ├── page.tsx               # Home: Continue, every problem and note, what's on the Shelf
+│   ├── board/page.tsx         # A free board (renders AppShell; ?new=problem|note starts one)
+│   ├── shelf/page.tsx         # The Shelf: what you work from (PDFs of any kind, plus the built-in workbook)
 │   ├── shelf/read/page.tsx    # One Shelf PDF beside the open exercise's board (?doc=<id>&open=<exercise id>)
 │   ├── layout.tsx             # Root layout (metadata, fonts)
 │   └── globals.css            # Global Tailwind styles
 ├── components/
 │   ├── layout/
-│   │   ├── AppShell.tsx       # Top-level app container; wires contexts + UI
-│   │   ├── TopBar.tsx         # Header bar (New dropdown, save status, History, Settings, Chat toggle)
+│   │   ├── AppBar.tsx         # The bar on every page: Home, Shelf, + New, Settings
+│   │   ├── AppShell.tsx       # The free board page; wires contexts + UI
+│   │   ├── TopBar.tsx         # AppBar on a free board, plus save status and the Chat toggle
 │   │   ├── BottomToolbar.tsx  # Clear, Mark Solved, Ask for Help (drawing tools are tldraw's own)
 │   │   ├── SettingsModal.tsx  # Model/provider configuration (defines PRESETS array)
 │   │   └── HelpQuestionModal.tsx  # Custom question input with voice
@@ -53,8 +55,8 @@ src/
 │   │   ├── ChatPanel.tsx      # Chat display and scroll container
 │   │   ├── ChatMessage.tsx    # Individual message bubble
 │   │   └── ChatInput.tsx      # Follow-up message input
-│   ├── sessions/
-│   │   └── History.tsx        # Full-screen history: every board, workbook and Shelf exercise, with thumbnails, search, filter, sort, rename
+│   ├── home/
+│   │   └── Home.tsx           # Home page: Continue card, every board, workbook and Shelf exercise (thumbnails, search, filter, sort, rename), Shelf row
 │   ├── shelf/
 │   │   ├── Shelf.tsx          # Shelf grid: add PDFs, Single problem (image/PDF straight onto a new board), remove
 │   │   ├── ShelfReader.tsx    # Page viewer + mark exercises + the open exercise's board and tutor
@@ -71,7 +73,8 @@ src/
 │   └── useChatGPTConnection.ts# Sign in with ChatGPT state for SettingsModal
 ├── lib/
 │   ├── db.ts                  # IndexedDB CRUD for sessions via `idb`
-│   ├── history.ts             # Turns saved sessions into History entries; search, filter and sort
+│   ├── history.ts             # Turns saved sessions into Home's entries; search, filter and sort
+│   ├── currentBoard.ts        # Which free board /board opens (`math-tutor:currentSession`)
 │   ├── pdf.ts                 # PDF.js loading (offline, from public/pdfjs), page render, crops, covers
 │   ├── shelf.ts               # Shelf actions: add PDF, mark/unmark exercises, single problem from a file
 │   ├── modelConfig.ts         # localStorage get/set for ModelConfig
@@ -104,8 +107,8 @@ src/
 ### Components
 - Components should be pure presentational where possible; logic belongs in hooks.
 - Custom hooks encapsulate complex behavior (`useTutorChat`, `useSpeechRecognition`, etc.). Follow this pattern for new features.
-- Modals are conditionally rendered inside `AppShell`; control their visibility with boolean state in `AppShell` or a context.
-- Anything reading `localStorage` must do so in an effect, not in `useState` initializers — that causes hydration mismatches. `AppShell` (model label) and `SettingsModal` both follow this.
+- Modals are conditionally rendered by the component that opens them (Settings lives in `AppBar`); control their visibility with boolean state there or in a context.
+- Anything reading `localStorage` must do so in an effect, not in `useState` initializers — that causes hydration mismatches. `SettingsModal` follows this.
 
 ### Styling
 - Use Tailwind CSS utility classes only. No CSS modules, no `styled-components`.
@@ -113,7 +116,7 @@ src/
 - Buttons follow a consistent pattern: base classes + hover/disabled variants. Match existing button styles.
 
 ### Canvas
-- The canvas is **tldraw**, mounted by `TldrawCanvas.tsx` through `DrawingCanvas.tsx`, which loads it with `next/dynamic` and `ssr: false`. `DrawingCanvas` fills its nearest positioned ancestor, so the wrapper in `AppShell` / `Workbook` must be `relative` with a size. Its wrapper is `isolate`d so tldraw's own z-indexes (up to 10000) stay under the app's dialogs and the History overlay.
+- The canvas is **tldraw**, mounted by `TldrawCanvas.tsx` through `DrawingCanvas.tsx`, which loads it with `next/dynamic` and `ssr: false`. `DrawingCanvas` fills its nearest positioned ancestor, so the wrapper in `AppShell` / `Workbook` must be `relative` with a size. Its wrapper is `isolate`d so tldraw's own z-indexes (up to 10000) stay under the app's dialogs.
 - `DrawingCanvasHandle` (pass a ref as `handleRef`): `captureImage()` exports the selected shapes, else every shape, trimmed to their bounds (PNG, pixelRatio 2 but at most 2048px on the longer side, since a board written zoomed out is thousands of units wide and ChatGPT rejected 6000px images; base64 without the `data:` prefix; `''` when empty); `captureThumbnail()`, `placeProblemImage(base64)`, `getDocument()`, `getRevision()` (bumped synchronously on every document change), and `clear()` (one undoable step).
 - Every board starts with the pen at size **S** (`DEFAULT_PEN_SIZE` in `TldrawCanvas.tsx`); tldraw's default M is too heavy for writing math.
 - tldraw's UI supplies the tools, colors, undo/redo and their shortcuts. `MainMenu`, `PageMenu`, `HelpMenu` and debug panels are hidden and there is one page per session.
@@ -125,13 +128,13 @@ src/
 
 ### Shelf
 - PDFs live in the IndexedDB store `shelf` (db version 2) as `ShelfDocument`s: the file Blob, a cover, the last page read, and the marked `exercises` (`page` plus a `rect` in fractions of the page).
-- Marking an exercise crops that region to a PNG (`cropPage`) and creates its board, the session `shelf:<document id>:<exercise id>`, with the crop as `problemImage` (so the tutor gets it as the problem figure) and `exerciseStatement` as the problem text. History lists these once they hold work and opens them at `/shelf/read?doc=…&open=…`.
+- Marking an exercise crops that region to a PNG (`cropPage`) and creates its board, the session `shelf:<document id>:<exercise id>`, with the crop as `problemImage` (so the tutor gets it as the problem figure) and `exerciseStatement` as the problem text. Home lists these once they hold work and opens them at `/shelf/read?doc=…&open=…`.
 - **Book pages for the tutor** (`src/lib/bookContext.ts`): with every question on a Shelf board, the reader sends the text of the pages leading up to the exercise as `bookContext`. They run from the last PDF bookmark at or before the exercise's page (skipping "Exercises"/"Answers" bookmarks), or the 6 pages before it without bookmarks, to the exercise's page; never past it (answer keys sit later), at most `MAX_BOOK_PAGES` (15). The student can change the start or turn it off on the board (`ShelfExercise.readFrom`, 0 = off), and later exercises in the same section reuse that choice. Scans with no text layer send nothing.
 - **Put on board** (Shelf board header; main page beside the captured problem) places `problemImage` on the canvas as a locked image shape (`meta.problemImage`, once per board; Clear leaves it). The tutor then sees it twice: as `problemImage` and inside the board export, which is what lets it read work written on the figure.
 - With no board open, the **Exercises** list beside the page has **Hide** (remembered in `localStorage`, `math-tutor:shelfListHidden`), giving the page the full width; an **Exercises** button in the page toolbar brings it back. An open board always shows.
 - The reader uses `useSessionAutosave(handle, { reopenLast: false })`: the same autosave as the main page, but it never touches `math-tutor:currentSession`; the URL says which board is open.
 - Removing a mark or a PDF deletes the boards with it (and their recovery copies).
-- **Single problem** saves a new free-form session whose `problemImage` is the picture (or a PDF's first page), sets it as the main page's current session and goes to `/`.
+- **Single problem** saves a new free-form session whose `problemImage` is the picture (or a PDF's first page), sets it as the session `/board` opens and goes there.
 - PDF.js is the **legacy** build: the modern one uses JavaScript (e.g. `Map.prototype.getOrInsertComputed`) that current Chromium and tablet web views lack. Its worker, fonts, cmaps and decoders are copied into `public/pdfjs` (gitignored) by `postinstall`, so nothing loads from a CDN.
 
 ### API Route (`/api/tutor`)
@@ -160,8 +163,8 @@ src/
 - Sessions are stored in IndexedDB using the `idb` library (`src/lib/db.ts`). Do not use `localStorage` for session data.
 - `db.ts` exports: `saveSession`, `loadSession`, `deleteSession`, `listSessions`, `renameSession`, and for the Shelf `listShelf`, `loadShelfDocument`, `saveShelfDocument`, `deleteShelfDocument`, `shelfSessionId`.
 - Session fields: `id`, `title`, `problemStatement`, `problemImage`, `canvasStrokes` (pre-tldraw only), `canvasDocument?`, `canvasImageBlob` (the History thumbnail), `chatHistory`, `createdAt`, `updatedAt`, `isSolved?`, `sessionType?`, `customTitle?`.
-- `customTitle` is the name given in History. Pages that autosave don't know it, so `saveSession` keeps the stored one when a save omits it; `renameSession` is the only writer.
-- **History** (`sessions/History.tsx`, opened from the top bar) lists free-form boards, workbook sessions (`workbook:<section>:exercise:<id>` / `:reading`) and Shelf exercises (`shelf:<document>:<exercise>`) that have work in them. A workbook entry opens `/workbook?open=<exercise id | reading>`, which the workbook reads once and then drops from the URL.
+- `customTitle` is the name given on Home. Pages that autosave don't know it, so `saveSession` keeps the stored one when a save omits it; `renameSession` is the only writer.
+- **Home** (`/`, `home/Home.tsx`) opens with a **Continue** card for the last board worked on, then lists free-form boards, workbook sessions (`workbook:<section>:exercise:<id>` / `:reading`) and Shelf exercises (`shelf:<document>:<exercise>`) that have work in them. A workbook entry opens `/workbook?open=<exercise id | reading>`, which the workbook reads once and then drops from the URL; a free board is set as the one `/board` opens (`setBoardToOpen`). Filters: All, Problems, Notes, In progress, Solved. Below the list, the Shelf's workbook card and newest PDFs.
 - `SessionMetadata` (used for session list): `id`, `title`, `problemStatement`, `createdAt`, `updatedAt`, `messageCount`, `isSolved?`, `sessionType?`.
 - `sessionType` and `isSolved` are optional for backward compatibility with sessions saved before those fields existed. Treat missing `sessionType` as `'problem'`.
 - Model configuration (provider, model ID, base URL) is stored in `localStorage` via `src/lib/modelConfig.ts`.
@@ -234,8 +237,13 @@ ESLint uses the Next.js core web vitals config. Run `npm run lint` before commit
 ### Session Save/Load
 - **Autosave:** `useSessionAutosave` saves 800ms after the last change (problem, image, chat, solved, type, drawing), reading the live document from the handle. It skips an untouched new session and a session that was only opened (it compares content, not timestamps), keeps `createdAt`, and serializes saves. The top bar shows Saving…/Saved, or a Retry button after a failure. New saves write `canvasStrokes: []`.
 - **Reload:** the open session's id is kept in `localStorage` (`math-tutor:currentSession`) and reopened on load. On `pagehide`/hidden it stages a synchronous recovery copy via `src/lib/sessionRecovery.ts` (shared with the workbook); a session reopened from that copy is written back to IndexedDB.
-- **Open / New:** `openSession` (from History) / `startNew` save the current session first, then load. Deleting the open session starts a new one without saving it again.
-- **New:** the **New** button in `TopBar` is a dropdown — *New Problem* or *New Notes* — which passes a `SessionType` to `AppShell.handleNew()`.
+- **Open / New:** Home opens a free board by setting it as `/board`'s session; `startNew` saves the current session first, then loads an empty one.
+- **New:** **+ New** in `AppBar` (every page) is a dropdown — *New Problem* or *New Notes*. On `/board` it calls `AppShell.handleNew()`; elsewhere it goes to `/board?new=<type>`, which starts the board once and drops the parameter.
+
+### Navigation
+- `AppBar` is on every page (hidden in full screen): **Home** and **Shelf** tabs, **+ New**, and a Settings gear. Pass `locked` while a tutor reply streams so links can't leave the page.
+- The built-in workbook sits on the Shelf as a card (`WorkbookCover`) beside the PDFs; its and the reader's breadcrumbs lead back to the Shelf.
+- Design direction (agreed 2026-10-14): boards, the Shelf, and a tutor you call. Next steps are one board frame for all boards, modelled on Shelf boards, and an ink-on-paper visual language where only the tutor has a color.
 
 ### Full screen and tools
 - **Hide tools** (`BottomToolbar` `tools` prop, `useToolsHidden`, remembered in `localStorage` as `math-tutor:toolsHidden` for every board) passes `hideUi` to tldraw: toolbars and style panel go, the current tool (the pen) keeps working.

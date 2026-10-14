@@ -47,12 +47,13 @@ export default function AppBar({ place, onNew, locked = false, children }: Props
   };
 
   return (
-    <nav aria-label="Main" className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 bg-white">
+    <nav aria-label="Main" className="flex items-center gap-1.5 sm:gap-2 px-3 py-2 border-b border-gray-200 bg-white">
       <span className="hidden sm:inline px-1 mr-1 text-base font-bold text-gray-900">Math Tutor</span>
       {PLACES.map((item) => (
         <Link
           key={item.place}
           href={item.href}
+          aria-label={item.label}
           aria-current={place === item.place ? 'page' : undefined}
           aria-disabled={locked}
           onClick={(event) => { if (locked) event.preventDefault(); }}
@@ -61,7 +62,7 @@ export default function AppBar({ place, onNew, locked = false, children }: Props
           } ${locked ? 'opacity-50' : ''}`}
         >
           {item.icon}
-          {item.label}
+          <span className="hidden sm:inline">{item.label}</span>
         </Link>
       ))}
 
