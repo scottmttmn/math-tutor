@@ -45,9 +45,8 @@ src/
 │   │   ├── AppShell.tsx       # The free board page; wires contexts + UI
 │   │   ├── TopBar.tsx         # AppBar on a free board, plus save status
 │   │   ├── BoardFrame.tsx     # The layout every board shares: source, board with header and toolbar, tutor drawer
-│   │   ├── BottomToolbar.tsx  # Full screen, Hide tools, Clear, Mark Solved, Tutor, Ask for Help (drawing tools are tldraw's own)
-│   │   ├── SettingsModal.tsx  # Model/provider configuration (defines PRESETS array)
-│   │   └── HelpQuestionModal.tsx  # Custom question input with voice
+│   │   ├── BottomToolbar.tsx  # Full screen, Hide tools, Clear, Mark solved, Tutor, Ask tutor (drawing tools are tldraw's own)
+│   │   └── SettingsModal.tsx  # Model/provider configuration (defines PRESETS array)
 │   ├── workspace/
 │   │   ├── DrawingCanvas.tsx  # Client-only wrapper around TldrawCanvas; defines DrawingCanvasHandle
 │   │   ├── TldrawCanvas.tsx   # tldraw editor: loads documents, mirrors them to CanvasContext, exports images
@@ -66,7 +65,9 @@ src/
 │   │   ├── ShelfReader.tsx    # Page viewer + mark exercises + the open exercise's board and tutor
 │   │   └── PdfPage.tsx        # One page fit to width, marks drawn over it, drag to mark
 │   └── common/
-│       └── BlobImage.tsx      # Shows a Blob (thumbnail, cover) via an object URL
+│       ├── BlobImage.tsx      # Shows a Blob (thumbnail, cover) via an object URL
+│       ├── Icons.tsx          # Line icons (kinds, Shelf, tutor, nav) and the solved check
+│       └── MoreMenu.tsx       # The "⋯" menu that holds Rename, Delete and Remove
 ├── context/
 │   ├── CanvasContext.tsx      # Mirror of the tldraw document + pending load requests
 │   └── SessionContext.tsx     # Session state (problem, chat history, sessionType, sessions)
@@ -229,8 +230,8 @@ ESLint uses the Next.js core web vitals config. Run `npm run lint` before commit
 
 ### Help Request (primary user flow)
 1. User writes the problem in `ProblemStatement` (or a topic in `NoteHeader`), draws on `DrawingCanvas`.
-2. Clicks **Ask for Help** (problem mode) / **Ask About This** (notes mode) → `HelpQuestionModal` opens (optional custom question + voice).
-3. On submit: `AppShell.handleAskForHelp()` calls `canvasHandle.current.captureImage()` → base64 PNG of the selected shapes, or of the whole drawing trimmed to its bounds.
+2. Clicks **Ask tutor** (both modes); the tutor drawer opens.
+3. `AppShell.handleAskForHelp()` calls `canvasHandle.current.captureImage()` → base64 PNG of the selected shapes, or of the whole drawing trimmed to its bounds.
 4. `useTutorChat.sendHelp(canvasImage, question)` POSTs to `/api/tutor` with the request body above, including `sessionType`.
 5. API selects the system prompt from `sessionType` and streams an SSE response; client appends `text_delta` events to chat in real time via `APPEND_TO_LAST_MESSAGE` dispatch.
 6. The session **autosaves** (see below); there is no Save button.
@@ -247,17 +248,25 @@ ESLint uses the Next.js core web vitals config. Run `npm run lint` before commit
 ### Navigation
 - `AppBar` is on every page (hidden in full screen): **Home** and **Shelf** tabs, **+ New**, and a Settings gear. Pass `locked` while a tutor reply streams so links can't leave the page.
 - The built-in workbook sits on the Shelf as a card (`WorkbookCover`) beside the PDFs; its and the reader's breadcrumbs lead back to the Shelf.
-- Design direction (agreed 2026-10-14): boards, the Shelf, and a tutor you call. Next step is an ink-on-paper visual language where only the tutor has a color.
+- Design direction (agreed 2026-10-14): boards, the Shelf, and a tutor you call. Later: folders (or similar) for problems and notes, and a new name for the app.
+
+### Visual language
+- Ink on paper: grays, black and white. Meaning is carried by icon, shape and word, so every screen still reads in greyscale on an e-ink tablet.
+- **Only the tutor has a color**, Tailwind `indigo-700` (`indigo-50` for its replies and tints): **Ask tutor**, the **Tutor** toggle, the drawer's edge and heading, Send/Ask in a chat, "Tutor reads". Nothing else uses indigo, and the tutor uses nothing else. Focus rings and links are ink.
+- **Solved** is a filled ink check (`SolvedCheck` in `common/Icons.tsx`) plus the word, everywhere (boards, Home, workbook, Shelf lists; the Shelf page's mark gets a filled label). No green. Workbook exercises say Solved too.
+- Kinds wear their icon (`KindIcon`: Problem, Notes; `ShelfIcon` for Shelf/workbook) on cards, in the board's title line and in **+ New**.
+- Controls are at least 44px tall (`min-h-11`) and labelled in words. One solid ink button per screen for its main action. Delete, Rename and Remove live in a `MoreMenu` ("⋯"), with an inline confirm for deletes.
+- Red is only for errors and failed saves, always with words.
 
 ### Board frame
 - Every board (free board, workbook exercise, Shelf exercise) renders `BoardFrame`: the **source** it works from (typed problem or topic, workbook exercise, PDF page with its page toolbar; `wide` for the page), then the board with a header (title, actions, a **Hide/Show {source}** toggle) and the `BottomToolbar`, then the **tutor**.
-- The tutor is a drawer, closed until asked: **Ask for Help** opens it, the toolbar's **Tutor** button toggles it, **Close** in its header shuts it. A new or switched board opens with it closed.
+- The tutor is a drawer, closed until asked: **Ask tutor** opens it, the toolbar's **Tutor** button toggles it, **Close** in its header shuts it. A new or switched board opens with it closed.
 - Below 2xl (96rem) the open tutor takes the source's place (above the board on narrow screens), so the board keeps its room; the header toggle then reads **Show {source}** and closes the tutor. On 2xl screens all three sit side by side.
 - The workbook's reading view is not a board: it keeps its always-open **Reading tutor** column.
 
 ### Full screen and tools
 - **Hide tools** (`BottomToolbar` `tools` prop, `useToolsHidden`, remembered in `localStorage` as `math-tutor:toolsHidden` for every board) passes `hideUi` to tldraw: toolbars and style panel go, the current tool (the pen) keeps working.
-- Every board (main page, workbook exercise, Shelf) has a **Full screen** button in `BottomToolbar` (`fullScreen` prop), driven by `useBoardFullScreen`: the page hides everything but the board and toolbar and asks the browser for full screen. Esc, Exit full screen or Ask for Help (so the reply is visible) leaves it.
+- Every board (main page, workbook exercise, Shelf) has a **Full screen** button in `BottomToolbar` (`fullScreen` prop), driven by `useBoardFullScreen`: the page hides everything but the board and toolbar and asks the browser for full screen. Esc, Exit full screen, **Tutor** or **Ask tutor** (so the reply is visible) leaves it.
 
 ### Keyboard Shortcuts
 Registered once in `AppShell` (handlers read latest values through refs):

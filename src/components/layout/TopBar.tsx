@@ -20,13 +20,13 @@ export default function TopBar({ onNew, saveStatus, onSave, isStreaming }: Props
       {saveStatus === 'error' ? (
         <button
           onClick={() => void onSave()}
-          className="min-h-10 px-3 text-sm font-medium text-red-600 border border-red-200 bg-red-50 rounded-lg hover:bg-red-100"
+          className="min-h-11 px-3 text-sm font-medium text-red-700 border border-red-700 bg-white rounded-lg hover:bg-red-50"
           title="Your latest changes aren't saved"
         >
           Couldn&apos;t save · Retry
         </button>
       ) : (
-        <span role="status" className="w-14 text-center text-xs text-gray-400">
+        <span role="status" className="w-14 text-center text-xs text-gray-500">
           {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved' : ''}
         </span>
       )}

@@ -25,6 +25,8 @@ Done: **Home** is the page the app opens on: a Continue card for the last board,
 
 Done: **Shelf** (in the bar) holds what you work from: PDFs of any kind (textbooks, problem sets, handouts) added or dropped in, and the built-in workbook. Open one to read it page by page; **Mark exercise** and drag a box around a problem, and it opens on its own board beside the page (below it on an upright tablet), stays marked on the page (✓ once solved), and shows on Home. **Single problem** puts a picture or a PDF's first page straight onto a new board. Works offline; the tutor gets the marked region as the problem figure, plus the text of the book pages leading up to it (from the section's bookmark, at most 15 pages, never past the exercise; adjustable or off on the board).
 
+Done: one look across the app: ink on paper, with only the tutor in color (**Ask tutor**, its drawer and replies), Solved as a filled ink check everywhere, kind icons on cards and in **+ New**, 44px controls, and Delete/Remove in a "⋯" menu.
+
 Every board has the same layout: what it works from beside it (the problem, the exercise, the PDF page), which can be hidden, and the tutor as a drawer that opens when you ask. Every board has **Full screen** (in its toolbar), and a problem picture can be **put on the board**. **Hide tools** collapses the drawing tools, and the Shelf's Exercises list can be hidden so the page gets the full width.
 
 - Next: **notes on Shelf pages**, listed beside the page with the exercises and hidden with that list.

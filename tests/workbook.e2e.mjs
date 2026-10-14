@@ -94,7 +94,7 @@ const imageOf = (request) => {
 };
 async function waitForTutorReady() {
   await page.waitForFunction(() => [...document.querySelectorAll('button')].some((button) =>
-    /^(Ask for Help|Ask About This)$/.test(button.textContent) && !button.disabled));
+    button.textContent === 'Ask tutor' && !button.disabled));
 }
 try {
   await openBrowser(); await waitReading();
@@ -148,9 +148,9 @@ try {
   assert.match(JSON.stringify(request.messages), /Reading text/);
   assert.doesNotMatch(JSON.stringify(request.messages), /Reading explanation/);
   await draw();
-  await page.getByRole('button', { name: 'Mark attempt complete', exact: true }).click();
+  await page.getByRole('button', { name: 'Mark solved', exact: true }).click();
   await page.reload(); await waitExercise(); await openTutor();
-  assert.ok(await page.getByRole('button', { name: 'Attempt complete', exact: true }).isVisible());
+  assert.ok(await page.getByRole('button', { name: 'Solved', exact: true }).isVisible());
   assert.ok(await page.getByRole('button', { name: 'Clear', exact: true }).isEnabled());
   assert.ok(await page.getByText('Exercise hint.', { exact: true }).isVisible());
   console.log('PASS immediate reload preserves whiteboard, conversation, active exercise, and completion');
@@ -164,7 +164,7 @@ try {
   await page.mouse.move(box.x + 220, box.y + 200, { steps: 5 }); await page.mouse.up();
   await waitForTutorReady();
   const beforeHelp = requests.length;
-  await page.getByRole('button', { name: 'Ask for Help', exact: true }).click();
+  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
   // The whiteboard export is async, so wait for the request rather than the busy flag.
   while (requests.length === beforeHelp) await new Promise((resolve) => setTimeout(resolve, 50));
   await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
@@ -176,7 +176,7 @@ try {
   // One ~140x80 stroke at 2x with padding, not both strokes and not the whole board.
   assert.ok(width > 200 && width < 450 && height > 120 && height < 330, `unexpected image size ${width}x${height}`);
   // The shared five-second limit: no countdown, and direct API bursts never reach the provider.
-  assert.ok(await page.getByRole('button', { name: 'Ask for Help', exact: true }).isDisabled());
+  assert.ok(await page.getByRole('button', { name: 'Ask tutor', exact: true }).isDisabled());
   assert.equal(await page.getByRole('button', { name: /^Wait / }).count(), 0);
   const beforeBurst = requests.length;
   const rejected = await page.evaluate(async (modelConfig) => {
@@ -218,7 +218,7 @@ try {
   await page.getByRole('button', { name: 'Back to reading' }).click(); await waitReading();
   assert.ok(await page.getByText('Reading explanation.', { exact: true }).last().isVisible());
   assert.equal(await page.locator('main > div').evaluate((reader) => reader.scrollTop), readingPosition);
-  assert.match(await exerciseButton(1).innerText(), /Complete/);
+  assert.match(await exerciseButton(1).innerText(), /Solved/);
   await exerciseButton(2).click(); await waitExercise();
   assert.ok(await page.getByRole('button', { name: 'Clear', exact: true }).isDisabled());
   assert.equal(await page.getByText('Exercise hint.', { exact: true }).count(), 0);
@@ -231,12 +231,12 @@ try {
   assert.ok(await page.getByText('Does this approach make sense?', { exact: true }).isVisible());
   console.log('PASS switching keeps boards and conversations separate and restores the reading position');
 
-  await page.getByRole('button', { name: 'Attempt complete', exact: true }).click();
+  await page.getByRole('button', { name: 'Solved', exact: true }).click();
   await context.close(); await openBrowser(); await waitExercise();
-  assert.ok(await page.getByRole('button', { name: 'Mark attempt complete', exact: true }).isVisible());
+  assert.ok(await page.getByRole('button', { name: 'Mark solved', exact: true }).isVisible());
   assert.ok(await page.getByRole('button', { name: 'Clear', exact: true }).isEnabled());
   await page.getByRole('button', { name: 'Back to reading' }).click(); await waitReading();
-  assert.doesNotMatch(await exerciseButton(1).innerText(), /Complete/);
+  assert.doesNotMatch(await exerciseButton(1).innerText(), /Solved/);
   assert.ok(await page.getByText('Reading explanation.', { exact: true }).last().isVisible());
   await ask('Explain the modulus definition again.', 'Reading explanation.');
   console.log('PASS browser close/reopen, completion reversal, and reading follow-ups after the short request interval');
@@ -254,7 +254,7 @@ try {
   // Stream errors are visible and still consume the short request interval.
   await waitForTutorReady();
   await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: 'data: {"type":"error","error":"Simulated provider failure"}\n\n' }), { times: 1 });
-  await page.getByRole('button', { name: 'Ask for Help', exact: true }).click();
+  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
   await page.getByText('Error: Simulated provider failure', { exact: true }).waitFor();
   assert.ok(await page.evaluate(() => Number(localStorage.getItem('lastHelpTimestamp')) > 0));
   await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: 'data: {"type":"text_delta","content":"Partial reply"}\n\n' }), { times: 1 });
@@ -278,7 +278,7 @@ try {
   await page.getByPlaceholder("Type the math problem you're working on...").waitFor();
   await page.getByPlaceholder("Type the math problem you're working on...").fill('Find a strategy for a quadratic.');
   await draw();
-  await waitForTutorReady(); await page.getByRole('button', { name: 'Ask for Help', exact: true }).click();
+  await waitForTutorReady(); await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
   await page.getByText('Exercise hint.', { exact: true }).waitFor();
   assert.match(requests.at(-1).messages[0].content, /NEVER give the full solution/);
   // Free-form sessions save themselves and come back after a reload.
@@ -291,7 +291,7 @@ try {
   await page.getByRole('button', { name: 'New', exact: true }).click();
   await page.getByRole('button', { name: /New Notes/ }).click();
   await page.getByPlaceholder("Topic or concept you're studying...").fill('Complex modulus');
-  await waitForTutorReady(); await page.getByRole('button', { name: 'Ask About This', exact: true }).click();
+  await waitForTutorReady(); await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
   await page.getByText('Notes explanation.', { exact: true }).waitFor();
   assert.match(requests.at(-1).messages[0].content, /Give clear, direct explanations/);
   assert.doesNotMatch(JSON.stringify(requests.at(-1).messages), /Current exercise/);
@@ -316,7 +316,12 @@ try {
   await history.getByRole('searchbox', { name: 'Search problems and notes' }).fill('modulus');
   assert.equal(await page.locator('[aria-labelledby="boards-heading"] li').count(), 1);
   // A name given in History survives the open session's next autosave.
-  await history.getByRole('button', { name: 'Rename', exact: true }).click();
+  await history.getByRole('button', { name: /^More for / }).click();
+  // The menu draws over the card's edge rather than being clipped by it.
+  const deleteItem = history.getByRole('menuitem', { name: 'Delete' });
+  const deleteBox = await deleteItem.boundingBox();
+  assert.ok(await deleteItem.evaluate((element, [x, y]) => element.contains(document.elementFromPoint(x, y)), [deleteBox.x + deleteBox.width / 2, deleteBox.y + deleteBox.height / 2]), 'Delete is reachable');
+  await history.getByRole('menuitem', { name: 'Rename' }).click();
   await history.getByRole('textbox', { name: 'Name' }).fill('Modulus notes');
   await history.getByRole('textbox', { name: 'Name' }).press('Enter');
   await history.getByRole('button', { name: 'Open Modulus notes' }).waitFor();
@@ -333,7 +338,7 @@ try {
   await workbookCard.getByRole('button', { name: /^Open / }).click(); await waitExercise();
   await page.getByRole('heading', { name: 'Exercise 1', exact: true }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
-  assert.ok(await page.getByRole('button', { name: 'Mark attempt complete', exact: true }).isVisible());
+  assert.ok(await page.getByRole('button', { name: 'Mark solved', exact: true }).isVisible());
   await page.getByRole('button', { name: 'Back to reading' }).click(); await waitReading();
   assert.ok(await page.getByRole('textbox').isVisible());
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);

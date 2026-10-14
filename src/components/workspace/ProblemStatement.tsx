@@ -26,7 +26,7 @@ export default function ProblemStatement({ onCaptureProblemImage, onPutOnBoard }
         value={problemStatement}
         onChange={(e) => dispatch({ type: 'SET_PROBLEM', text: e.target.value })}
         placeholder="Type the math problem you're working on..."
-        className="w-full h-20 lg:h-40 px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        className="w-full h-20 lg:h-40 px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
       />
       <div className={`mt-1 flex gap-2 ${enlarged && problemImage ? 'items-start' : 'items-center'}`}>
         {problemImage ? (
@@ -39,17 +39,17 @@ export default function ProblemStatement({ onCaptureProblemImage, onPutOnBoard }
                 className={`${enlarged ? 'max-h-72 max-w-full' : 'h-10 w-16'} object-contain rounded border border-gray-300 bg-white`}
               />
             </button>
-            <span className="text-xs text-green-700 font-medium">Problem captured</span>
+            <span className="text-xs text-gray-700">Problem figure</span>
             <button
               onClick={() => onPutOnBoard(problemImage)}
-              className="text-xs px-2 py-1 border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50"
+              className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg text-gray-800 hover:bg-gray-50"
               title="Put the problem figure on the board to write on and around it"
             >
               Put on board
             </button>
             <button
               onClick={() => dispatch({ type: 'SET_PROBLEM_IMAGE', image: null })}
-              className="text-xs text-gray-400 hover:text-red-500 ml-auto"
+              className="ml-auto min-h-11 px-2 text-sm text-gray-600 hover:text-gray-900"
               title="Clear problem figure"
             >
               ✕ Clear
@@ -59,7 +59,7 @@ export default function ProblemStatement({ onCaptureProblemImage, onPutOnBoard }
           <button
             onClick={() => void onCaptureProblemImage()}
             disabled={!hasContent}
-            className="text-xs px-2 py-1 border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg text-gray-800 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
             title={!hasContent ? 'Draw on the canvas first' : 'Capture current canvas as the problem figure'}
           >
             Capture as Problem

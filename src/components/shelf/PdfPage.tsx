@@ -122,15 +122,16 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
                 onClick={() => onOpenMark(mark)}
                 aria-label={`Open ${mark.label}`}
                 style={percent(mark.rect)}
-                className={`absolute rounded border-2 ${marking ? 'pointer-events-none' : 'pointer-events-auto'} ${active ? 'border-blue-600 bg-blue-500/10' : solved ? 'border-green-500 bg-green-500/5' : 'border-amber-500 bg-amber-400/5'} hover:bg-blue-500/10`}
+                // Ink only, so marks read on e-ink: the open one is heavier, a solved one has a filled label.
+                className={`absolute rounded border-gray-900 ${active ? 'border-[3px] bg-gray-900/10' : 'border-2'} ${marking ? 'pointer-events-none' : 'pointer-events-auto'} hover:bg-gray-900/10`}
               >
-                <span className={`absolute bottom-full left-0 mb-0.5 px-1.5 rounded text-[11px] leading-5 font-medium text-white whitespace-nowrap ${active ? 'bg-blue-600' : solved ? 'bg-green-600' : 'bg-amber-600'}`}>
+                <span className={`absolute bottom-full left-0 mb-0.5 px-1.5 rounded border border-gray-900 text-[11px] leading-5 font-medium whitespace-nowrap ${solved || active ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
                   {solved ? '✓ ' : ''}{mark.label}
                 </span>
               </button>
             );
           })}
-          {shown && <div style={percent(shown)} className="absolute border-2 border-dashed border-blue-600 bg-blue-500/10" />}
+          {shown && <div style={percent(shown)} className="absolute border-2 border-dashed border-gray-900 bg-gray-900/10" />}
           {pending && !draft && (
             <div
               ref={form}

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { SessionType } from '@/types';
 import SettingsModal from './SettingsModal';
+import { GearIcon, HomeIcon, NotesIcon, ProblemIcon, ShelfIcon } from '@/components/common/Icons';
 
 export type AppPlace = 'home' | 'shelf' | 'board';
 
@@ -65,7 +66,7 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, chil
             // Leave even if the save fails: the page's recovery copy keeps the work.
             void beforeLeave().catch(() => undefined).then(() => router.push(item.href));
           }}
-          className={`flex items-center gap-1.5 min-h-10 px-3 text-sm rounded-lg ${
+          className={`flex items-center gap-1.5 min-h-11 px-3 text-sm rounded-lg ${
             place === item.place ? 'font-semibold text-gray-900 bg-gray-100' : 'text-gray-600 hover:bg-gray-50'
           } ${locked ? 'opacity-50' : ''}`}
         >
@@ -82,17 +83,17 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, chil
           onClick={() => setNewOpen((open) => !open)}
           disabled={locked}
           aria-expanded={newOpen}
-          className="flex items-center gap-1 min-h-10 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700 disabled:opacity-50"
+          className="flex items-center gap-1 min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700 disabled:opacity-50"
         >
           <span aria-hidden="true">+</span> New
         </button>
         {newOpen && (
           <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
-            <button onClick={() => startNew('problem')} className="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
-              New Problem
+            <button onClick={() => startNew('problem')} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
+              <ProblemIcon />New Problem
             </button>
-            <button onClick={() => startNew('note')} className="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
-              New Notes
+            <button onClick={() => startNew('note')} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
+              <NotesIcon />New Notes
             </button>
           </div>
         )}
@@ -102,37 +103,11 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, chil
         onClick={() => setSettingsOpen(true)}
         aria-label="Settings"
         title="Tutor model and settings"
-        className="flex items-center justify-center min-h-10 min-w-10 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+        className="flex items-center justify-center min-h-11 min-w-11 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
       >
         <GearIcon />
       </button>
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </nav>
-  );
-}
-
-function HomeIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M2 7.5L8 2.5l6 5M3.5 6.5v7h9v-7" />
-    </svg>
-  );
-}
-
-function ShelfIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3.5 1.5h6l3 3v10h-9z" />
-      <path d="M9.5 1.5v3h3M5.5 8h5M5.5 10.5h5" />
-    </svg>
-  );
-}
-
-function GearIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
-      <circle cx="8" cy="8" r="2.2" />
-      <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" />
-    </svg>
   );
 }

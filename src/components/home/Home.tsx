@@ -9,6 +9,8 @@ import { discardRecoveryCopy } from '@/lib/sessionRecovery';
 import { boardToOpen, setBoardToOpen } from '@/lib/currentBoard';
 import AppBar from '@/components/layout/AppBar';
 import BlobImage from '@/components/common/BlobImage';
+import MoreMenu from '@/components/common/MoreMenu';
+import { KindIcon, ShelfIcon, SolvedCheck } from '@/components/common/Icons';
 import { ShelfCover, WorkbookCover } from '@/components/shelf/Shelf';
 import type { HistoryItem, HistoryShow, HistorySort, ShelfDocument } from '@/types';
 
@@ -87,7 +89,7 @@ export default function Home() {
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search problems and notes"
               aria-label="Search problems and notes"
-              className="flex-1 min-w-[12rem] max-w-md min-h-10 px-3 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 min-w-[12rem] max-w-md min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900"
             />
             <div className="flex rounded-lg border border-gray-300 overflow-hidden" role="group" aria-label="Show">
               {SHOW_OPTIONS.map((option) => (
@@ -95,7 +97,7 @@ export default function Home() {
                   key={option.value}
                   onClick={() => setShow(option.value)}
                   aria-pressed={show === option.value}
-                  className={`min-h-10 px-3 text-sm ${show === option.value ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                  className={`min-h-11 px-3 text-sm ${show === option.value ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
                 >
                   {option.label}
                 </button>
@@ -105,7 +107,7 @@ export default function Home() {
               value={sort}
               onChange={(event) => setSort(event.target.value as HistorySort)}
               aria-label="Sort by"
-              className="min-h-10 px-3 text-sm border border-gray-300 rounded-lg bg-white"
+              className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white"
             >
               <option value="updated">Last worked on</option>
               <option value="created">Started</option>
@@ -164,7 +166,7 @@ function ContinueCard({ item, onOpen }: { item: HistoryItem; onOpen: () => void 
         <p className="text-lg font-semibold text-gray-900 line-clamp-2">{item.title}</p>
         <KindLine item={item} />
         <div>
-          <button onClick={onOpen} className="min-h-10 px-4 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">
+          <button onClick={onOpen} className="min-h-11 px-4 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">
             Open
           </button>
         </div>
@@ -176,10 +178,10 @@ function ContinueCard({ item, onOpen }: { item: HistoryItem; onOpen: () => void 
 /** What a board is (problem or notes), where it came from, and whether it's solved. */
 function KindLine({ item }: { item: HistoryItem }) {
   return (
-    <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-600">
-      <span>{item.sessionType === 'note' ? 'Notes' : 'Problem'}</span>
-      {item.source !== 'board' && <span className="px-1.5 py-0.5 rounded-full border border-gray-300">{item.source === 'shelf' ? 'Shelf' : 'Workbook'}</span>}
-      {item.isSolved && <span className="px-1.5 py-0.5 rounded-full bg-gray-900 text-white">✓ Solved</span>}
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-700">
+      <span className="flex items-center gap-1"><KindIcon type={item.sessionType} />{item.sessionType === 'note' ? 'Notes' : 'Problem'}</span>
+      {item.source !== 'board' && <span className="flex items-center gap-1"><ShelfIcon />{item.source === 'shelf' ? 'Shelf' : 'Workbook'}</span>}
+      {item.isSolved && <span className="flex items-center gap-1 font-semibold text-gray-900"><SolvedCheck size={14} />Solved</span>}
     </div>
   );
 }
@@ -203,12 +205,13 @@ function HistoryCard({ item, onOpen, onRename, onDelete }: CardProps) {
   };
 
   return (
-    <li className="flex flex-col bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <button onClick={onOpen} className="text-left hover:bg-gray-50" aria-label={`Open ${item.title}`}>
+    // No overflow-hidden on the card: it would clip the "⋯" menu. The open button rounds its own corners.
+    <li className="flex flex-col bg-white border border-gray-200 rounded-xl">
+      <button onClick={onOpen} className="text-left rounded-t-xl overflow-hidden hover:bg-gray-50" aria-label={`Open ${item.title}`}>
         <Thumbnail blob={item.thumbnail} />
         <div className="px-3 pt-2">
           <KindLine item={item} />
-          {!renaming && <p className="mt-1 text-sm font-medium text-gray-800 line-clamp-2">{item.title}</p>}
+          {!renaming && <p className="mt-1 text-sm font-medium text-gray-900 line-clamp-2">{item.title}</p>}
           {/* The problem itself, when the name doesn't already show it (renamed, or a workbook exercise). */}
           {item.problemStatement && !item.problemStatement.startsWith(item.title) && !renaming && (
             <p className="text-xs text-gray-500 line-clamp-1">{item.problemStatement}</p>
@@ -226,38 +229,31 @@ function HistoryCard({ item, onOpen, onRename, onDelete }: CardProps) {
             if (event.key === 'Escape') { setName(item.title); setRenaming(false); }
           }}
           aria-label="Name"
-          className="mx-3 mt-1 px-2 py-1.5 text-sm border border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="mx-3 mt-1 px-2 py-1.5 text-sm border border-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
         />
       )}
       <div className="mt-auto flex items-center justify-between gap-2 px-3 py-2">
-        <span className="text-xs text-gray-400">
+        <span className="text-xs text-gray-500">
           {updated}{item.messageCount > 0 ? ` · ${item.messageCount} ${item.messageCount === 1 ? 'message' : 'messages'}` : ''}
         </span>
         {confirmingDelete ? (
-          <span className="flex gap-1.5">
-            <button onClick={() => void onDelete()} className="px-2.5 py-1.5 text-xs font-medium bg-red-600 text-white rounded-lg hover:bg-red-700">
+          <span className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-700">Delete it?</span>
+            <button onClick={() => void onDelete()} className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">
               Delete
             </button>
-            <button onClick={() => setConfirmingDelete(false)} className="px-2.5 py-1.5 text-xs font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
+            <button onClick={() => setConfirmingDelete(false)} className="min-h-11 px-3 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">
               Keep
             </button>
           </span>
         ) : (
-          <span className="flex gap-1.5">
-            <button
-              onClick={() => { setName(item.title); setRenaming(true); }}
-              className="px-2.5 py-1.5 text-xs font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              Rename
-            </button>
-            <button
-              onClick={() => setConfirmingDelete(true)}
-              aria-label={`Delete ${item.title}`}
-              className="px-2.5 py-1.5 text-xs font-medium text-red-600 border border-red-200 bg-red-50 rounded-lg hover:bg-red-100"
-            >
-              Delete
-            </button>
-          </span>
+          <MoreMenu
+            label={`More for ${item.title}`}
+            items={[
+              { label: 'Rename', onSelect: () => { setName(item.title); setRenaming(true); } },
+              { label: 'Delete', onSelect: () => setConfirmingDelete(true) },
+            ]}
+          />
         )}
       </div>
     </li>

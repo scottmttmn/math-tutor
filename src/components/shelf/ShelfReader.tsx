@@ -18,6 +18,8 @@ import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/
 import BottomToolbar from '@/components/layout/BottomToolbar';
 import AppBar from '@/components/layout/AppBar';
 import ChatPanel from '@/components/chat/ChatPanel';
+import MoreMenu from '@/components/common/MoreMenu';
+import { ProblemIcon, SolvedCheck } from '@/components/common/Icons';
 import BoardFrame from '@/components/layout/BoardFrame';
 import PdfPage from './PdfPage';
 
@@ -258,7 +260,7 @@ export default function ShelfReader() {
       <div className="min-h-screen grid place-items-center bg-gray-50 text-center p-6">
         <div className="space-y-3">
           <p className="text-gray-700">{loadError}</p>
-          <Link href="/shelf" className="text-blue-700 underline">Back to the Shelf</Link>
+          <Link href="/shelf" className="text-gray-900 underline">Back to the Shelf</Link>
         </div>
       </div>
     );
@@ -275,15 +277,15 @@ export default function ShelfReader() {
   const pageToolbar = (
     <>
       <button onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} aria-label="Previous page"
-        className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40">‹ Prev</button>
+        className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40">‹ Prev</button>
       <span className="text-sm text-gray-600 tabular-nums">Page {page} of {pageCount}</span>
       <button onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page >= pageCount} aria-label="Next page"
-        className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40">Next ›</button>
+        className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40">Next ›</button>
       <div className="flex-1" />
       <button
         onClick={() => { setMarking((on) => !on); setPendingMark(null); }}
         aria-pressed={marking}
-        className={`px-3 py-2 text-sm font-medium rounded-lg border ${marking ? 'bg-amber-500 border-amber-500 text-white' : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'}`}
+        className={`min-h-11 px-3 text-sm font-medium rounded-lg border border-gray-900 ${marking ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 hover:bg-gray-100'}`}
       >
         {marking ? 'Done marking' : 'Mark exercise'}
       </button>
@@ -291,19 +293,19 @@ export default function ShelfReader() {
   );
   const pageView = (
     <div className="p-3">
-      {marking && <p className="mb-2 text-sm text-amber-800">{pendingMark ? 'Name it and save, or drag again to redraw the box.' : 'Drag a box around an exercise on the page.'}</p>}
+      {marking && <p className="mb-2 text-sm font-medium text-gray-900">{pendingMark ? 'Name it and save, or drag again to redraw the box.' : 'Drag a box around an exercise on the page.'}</p>}
       <PdfPage
         pdf={pdf} pageNumber={page} marks={marksOnPage} solvedIds={solvedIds} activeId={openId} marking={marking}
         pending={pendingMark}
         pendingForm={(
           <form onSubmit={(event) => { event.preventDefault(); void saveMark(); }}
             onKeyDown={(event) => { if (event.key === 'Escape') setPendingMark(null); }}
-            className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-amber-50 border border-amber-200 shadow-md w-max max-w-[22rem]">
-            <label className="text-sm text-amber-900" htmlFor="mark-label">Name</label>
+            className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-white border border-gray-900 shadow-md w-max max-w-[22rem]">
+            <label className="text-sm text-gray-900" htmlFor="mark-label">Name</label>
             <input id="mark-label" value={markLabel} onChange={(event) => setMarkLabel(event.target.value)}
-              className="w-36 px-2 py-1.5 text-sm border border-amber-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-500" />
-            <button type="submit" className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700">Save and open</button>
-            <button type="button" onClick={() => setPendingMark(null)} className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 bg-white rounded-lg hover:bg-gray-50">Cancel</button>
+              className="w-36 min-h-11 px-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            <button type="submit" className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Save and open</button>
+            <button type="button" onClick={() => setPendingMark(null)} className="min-h-11 px-3 text-sm text-gray-600 border border-gray-300 bg-white rounded-lg hover:bg-gray-50">Cancel</button>
           </form>
         )}
         onMark={(rect) => { if (!pendingMark) setMarkLabel(nextLabel(shelfDocument)); setPendingMark(rect); }}
@@ -318,7 +320,7 @@ export default function ShelfReader() {
       <header className={`${fullScreen ? 'hidden' : 'flex'} flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-white`}>
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs text-gray-500">
-            <Link href="/shelf" className="text-blue-700 hover:underline">Shelf</Link>
+            <Link href="/shelf" className="text-gray-900 underline">Shelf</Link>
           </div>
           <h1 className="font-semibold text-gray-900 truncate">{shelfDocument.title}</h1>
         </div>
@@ -338,15 +340,15 @@ export default function ShelfReader() {
           title={(
             <>
               <h2 className="font-semibold text-gray-900 truncate">{exercise.label}</h2>
-              <p className="text-xs text-gray-500">
-                Page {exercise.page} ·{' '}
-                <label>
+              <p className="flex flex-wrap items-center gap-x-1 text-xs text-gray-600">
+                <ProblemIcon />Problem · p. {exercise.page} ·{' '}
+                <label className="text-indigo-700">
                   Tutor reads{' '}
                   <select
                     value={range?.from ?? 0}
                     onChange={(event) => void changeReadFrom(exercise.id, Number(event.target.value))}
                     title={range?.section ? `Section: ${range.section}` : undefined}
-                    className="px-1 py-0.5 text-xs text-gray-700 border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="px-1 py-0.5 text-xs text-gray-700 border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-gray-900"
                   >
                     <option value={0}>no pages</option>
                     {Array.from({ length: Math.min(MAX_BOOK_PAGES, exercise.page) }, (_, index) => exercise.page - index).reverse().map((from) => (
@@ -354,7 +356,7 @@ export default function ShelfReader() {
                     ))}
                   </select>
                 </label>
-                {range && !bookHasText && <span className="text-amber-700"> · no text in this PDF to read</span>}
+                {range && !bookHasText && <span className="font-medium text-gray-900"> · no text in this PDF to read</span>}
               </p>
             </>
           )}
@@ -363,13 +365,16 @@ export default function ShelfReader() {
               {problemImage && (
                 <button onClick={() => void canvasHandle.current?.placeProblemImage(problemImage)}
                   title="Put the marked problem on the board to write on and around it"
-                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Put on board</button>
+                  className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Put on board</button>
               )}
               {!fullScreen && exercise.page !== page && (
-                <button onClick={() => { setPage(exercise.page); setTutorOpen(false); }} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Back to p. {exercise.page}</button>
+                <button onClick={() => { setPage(exercise.page); setTutorOpen(false); }} className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Back to p. {exercise.page}</button>
               )}
-              {!fullScreen && <button onClick={() => void removeMark(exercise)} disabled={isStreaming} className="px-3 py-1.5 text-sm text-red-600 border border-red-200 bg-red-50 rounded-lg hover:bg-red-100 disabled:opacity-50">Remove</button>}
-              <button onClick={() => void closeExercise()} disabled={isStreaming} aria-label="Close board" className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">Close</button>
+              <button onClick={() => void closeExercise()} disabled={isStreaming} aria-label="Close board" className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">Close</button>
+              {!fullScreen && (
+                <MoreMenu label={`More for ${exercise.label}`} disabled={isStreaming}
+                  items={[{ label: 'Remove exercise', onSelect: () => void removeMark(exercise) }]} />
+              )}
             </>
           )}
           canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} />}
@@ -396,7 +401,7 @@ export default function ShelfReader() {
               {pageToolbar}
               {pageOnly && (
                 <button onClick={() => changeListHidden(false)} title="Show the list of marked exercises beside the page"
-                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50">Exercises</button>
+                  className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50">Exercises</button>
               )}
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto">{pageView}</div>
@@ -406,7 +411,7 @@ export default function ShelfReader() {
               <div className="flex items-center justify-between gap-2">
                 <h2 className="font-semibold text-gray-900">Exercises</h2>
                 <button onClick={() => changeListHidden(true)} title="Hide this list so the page gets the whole width"
-                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Hide</button>
+                  className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Hide</button>
               </div>
               {shelfDocument.exercises.length === 0 ? (
                 <p className="mt-2 text-sm text-gray-500">Tap <strong>Mark exercise</strong> and drag a box around a problem on the page. It opens here on its own board, and stays marked on the page.</p>
@@ -415,10 +420,10 @@ export default function ShelfReader() {
                   {[...shelfDocument.exercises].sort((a, b) => a.page - b.page || a.rect.y - b.rect.y).map((item) => (
                     <li key={item.id}>
                       <button onClick={() => void openExercise(item)} disabled={isStreaming}
-                        className="w-full text-left p-3 rounded-lg border border-gray-200 bg-white hover:border-blue-400 hover:bg-blue-50 disabled:opacity-50">
+                        className="w-full text-left p-3 rounded-lg border border-gray-200 bg-white hover:border-gray-900 hover:bg-gray-50 disabled:opacity-50">
                         <span className="font-medium text-gray-900">{item.label}</span>
                         <span className="ml-2 text-xs text-gray-500">Page {item.page}</span>
-                        {solvedIds.includes(item.id) && <span className="ml-2 text-xs text-green-700">✓ Solved</span>}
+                        {solvedIds.includes(item.id) && <span className="ml-2 inline-flex items-center gap-1 align-middle text-xs font-semibold text-gray-900"><SolvedCheck size={14} />Solved</span>}
                       </button>
                     </li>
                   ))}
