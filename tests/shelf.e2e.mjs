@@ -173,6 +173,21 @@ try {
   await page.getByText('Shelf hint.').last().waitFor();
   console.log('PASS the problem goes on the board; full screen board');
 
+  // Marks can be hidden to read the page clean; marking brings them back.
+  await page.getByRole('button', { name: 'Page', exact: true }).click();
+  await page.getByRole('button', { name: 'Open Exercise 1' }).waitFor();
+  await page.getByRole('button', { name: 'Hide marks' }).click();
+  await page.getByRole('button', { name: 'Open Exercise 1' }).waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Mark exercise' }).click();
+  await page.getByRole('button', { name: 'Open Exercise 1' }).waitFor();
+  await page.getByRole('button', { name: 'Done marking' }).click();
+  await page.getByRole('button', { name: 'Open Exercise 1' }).waitFor({ state: 'detached' });
+  await page.reload();
+  await exerciseHeading('Exercise 1').waitFor();
+  await page.getByRole('button', { name: 'Show marks' }).click();
+  await page.getByRole('button', { name: 'Open Exercise 1' }).waitFor();
+  console.log('PASS marks hide, stay hidden after reload, and show while marking');
+
   // History lists the exercise with work in it (not the empty one) and opens it beside its page.
   await page.getByRole('button', { name: 'Close board' }).click();
   await page.getByRole('heading', { name: 'Exercises', exact: true }).waitFor();
@@ -200,7 +215,16 @@ try {
   await page.locator('input[aria-label="Single problem"]').setInputFiles(imagePath);
   await page.waitForURL(`${origin}/`, { waitUntil: 'commit' });
   await page.getByAltText(/problem/i).first().waitFor();
-  console.log('PASS a single problem opens on a new board');
+  // Its picture can go on the board, and the board can take the whole screen.
+  await page.locator('.tl-canvas').waitFor();
+  await page.getByRole('button', { name: 'Put on board' }).click();
+  await page.locator('.tl-image').waitFor();
+  await page.getByRole('button', { name: 'Full screen' }).click();
+  await page.getByRole('button', { name: 'History' }).waitFor({ state: 'hidden' });
+  assert.equal(await page.getByAltText(/problem/i).count(), 0, 'the problem header is hidden');
+  await page.getByRole('button', { name: 'Exit full screen' }).click();
+  await page.getByRole('button', { name: 'History' }).waitFor();
+  console.log('PASS a single problem opens on a new board; it goes on the board; full screen main board');
 
   // Removing the PDF takes its remaining boards with it.
   await page.goto(`${origin}/shelf`);

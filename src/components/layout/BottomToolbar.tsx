@@ -14,15 +14,28 @@ interface Props {
   onToggleSolved: () => void;
   sessionType: SessionType;
   completionLabel?: 'attempt';
+  /** Shows the Full screen button (see useBoardFullScreen). */
+  fullScreen?: { on: boolean; toggle: () => void };
 }
 
-export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSolved, onToggleSolved, sessionType, completionLabel }: Props) {
+export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSolved, onToggleSolved, sessionType, completionLabel, fullScreen }: Props) {
   const { hasContent } = useCanvasState();
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
   const helpDisabled = isLimited || isStreaming;
 
   return (
     <div className="flex items-center gap-3 px-4 py-2 border-t border-gray-200 bg-white flex-wrap">
+      {fullScreen && (
+        <button
+          onClick={fullScreen.toggle}
+          aria-pressed={fullScreen.on}
+          className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+          title={fullScreen.on ? 'Show the rest of the page again (Esc)' : 'Give the board the whole screen'}
+        >
+          {fullScreen.on ? 'Exit full screen' : 'Full screen'}
+        </button>
+      )}
+
       {/* Spacer */}
       <div className="flex-1" />
 
