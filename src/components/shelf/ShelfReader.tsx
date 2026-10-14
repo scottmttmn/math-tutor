@@ -100,6 +100,7 @@ export default function ShelfReader() {
       setOpenId(exercise.id);
       setPage(exercise.page);
       setMarking(false);
+      setTutorOpen(false);
       writeUrl(source.document.id, exercise.id);
     } catch {
       setError('That exercise could not be opened. Try again.');

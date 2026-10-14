@@ -36,8 +36,8 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
   const showSource = Boolean(source) && !fullScreen && !sourceHidden;
   const showTutor = tutor.open && !fullScreen;
   const wide = useSyncExternalStore(subscribeWide, isWide, () => false);
-  // Below 2xl the open tutor takes the source's place.
-  const sourceCovered = showSource && showTutor && !wide;
+  // Below 2xl the open tutor takes the source's place, whether or not the source was hidden.
+  const sourceCovered = Boolean(source) && showTutor && !wide;
 
   return (
     <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
@@ -61,7 +61,7 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
           {source && !fullScreen && (
             <button
               onClick={() => {
-                if (sourceCovered) tutor.onClose();
+                if (sourceCovered) { tutor.onClose(); setSourceHidden(false); }
                 else setSourceHidden((hidden) => !hidden);
               }}
               aria-pressed={showSource && !sourceCovered}

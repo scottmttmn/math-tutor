@@ -190,7 +190,8 @@ function WorkbookContent() {
   useEffect(() => {
     const element = chatScrollRef.current;
     if (element) element.scrollTop = element.scrollHeight;
-  }, [chatHistory]);
+    // An exercise's chat mounts when its drawer opens, so scroll then too.
+  }, [chatHistory, tutorOpen]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {

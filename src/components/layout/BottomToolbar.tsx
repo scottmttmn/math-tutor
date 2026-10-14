@@ -81,8 +81,12 @@ export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSo
 
       {tutor && (
         <button
-          onClick={tutor.toggle}
-          aria-pressed={tutor.open}
+          onClick={() => {
+            // Full screen hides the tutor, so opening it leaves full screen (as Ask for Help does).
+            if (fullScreen?.on) { fullScreen.toggle(); if (!tutor.open) tutor.toggle(); }
+            else tutor.toggle();
+          }}
+          aria-pressed={tutor.open && !fullScreen?.on}
           className={`px-3 py-1.5 text-sm border rounded-lg ${tutor.open ? 'bg-blue-50 text-blue-700 border-blue-200' : 'text-gray-600 border-gray-300 hover:bg-gray-50'}`}
           title={tutor.open ? 'Close the tutor' : 'Show the conversation with the tutor'}
         >

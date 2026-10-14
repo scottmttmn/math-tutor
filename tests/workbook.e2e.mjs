@@ -202,7 +202,9 @@ try {
   assert.equal(await page.getByRole('complementary', { name: 'Tutor' }).count(), 0);
   assert.equal(await page.getByRole('region', { name: 'Exercise' }).count(), 0);
   await page.locator('.tl-shape').first().waitFor();
-  await page.getByRole('button', { name: 'Exit full screen' }).click();
+  // Tutor in full screen leaves it and shows the conversation.
+  await page.getByRole('button', { name: 'Tutor', exact: true }).click();
+  await page.getByRole('button', { name: 'Full screen' }).waitFor();
   await page.getByRole('complementary', { name: 'Tutor' }).waitFor();
   // The open tutor stands in the exercise's place; Show exercise closes it.
   await page.getByRole('button', { name: 'Show exercise' }).click(); await waitExercise();
