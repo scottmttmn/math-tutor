@@ -69,6 +69,8 @@ async function placeProblemImage(editor: Editor, base64: string): Promise<boolea
   }
   const src = `data:image/png;base64,${base64}`;
   const natural = await imageSize(src);
+  // A second tap while the picture loaded may have placed it already.
+  if (findProblemShape(editor)) return false;
   const viewport = editor.getViewportPageBounds();
   // Crops are rendered at twice their page size; never wider than most of the view.
   const scale = Math.min(0.5, (viewport.w * 0.8) / natural.w);
