@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { renderPage } from '@/lib/pdf';
 import type { PageRect, ShelfExercise } from '@/types';
@@ -14,6 +14,9 @@ interface Props {
   activeId: string | null;
   /** While true, dragging on the page draws a box instead of scrolling. */
   marking: boolean;
+  /** A box drawn but not saved yet; it stays on the page with `pendingForm` beside it. */
+  pending: PageRect | null;
+  pendingForm: ReactNode;
   onMark: (rect: PageRect) => void;
   onOpenMark: (exercise: ShelfExercise) => void;
 }
@@ -25,16 +28,29 @@ const clamp = (value: number) => Math.min(1, Math.max(0, value));
 const box = (a: { x: number; y: number }, b: { x: number; y: number }): PageRect => ({
   x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y),
 });
+// Below the box, or above it near the bottom of the page; lined up with whichever side has room.
+const formPosition = (rect: PageRect): React.CSSProperties => ({
+  ...(rect.y + rect.height > 0.8 ? { bottom: `${(1 - rect.y) * 100}%` } : { top: `${(rect.y + rect.height) * 100}%` }),
+  ...(rect.x > 0.5 ? { right: `${(1 - rect.x - rect.width) * 100}%` } : { left: `${rect.x * 100}%` }),
+});
 const percent = (rect: PageRect) => ({ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%` });
 
 /** One PDF page, fit to its container's width, with marked exercises drawn over it. */
-export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, marking, onMark, onOpenMark }: Props) {
+export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, marking, pending, pendingForm, onMark, onOpenMark }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [width, setWidth] = useState(0);
   const [failed, setFailed] = useState(false);
   const start = useRef<{ x: number; y: number } | null>(null);
   const [draft, setDraft] = useState<PageRect | null>(null);
+  const form = useRef<HTMLDivElement>(null);
+
+  // The page may be scrolled: bring the form into view and put the cursor in its name field.
+  useEffect(() => {
+    if (!pending) return;
+    form.current?.scrollIntoView?.({ block: 'nearest' });
+    form.current?.querySelector('input')?.focus({ preventScroll: true });
+  }, [pending]);
 
   useEffect(() => {
     const element = container.current;
@@ -65,6 +81,8 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
     const bounds = event.currentTarget.getBoundingClientRect();
     return { x: clamp((event.clientX - bounds.left) / bounds.width), y: clamp((event.clientY - bounds.top) / bounds.height) };
   };
+
+  const shown = draft ?? pending;
 
   return (
     <div ref={container} className="w-full">
@@ -107,7 +125,17 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
               </button>
             );
           })}
-          {draft && <div style={percent(draft)} className="absolute border-2 border-dashed border-blue-600 bg-blue-500/10" />}
+          {shown && <div style={percent(shown)} className="absolute border-2 border-dashed border-blue-600 bg-blue-500/10" />}
+          {pending && !draft && (
+            <div
+              ref={form}
+              style={formPosition(pending)}
+              className="absolute z-10 my-1 cursor-auto"
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              {pendingForm}
+            </div>
+          )}
         </div>
       </div>
     </div>
