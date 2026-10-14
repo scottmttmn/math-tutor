@@ -19,8 +19,23 @@ try {
   await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: frames }));
   await page.goto(`${origin}/workbook`);
   await page.getByRole('heading', { name: 'Reading tutor' }).waitFor();
-  await page.getByRole('textbox').fill('Explain modulus.');
-  await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  const box = page.getByRole('textbox');
+  const oneLine = (await box.boundingBox()).height;
+  await box.fill('Why is the modulus of a product the product of the moduli, and does the same hold for sums of complex numbers?');
+  const wrapped = (await box.boundingBox()).height;
+  assert.ok(wrapped > oneLine, 'a long question wraps onto more lines');
+  // Narrowing the panel rewraps the draft; the box grows without the text changing.
+  await page.evaluate(() => { document.querySelector('aside').style.width = '260px'; });
+  await page.waitForFunction((before) => document.querySelector('textarea').getBoundingClientRect().height > before, wrapped);
+  await page.evaluate(() => { document.querySelector('aside').style.width = ''; });
+  await box.fill('Explain');
+  await box.press('Shift+Enter');
+  await box.pressSequentially('modulus.');
+  assert.equal(await box.inputValue(), 'Explain\nmodulus.');
+  const sent = page.waitForRequest('**/api/tutor');
+  await box.press('Enter');
+  assert.equal(JSON.parse((await sent).postData()).userQuestion, 'Explain\nmodulus.');
+  assert.equal(await box.inputValue(), '');
   const chat = page.locator('.tutor-content').last();
   await chat.locator('.katex').nth(3).waitFor();
   assert.equal(await chat.locator('.katex').count(), 4);
