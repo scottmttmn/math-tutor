@@ -152,7 +152,8 @@ try {
   // Removing a mark removes its board.
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
   await page.getByRole('heading', { name: 'Exercises', exact: true }).waitFor();
-  assert.equal(await page.getByRole('button', { name: 'Open Exercise 1' }).count(), 0);
+  // The board closes before the mark's removal is written, so wait for the mark to go.
+  await page.getByRole('button', { name: 'Open Exercise 1' }).waitFor({ state: 'detached' });
   console.log('PASS History opens Shelf exercises; removing a mark removes its board');
 
   // A single problem goes straight onto a new board as its problem image.
