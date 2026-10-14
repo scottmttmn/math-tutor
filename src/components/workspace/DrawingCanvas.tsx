@@ -26,11 +26,11 @@ const TldrawCanvas = dynamic(() => import('./TldrawCanvas'), {
 });
 
 /** Fills its nearest positioned ancestor; give that element a size. */
-export default function DrawingCanvas({ handleRef }: { handleRef: RefObject<DrawingCanvasHandle | null> }) {
+export default function DrawingCanvas({ handleRef, toolsHidden = false }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden?: boolean }) {
   return (
     // isolate: tldraw's toolbars use z-indexes up to 10000; keep them below the app's dialogs.
     <div className="absolute inset-0 isolate">
-      <TldrawCanvas handleRef={handleRef} />
+      <TldrawCanvas handleRef={handleRef} toolsHidden={toolsHidden} />
     </div>
   );
 }

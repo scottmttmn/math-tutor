@@ -128,7 +128,7 @@ function applyLoad(editor: Editor, load: CanvasLoad) {
   startDrawing(editor);
 }
 
-export default function TldrawCanvas({ handleRef }: { handleRef: RefObject<DrawingCanvasHandle | null> }) {
+export default function TldrawCanvas({ handleRef, toolsHidden }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden: boolean }) {
   const [editor, setEditor] = useState<Editor | null>(null);
   const { document, pendingLoad } = useCanvasState();
   const dispatch = useCanvasDispatch();
@@ -201,5 +201,5 @@ export default function TldrawCanvas({ handleRef }: { handleRef: RefObject<Drawi
     },
   }), [editor]);
 
-  return <Tldraw assetUrls={assetUrls} components={components} options={{ maxPages: 1 }} onMount={handleMount} />;
+  return <Tldraw assetUrls={assetUrls} components={components} options={{ maxPages: 1 }} onMount={handleMount} hideUi={toolsHidden} />;
 }
