@@ -43,6 +43,7 @@ export function toHistoryItem(session: Session): HistoryItem | null {
 
 const SHOWN: Record<HistoryShow, (item: HistoryItem) => boolean> = {
   all: () => true,
+  problems: (item) => item.sessionType === 'problem',
   inProgress: (item) => item.sessionType === 'problem' && !item.isSolved,
   solved: (item) => item.isSolved,
   notes: (item) => item.sessionType === 'note',

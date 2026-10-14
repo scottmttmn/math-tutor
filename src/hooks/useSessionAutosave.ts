@@ -5,11 +5,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
 import { useSessionDispatch, useSessionState } from '@/context/SessionContext';
 import { hasRecoveryCopy, loadRecoveredSession, saveRecoverableSession, settleInterruptedReplies, stageSession } from '@/lib/sessionRecovery';
+import { boardToOpen, setBoardToOpen } from '@/lib/currentBoard';
 import type { DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import type { AutosaveStatus, Session, SessionType } from '@/types';
 
-// The session the main page reopens after a reload.
-const CURRENT_SESSION_KEY = 'math-tutor:currentSession';
 const SAVE_DELAY_MS = 800;
 
 // Everything a save writes except timestamps and the thumbnail, so an unchanged session isn't rewritten.
@@ -18,16 +17,11 @@ const contentKey = (session: Session) => JSON.stringify([
   session.canvasDocument?.store ?? null, session.canvasStrokes,
 ]);
 
-function rememberCurrent(id: string | null) {
-  try {
-    if (id) localStorage.setItem(CURRENT_SESSION_KEY, id);
-    else localStorage.removeItem(CURRENT_SESSION_KEY);
-  } catch { /* Reopening the last session is a convenience. */ }
-}
+const rememberCurrent = setBoardToOpen;
 
 /**
  * Saves the open session to IndexedDB shortly after each change, flushes it when the page is
- * hidden, and (on the main page) reopens it after a reload. Returns the save status and the ways
+ * hidden, and (on /board) reopens it after a reload. Returns the save status and the ways
  * to switch sessions. The Shelf passes `reopenLast: false`: it opens boards from its own URL.
  */
 export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle | null>, { reopenLast = true }: { reopenLast?: boolean } = {}) {
@@ -162,8 +156,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
   // Reopen the last session after a reload.
   useEffect(() => {
     let active = true;
-    let id: string | null = null;
-    try { if (reopenLast) id = localStorage.getItem(CURRENT_SESSION_KEY); } catch { /* Start fresh. */ }
+    const id = reopenLast ? boardToOpen() : null;
     if (!id) { loading.current = false; return; }
     loadRecoveredSession(id)
       .then((session) => { if (active && !switched.current) applyLoad(session); })

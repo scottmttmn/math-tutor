@@ -81,7 +81,7 @@ export interface HistoryItem {
 }
 
 /** History's filter: everything, problems not yet solved, solved problems, or notes. */
-export type HistoryShow = 'all' | 'inProgress' | 'solved' | 'notes';
+export type HistoryShow = 'all' | 'problems' | 'notes' | 'inProgress' | 'solved';
 export type HistorySort = 'updated' | 'created' | 'title';
 
 // === Shelf ===

@@ -1,14 +1,12 @@
 'use client';
 
-import { useRef, useState, useCallback, useEffect, useSyncExternalStore } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import { CanvasProvider } from '@/context/CanvasContext';
 import { SessionProvider, useSessionState, useSessionDispatch } from '@/context/SessionContext';
 import { useTutorChat } from '@/hooks/useTutorChat';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
 import { useSessionAutosave } from '@/hooks/useSessionAutosave';
 import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
-
-import { getModelLabel, subscribeModelConfig } from '@/lib/modelConfig';
 
 import type { SessionType } from '@/types';
 import TopBar from './TopBar';
@@ -17,30 +15,28 @@ import ProblemStatement from '../workspace/ProblemStatement';
 import NoteHeader from '../workspace/NoteHeader';
 import DrawingCanvas, { type DrawingCanvasHandle } from '../workspace/DrawingCanvas';
 import ChatPanel from '../chat/ChatPanel';
-import History from '../sessions/History';
-import SettingsModal from './SettingsModal';
 
 function AppContent() {
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
   // The board revision the tutor last saw, so follow-ups only attach a snapshot when it changed.
   const sentRevision = useRef<number | null>(null);
-  const [sessionsOpen, setSessionsOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const modelLabel = useSyncExternalStore(subscribeModelConfig, getModelLabel, () => '');
   const [chatOpen, setChatOpen] = useState(false);
   const { fullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
 
-  const { currentSessionId, isStreaming, isSolved, sessionType } = useSessionState();
+  const { isStreaming, isSolved, sessionType } = useSessionState();
   const sessionDispatch = useSessionDispatch();
   const { sendHelp } = useTutorChat();
-  const { status: saveStatus, saveNow, openSession, startNew } = useSessionAutosave(canvasHandle);
+  const { status: saveStatus, saveNow, startNew } = useSessionAutosave(canvasHandle);
 
   const handleNew = useCallback((type: SessionType = 'problem') => { void startNew(type); }, [startNew]);
-  const handleLoad = useCallback((id: string) => { void openSession(id); }, [openSession]);
-  // A deleted session must not be saved again by the next autosave.
-  const handleDeleted = useCallback((id: string) => {
-    if (id === currentSessionId) void startNew(sessionType, { discardCurrent: true });
-  }, [currentSessionId, sessionType, startNew]);
+
+  // New from another page arrives as /board?new=problem|note; start it once, then drop it from the URL.
+  useEffect(() => {
+    const type = new URLSearchParams(window.location.search).get('new');
+    if (type !== 'problem' && type !== 'note') return;
+    window.history.replaceState(null, '', '/board');
+    void startNew(type);
+  }, [startNew]);
 
   const handleAskForHelp = useCallback(async () => {
     if (getTutorWaitMs() > 0) return;
@@ -95,10 +91,6 @@ function AppContent() {
         onNew={handleNew}
         saveStatus={saveStatus}
         onSave={() => void saveNow()}
-        // Save first so the list includes the latest changes.
-        onOpenSessions={() => { void saveNow().then(() => setSessionsOpen(true)); }}
-        onOpenSettings={() => setSettingsOpen(true)}
-        modelLabel={modelLabel}
         chatOpen={chatOpen}
         onToggleChat={() => setChatOpen((o) => !o)}
       />}
@@ -134,20 +126,6 @@ function AppContent() {
         )}
       </div>
 
-      <History
-        isOpen={sessionsOpen}
-        currentSessionId={currentSessionId}
-        onClose={() => setSessionsOpen(false)}
-        onOpen={handleLoad}
-        onDeleted={handleDeleted}
-      />
-
-      <SettingsModal
-        isOpen={settingsOpen}
-        onClose={() => {
-          setSettingsOpen(false);
-        }}
-      />
     </div>
   );
 }

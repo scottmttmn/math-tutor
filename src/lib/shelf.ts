@@ -3,10 +3,9 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { deleteSession, deleteShelfDocument, loadSession, saveSession, saveShelfDocument, shelfSessionId } from '@/lib/db';
 import { cropPage, imageFileToPng, openPdf, pageImage, renderCover } from '@/lib/pdf';
 import { discardRecoveryCopy } from '@/lib/sessionRecovery';
+import { setBoardToOpen } from '@/lib/currentBoard';
 import type { PageRect, Session, ShelfDocument, ShelfExercise } from '@/types';
 
-// The key the main page reopens after a load (see useSessionAutosave).
-const CURRENT_SESSION_KEY = 'math-tutor:currentSession';
 
 const isPdf = (file: File) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
 const baseName = (name: string) => name.replace(/\.[^.]+$/, '').trim() || 'Untitled';
@@ -28,7 +27,7 @@ export async function addToShelf(file: File): Promise<ShelfDocument> {
 
 /**
  * Starts a free-form problem with a picture of the file (an image, or a PDF's first page) as its
- * problem image, and makes it the session the main page opens next.
+ * problem image, and makes it the session /board opens next.
  */
 export async function startProblemFromFile(file: File): Promise<string> {
   let image: string;
@@ -42,7 +41,7 @@ export async function startProblemFromFile(file: File): Promise<string> {
     canvasImageBlob: null, chatHistory: [], createdAt: now, updatedAt: now, isSolved: false, sessionType: 'problem',
   };
   await saveSession(session);
-  localStorage.setItem(CURRENT_SESSION_KEY, session.id);
+  setBoardToOpen(session.id);
   return session.id;
 }
 

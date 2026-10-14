@@ -1,137 +1,46 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import Link from 'next/link';
 import type { AutosaveStatus, SessionType } from '@/types';
+import AppBar from './AppBar';
 
 interface Props {
   onNew: (type: SessionType) => void;
   saveStatus: AutosaveStatus;
   onSave: () => void;
-  onOpenSessions: () => void;
-  onOpenSettings: () => void;
-  modelLabel: string;
   chatOpen: boolean;
   onToggleChat: () => void;
 }
 
-export default function TopBar({
-  onNew,
-  saveStatus,
-  onSave,
-  onOpenSessions,
-  onOpenSettings,
-  modelLabel,
-  chatOpen,
-  onToggleChat,
-}: Props) {
-  const [newDropdownOpen, setNewDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setNewDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  const handleNew = (type: SessionType) => {
-    onNew(type);
-    setNewDropdownOpen(false);
-  };
-
+/** The app bar on a free board, with its save status and the chat toggle. */
+export default function TopBar({ onNew, saveStatus, onSave, chatOpen, onToggleChat }: Props) {
   return (
-    <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white">
-      <div className="flex items-center gap-2">
-        <h1 className="text-base font-bold text-gray-800">Math Tutor</h1>
-        <span className="text-xs text-gray-400 hidden sm:inline">{modelLabel}</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <Link href="/workbook" className="px-3 py-1.5 text-xs font-medium text-blue-700 border border-blue-200 bg-blue-50 rounded-lg hover:bg-blue-100">
-          Workbook
-        </Link>
-        <Link href="/shelf" className="px-3 py-1.5 text-xs font-medium text-blue-700 border border-blue-200 bg-blue-50 rounded-lg hover:bg-blue-100">
-          Shelf
-        </Link>
-        {/* Chat panel toggle */}
+    <AppBar place="board" onNew={onNew}>
+      {/* Sessions save themselves; this only reports it, or offers a retry after a failure. */}
+      {saveStatus === 'error' ? (
         <button
-          onClick={onToggleChat}
-          title={chatOpen ? 'Hide chat' : 'Show chat'}
-          className={`flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-            chatOpen
-              ? 'bg-blue-50 text-blue-600 border border-blue-200'
-              : 'text-gray-600 border border-gray-300 hover:bg-gray-50'
-          }`}
+          onClick={onSave}
+          className="min-h-10 px-3 text-sm font-medium text-red-600 border border-red-200 bg-red-50 rounded-lg hover:bg-red-100"
+          title="Your latest changes aren't saved"
         >
-          <ChatIcon />
-          Chat
+          Couldn&apos;t save · Retry
         </button>
-
-        <div className="w-px h-4 bg-gray-200" />
-
-        <button
-          onClick={onOpenSettings}
-          className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-          title="Model settings"
-        >
-          Settings
-        </button>
-
-        {/* New — dropdown for Problem vs Notes */}
-        <div ref={dropdownRef} className="relative">
-          <button
-            onClick={() => setNewDropdownOpen((o) => !o)}
-            className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1"
-          >
-            New
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-              <path d="M2 3.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-            </svg>
-          </button>
-          {newDropdownOpen && (
-            <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
-              <button
-                onClick={() => handleNew('problem')}
-                className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-              >
-                <span>📐</span> New Problem
-              </button>
-              <button
-                onClick={() => handleNew('note')}
-                className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-              >
-                <span>📝</span> New Notes
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Sessions save themselves; this only reports it, or offers a retry after a failure. */}
-        {saveStatus === 'error' ? (
-          <button
-            onClick={onSave}
-            className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 bg-red-50 rounded-lg hover:bg-red-100"
-            title="Your latest changes aren't saved"
-          >
-            Couldn&apos;t save · Retry
-          </button>
-        ) : (
-          <span role="status" className="w-14 text-center text-xs text-gray-400">
-            {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved' : ''}
-          </span>
-        )}
-        <button
-          onClick={onOpenSessions}
-          className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-        >
-          History
-        </button>
-      </div>
-    </div>
+      ) : (
+        <span role="status" className="w-14 text-center text-xs text-gray-400">
+          {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved' : ''}
+        </span>
+      )}
+      <button
+        onClick={onToggleChat}
+        title={chatOpen ? 'Hide chat' : 'Show chat'}
+        aria-pressed={chatOpen}
+        className={`flex items-center gap-1 min-h-10 px-3 text-sm font-medium rounded-lg border transition-colors ${
+          chatOpen ? 'bg-blue-50 text-blue-600 border-blue-200' : 'text-gray-600 border-gray-300 hover:bg-gray-50'
+        }`}
+      >
+        <ChatIcon />
+        Chat
+      </button>
+    </AppBar>
   );
 }
 
