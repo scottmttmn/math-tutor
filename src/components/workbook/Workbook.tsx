@@ -13,6 +13,7 @@ import type { Session, WorkbookContext } from '@/types';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
 import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
+import { useToolsHidden } from '@/hooks/useToolsHidden';
 import ChatMessage from '@/components/chat/ChatMessage';
 import ChatTextarea from '@/components/chat/ChatTextarea';
 
@@ -39,6 +40,7 @@ function WorkbookContent() {
   const [saveError, setSaveError] = useState('');
   const [completedIds, setCompletedIds] = useState<string[]>([]);
   const canvasRef = useRef<DrawingCanvasHandle>(null);
+  const { toolsHidden, toggleTools } = useToolsHidden();
   const { fullScreen: boardFullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
   const readingScrollRef = useRef<HTMLDivElement>(null);
   const readingScrollTop = useRef(0);
@@ -299,10 +301,10 @@ function WorkbookContent() {
                   }} dangerouslySetInnerHTML={{ __html: exercise.html }} />
                 </div>
                 <div className={`order-2 lg:order-none relative ${fullScreen ? 'flex-1 min-h-0' : 'h-[60vh] min-h-[400px] flex-none lg:h-auto lg:min-h-0 lg:flex-1'}`}>
-                  <DrawingCanvas handleRef={canvasRef} />
+                  <DrawingCanvas handleRef={canvasRef} toolsHidden={toolsHidden} />
                 </div>
                 <div className="order-1 lg:order-none">
-                  <BottomToolbar onAskForHelp={() => void reviewWhiteboard()} isStreaming={isStreaming} isSolved={isSolved} onToggleSolved={toggleComplete} onClear={() => canvasRef.current?.clear()} sessionType="problem" completionLabel="attempt" fullScreen={{ on: fullScreen, toggle: toggleFullScreen }} />
+                  <BottomToolbar onAskForHelp={() => void reviewWhiteboard()} isStreaming={isStreaming} isSolved={isSolved} onToggleSolved={toggleComplete} onClear={() => canvasRef.current?.clear()} sessionType="problem" completionLabel="attempt" fullScreen={{ on: fullScreen, toggle: toggleFullScreen }} tools={{ hidden: toolsHidden, toggle: toggleTools }} />
                 </div>
               </>
             ) : (

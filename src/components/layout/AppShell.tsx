@@ -7,6 +7,7 @@ import { useTutorChat } from '@/hooks/useTutorChat';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
 import { useSessionAutosave } from '@/hooks/useSessionAutosave';
 import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
+import { useToolsHidden } from '@/hooks/useToolsHidden';
 
 import { getModelLabel, subscribeModelConfig } from '@/lib/modelConfig';
 
@@ -29,6 +30,7 @@ function AppContent() {
   const modelLabel = useSyncExternalStore(subscribeModelConfig, getModelLabel, () => '');
   const [chatOpen, setChatOpen] = useState(false);
   const { fullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
+  const { toolsHidden, toggleTools } = useToolsHidden();
 
   const { currentSessionId, isStreaming, isSolved, sessionType } = useSessionState();
   const sessionDispatch = useSessionDispatch();
@@ -113,7 +115,7 @@ function AppContent() {
                 onPutOnBoard={(image) => void canvasHandle.current?.placeProblemImage(image)}
               />)}
           <div className="flex-1 relative min-h-0">
-            <DrawingCanvas handleRef={canvasHandle} />
+            <DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} />
           </div>
           <BottomToolbar
             onAskForHelp={handleAskForHelp}
@@ -123,6 +125,7 @@ function AppContent() {
             onToggleSolved={() => sessionDispatch({ type: 'TOGGLE_SOLVED' })}
             sessionType={sessionType}
             fullScreen={{ on: fullScreen, toggle: toggleFullScreen }}
+            tools={{ hidden: toolsHidden, toggle: toggleTools }}
           />
         </div>
 

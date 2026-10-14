@@ -16,9 +16,11 @@ interface Props {
   completionLabel?: 'attempt';
   /** Shows the Full screen button (see useBoardFullScreen). */
   fullScreen?: { on: boolean; toggle: () => void };
+  /** Shows the Hide tools button (see useToolsHidden). */
+  tools?: { hidden: boolean; toggle: () => void };
 }
 
-export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSolved, onToggleSolved, sessionType, completionLabel, fullScreen }: Props) {
+export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSolved, onToggleSolved, sessionType, completionLabel, fullScreen, tools }: Props) {
   const { hasContent } = useCanvasState();
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
   const helpDisabled = isLimited || isStreaming;
@@ -33,6 +35,17 @@ export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSo
           title={fullScreen.on ? 'Show the rest of the page again (Esc)' : 'Give the board the whole screen'}
         >
           {fullScreen.on ? 'Exit full screen' : 'Full screen'}
+        </button>
+      )}
+
+      {tools && (
+        <button
+          onClick={tools.toggle}
+          aria-pressed={tools.hidden}
+          className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+          title={tools.hidden ? 'Show the drawing tools and colors' : 'Hide the drawing tools and colors; the pen keeps writing'}
+        >
+          {tools.hidden ? 'Show tools' : 'Hide tools'}
         </button>
       )}
 
