@@ -191,6 +191,15 @@ try {
   // History lists the exercise with work in it (not the empty one) and opens it beside its page.
   await page.getByRole('button', { name: 'Close board' }).click();
   await page.getByRole('heading', { name: 'Exercises', exact: true }).waitFor();
+  // The list beside the page can be hidden, so the page gets the width; it stays hidden after a reload.
+  const pageWidth = (await page.getByTestId('page-overlay').boundingBox()).width;
+  await page.getByRole('button', { name: 'Hide', exact: true }).click();
+  await page.getByRole('heading', { name: 'Exercises', exact: true }).waitFor({ state: 'detached' });
+  await page.waitForTimeout(500);
+  assert.ok((await page.getByTestId('page-overlay').boundingBox()).width > pageWidth * 1.3, 'the page is wider');
+  await page.reload();
+  await page.getByRole('button', { name: 'Exercises', exact: true }).click();
+  await page.getByRole('heading', { name: 'Exercises', exact: true }).waitFor();
   await page.goto(`${origin}/`);
   await page.getByRole('button', { name: 'History' }).click();
   const history = page.getByRole('dialog', { name: 'History' });

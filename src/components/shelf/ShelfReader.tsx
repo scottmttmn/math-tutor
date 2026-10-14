@@ -20,6 +20,8 @@ import PdfPage from './PdfPage';
 
 // Whether marks are hidden on the page, remembered on this device for every PDF.
 const MARKS_HIDDEN_KEY = 'math-tutor:shelfMarksHidden';
+// Whether the Exercises list beside the page is hidden, so the page gets the width.
+const LIST_HIDDEN_KEY = 'math-tutor:shelfListHidden';
 
 // Reading position is saved once the student stops turning pages.
 const PAGE_SAVE_DELAY_MS = 1000;
@@ -52,6 +54,7 @@ export default function ShelfReader() {
   const [bookHasText, setBookHasText] = useState(true);
   const { fullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
   const [marksHidden, setMarksHidden] = useState(false);
+  const [listHidden, setListHidden] = useState(false);
   const switching = useRef(false);
   const book = useRef<{ pdf: PDFDocumentProxy; document: ShelfDocument; range: ReadingRange } | null>(null);
 
@@ -129,8 +132,15 @@ export default function ShelfReader() {
 
   // Read in an effect: localStorage isn't there during server rendering.
   useEffect(() => {
-    try { setMarksHidden(localStorage.getItem(MARKS_HIDDEN_KEY) === '1'); } catch { /* stays shown */ }
+    try {
+      setMarksHidden(localStorage.getItem(MARKS_HIDDEN_KEY) === '1');
+      setListHidden(localStorage.getItem(LIST_HIDDEN_KEY) === '1');
+    } catch { /* stays shown */ }
   }, []);
+  const changeListHidden = (next: boolean) => {
+    setListHidden(next);
+    try { localStorage.setItem(LIST_HIDDEN_KEY, next ? '1' : '0'); } catch { /* only for this visit */ }
+  };
   const toggleMarksHidden = () => {
     const next = !marksHidden;
     setMarksHidden(next);
@@ -263,6 +273,8 @@ export default function ShelfReader() {
 
   const exercise = openExerciseForBook;
   // Hidden marks come back while marking, so the same exercise isn't marked twice.
+  // An open board always shows; with none open, the list can make way for the page.
+  const pageOnly = listHidden && !exercise;
   const marksOnPage = marksHidden && !marking ? [] : shelfDocument.exercises.filter((item) => item.page === page);
   const pageCount = pdf.numPages;
 
@@ -287,7 +299,7 @@ export default function ShelfReader() {
 
       {/* Side by side on wide screens; page above board on a tablet held upright, both in view. */}
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
-        <section className={`${fullScreen ? 'hidden' : 'flex'} basis-[45%] lg:basis-auto lg:flex-1 min-w-0 min-h-0 flex-col border-b lg:border-b-0 border-gray-200`}>
+        <section className={`${fullScreen ? 'hidden' : 'flex'} ${pageOnly ? 'flex-1' : 'basis-[45%]'} lg:basis-auto lg:flex-1 min-w-0 min-h-0 flex-col border-b lg:border-b-0 border-gray-200`}>
           <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-white border-b border-gray-200">
             {exercise && (
               <div className="flex rounded-lg border border-gray-300 overflow-hidden" role="group" aria-label="Show">
@@ -313,6 +325,10 @@ export default function ShelfReader() {
                     className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40">
                     {marksHidden ? 'Show marks' : 'Hide marks'}
                   </button>
+                )}
+                {pageOnly && (
+                  <button onClick={() => changeListHidden(false)} title="Show the list of marked exercises beside the page"
+                    className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50">Exercises</button>
                 )}
                 <button
                   onClick={() => { setMarking((on) => !on); setPendingMark(null); }}
@@ -351,7 +367,7 @@ export default function ShelfReader() {
           )}
         </section>
 
-        <section className={`flex-1 ${fullScreen ? '' : 'lg:flex-none lg:w-1/2'} min-h-0 flex flex-col lg:border-l border-gray-200 bg-white`}>
+        <section className={`${pageOnly ? 'hidden' : 'flex'} flex-1 ${fullScreen ? '' : 'lg:flex-none lg:w-1/2'} min-h-0 flex-col lg:border-l border-gray-200 bg-white`}>
           {exercise ? (
             <>
               <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200">
@@ -402,7 +418,11 @@ export default function ShelfReader() {
             </>
           ) : (
             <div className="flex-1 overflow-y-auto p-4">
-              <h2 className="font-semibold text-gray-900">Exercises</h2>
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="font-semibold text-gray-900">Exercises</h2>
+                <button onClick={() => changeListHidden(true)} title="Hide this list so the page gets the whole width"
+                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Hide</button>
+              </div>
               {shelfDocument.exercises.length === 0 ? (
                 <p className="mt-2 text-sm text-gray-500">Tap <strong>Mark exercise</strong> and drag a box around a problem on the page. It opens here on its own board, and stays marked on the page.</p>
               ) : (
