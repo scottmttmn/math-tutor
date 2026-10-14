@@ -205,8 +205,9 @@ function HistoryCard({ item, onOpen, onRename, onDelete }: CardProps) {
   };
 
   return (
-    <li className="flex flex-col bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <button onClick={onOpen} className="text-left hover:bg-gray-50" aria-label={`Open ${item.title}`}>
+    // No overflow-hidden on the card: it would clip the "⋯" menu. The open button rounds its own corners.
+    <li className="flex flex-col bg-white border border-gray-200 rounded-xl">
+      <button onClick={onOpen} className="text-left rounded-t-xl overflow-hidden hover:bg-gray-50" aria-label={`Open ${item.title}`}>
         <Thumbnail blob={item.thumbnail} />
         <div className="px-3 pt-2">
           <KindLine item={item} />

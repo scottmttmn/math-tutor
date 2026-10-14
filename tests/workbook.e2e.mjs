@@ -317,6 +317,10 @@ try {
   assert.equal(await page.locator('[aria-labelledby="boards-heading"] li').count(), 1);
   // A name given in History survives the open session's next autosave.
   await history.getByRole('button', { name: /^More for / }).click();
+  // The menu draws over the card's edge rather than being clipped by it.
+  const deleteItem = history.getByRole('menuitem', { name: 'Delete' });
+  const deleteBox = await deleteItem.boundingBox();
+  assert.ok(await deleteItem.evaluate((element, [x, y]) => element.contains(document.elementFromPoint(x, y)), [deleteBox.x + deleteBox.width / 2, deleteBox.y + deleteBox.height / 2]), 'Delete is reachable');
   await history.getByRole('menuitem', { name: 'Rename' }).click();
   await history.getByRole('textbox', { name: 'Name' }).fill('Modulus notes');
   await history.getByRole('textbox', { name: 'Name' }).press('Enter');

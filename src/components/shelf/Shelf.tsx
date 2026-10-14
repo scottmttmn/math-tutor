@@ -121,8 +121,9 @@ function ShelfCard({ document, onRemove }: { document: ShelfDocument; onRemove: 
   const [confirming, setConfirming] = useState(false);
   const marked = document.exercises.length;
   return (
-    <li className="flex flex-col bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <ShelfCover document={document} />
+    // No overflow-hidden on the card: it would clip the "⋯" menu.
+    <li className="flex flex-col bg-white border border-gray-200 rounded-xl">
+      <div className="rounded-t-xl overflow-hidden"><ShelfCover document={document} /></div>
       <div className="mt-auto flex flex-wrap items-center justify-end gap-1.5 px-3 py-2">
         {confirming ? (
           <>
