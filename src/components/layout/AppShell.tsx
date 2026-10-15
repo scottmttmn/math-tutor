@@ -157,14 +157,15 @@ function AppContent() {
 
       {writeUpOpen && (
         <WriteUpPanel
-          onClose={() => setWriteUpOpen(false)}
+          // Closing stops a write-up in progress, so it can't hold up the tutor unseen.
+          onClose={() => { writeUp.cancel(); setWriteUpOpen(false); }}
           title={boardTitle}
           writeUp={writeUp.writeUp}
           draft={writeUp.draft}
           error={writeUp.error}
           tutorBusy={writeUp.tutorBusy}
           onEdit={writeUp.edit}
-          onConvert={() => void canvasHandle.current?.captureImage().then(writeUp.convert)}
+          onConvert={() => void writeUp.convert(async () => await canvasHandle.current?.captureImage() ?? '')}
         />
       )}
     </div>

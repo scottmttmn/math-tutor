@@ -122,7 +122,7 @@ export default function WriteUpPanel({ onClose, title, writeUp, draft, error, on
           <div className="flex-1 min-h-0 flex flex-col">
             {(converting || error) && (
               <p role={error ? 'alert' : 'status'} className={`px-4 py-2 text-sm border-b border-gray-200 ${error ? 'text-red-700' : 'text-gray-700'}`}>
-                {error ? `Error: ${error}` : 'Writing up the board…'}
+                {error ? `Error: ${error}` : 'Writing up the board… (Close stops it)'}
               </p>
             )}
             <div className="flex-1 min-h-0 grid grid-rows-2 md:grid-rows-1 md:grid-cols-2">

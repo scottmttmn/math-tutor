@@ -212,6 +212,7 @@ function streamChatGPTResponse(
   systemPrompt: string = SYSTEM_PROMPT,
   onFinish: () => void = () => {},
   book = '',
+  maxOutputTokens?: number,
 ): ReadableStream {
   const input: ResponseInputMessage[] = [
     ...(book ? [{ role: 'user' as const, content: book }] : []),
@@ -237,6 +238,7 @@ function streamChatGPTResponse(
           model: modelConfig.model,
           instructions: systemPrompt,
           input,
+          ...(maxOutputTokens ? { maxOutputTokens } : {}),
           signal: abort.signal,
           onDelta: (delta) => {
             if (cancelled) return;
@@ -496,6 +498,8 @@ export async function POST(request: Request) {
         fullSystemPrompt,
         release,
         preface,
+        // Plan models reason before they answer, and the cap counts that too.
+        isWriteUp ? maxTokens * 4 : undefined,
       );
     } else if (modelConfig.provider === 'openai-compatible') {
       readableStream = streamOpenAIResponse(

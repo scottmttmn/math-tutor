@@ -21,14 +21,17 @@ export function useWriteUp() {
 
   useEffect(() => () => { pending.current?.abort(); }, []);
 
-  const convert = useCallback(async (canvasImage: string): Promise<boolean> => {
+  // Takes the board's picture itself, so a write-up can be stopped while the picture is still being made.
+  const convert = useCallback(async (captureImage: () => Promise<string>): Promise<boolean> => {
     if (pending.current || isStreaming) return false;
-    if (!canvasImage) { setError('The board is empty. Write something first.'); return false; }
     const abort = new AbortController();
     pending.current = abort;
     setError(null);
     setDraft('');
     try {
+      const canvasImage = await captureImage();
+      if (abort.signal.aborted) return false;
+      if (!canvasImage) throw new Error('The board is empty. Write something first.');
       const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
       // Requests share the tutor's five-second spacing; wait it out rather than refuse.
       const wait = getTutorWaitMs();

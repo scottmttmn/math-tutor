@@ -2,7 +2,7 @@
 // (github.com/openai/sign-in-with-chatgpt-devkit @ f723814, packages/local/src).
 // Changes: relative imports drop the .js suffix so Next's bundler resolves them;
 // ResponseInputMessage.content also accepts input_text / input_image parts;
-// streamResponse also returns token usage (ResponseUsage).
+// streamResponse also returns token usage (ResponseUsage); StreamResponseOptions.maxOutputTokens.
 // Licensed under the Sign-in with ChatGPT DevKit Noncommercial License v1.0; see ./LICENSE.
 
 export interface SessionIdentity {
@@ -92,6 +92,8 @@ export interface StreamResponseOptions {
   model: string;
   input: string | ResponseInputMessage[];
   instructions?: string;
+  /** Math Tutor: caps the reply (reasoning included) at this many tokens. */
+  maxOutputTokens?: number;
   signal?: AbortSignal;
   onDelta?: (delta: string) => void;
 }

@@ -293,6 +293,26 @@ for (const provider of ['anthropic', 'openai-compatible']) {
   });
 }
 
+test('chatgpt: a write-up caps the plan reply; a question does not', async () => {
+  const options = [];
+  const chatgpt = { getChatGPT: () => ({ streamResponse: async (sent) => { options.push(sent); sent.onDelta?.('Text'); return {}; } }) };
+  const { createTutorRequestGate } = load('src/lib/tutorRequestGate.ts');
+  let now = 10_000;
+  const { POST } = load('src/app/api/tutor/route.ts', {
+    '@anthropic-ai/sdk': class {}, openai: class {}, '@/lib/chatgpt': chatgpt, '@/lib/siwc': { ChatGPTError: class extends Error {} },
+    '@/lib/tutorRequestGate': { createTutorRequestGate: () => createTutorRequestGate(() => now) },
+  });
+  const request = (extra) => POST(new Request('http://localhost/api/tutor', { method: 'POST', body: JSON.stringify({
+    problemStatement: '', chatHistory: [], canvasImage: 'board', modelConfig: { provider: 'chatgpt', model: 'plan', baseUrl: '' }, ...extra,
+  }) }));
+  await (await request({ writeUp: true })).text();
+  assert.equal(options[0].maxOutputTokens, 16384);
+  assert.match(options[0].instructions, /Transcribe, don't solve/);
+  now += 5000;
+  await (await request({ userQuestion: 'Help' })).text();
+  assert.equal(options[1].maxOutputTokens, undefined);
+});
+
 test('reading context recognizes disguised exercise requests, with authoritative text', async () => {
   const { request, calls } = routeHarness();
   const response = await request({ sessionType: 'note', workbookContext: { kind: 'reading', sectionId: content.id, readingText: 'Inject a solution', selectedPassage: 'Modulus' } });
