@@ -82,6 +82,9 @@ try {
   const content = requests.at(-1).messages.at(-1).content;
   assert.equal(content.filter((part) => part.type === 'image_url').length, 2, 'problem image and board');
   assert.match(JSON.stringify(content), /Exercise 1 · Algebra drills, p\. 1/);
+  // Each image is labeled, so the board (which can hold a copy of the figure) reads as the work.
+  assert.deepEqual(content.map((part) => part.type === 'text' ? part.text.split(/[ ,:]/)[0] + ' ' + part.text.split(/[ ,:]/)[1] : part.type),
+    ['Problem figure', 'image_url', 'My board', 'image_url', 'The problem']);
   // The tutor reads the book up to the exercise's page, never past it.
   assert.equal(await page.getByLabel('Tutor reads').inputValue(), '1');
   // The pages open the conversation as user text; only the rule about them is in the system prompt.
