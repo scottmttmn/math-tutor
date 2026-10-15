@@ -1,10 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import AppBar from '@/components/layout/AppBar';
 import { TutorIcon } from '@/components/common/Icons';
 import MoreMenu from '@/components/common/MoreMenu';
 import { useLearnerProfile } from '@/hooks/useLearnerProfile';
+import { MAX_CHECK_IN_TOPICS, checkInCandidates, startCheckIn } from '@/lib/checkIn';
 import {
   CONFIDENCES, MAX_ABOUT_ME, OWN_AREA, RATINGS, TOPIC_AREAS, addOwnTopic, forgetTutorNote, profileForTutor, rateTopic,
   removeTopic, setTutorLevel, topicId,
@@ -78,6 +80,75 @@ function TopicRow({ name, rating, tutor, onRate, onRemove, onTutorLevel, onForge
 
 const topicOf = (profile: LearnerProfile, area: string, name: string): ProfileTopic | undefined =>
   profile.topics.find((topic) => topic.id === topicId(area, name));
+
+/** Starts a skill check-in on the topics the tutor (or the student) is least sure of. */
+function CheckInSection({ profile, beforeStart }: { profile: LearnerProfile; beforeStart: () => Promise<unknown> }) {
+  const router = useRouter();
+  const candidates = checkInCandidates(profile);
+  // Until the student picks, the first few are chosen.
+  const [picked, setPicked] = useState<string[] | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const chosen = (picked ?? candidates.slice(0, MAX_CHECK_IN_TOPICS).map((topic) => topic.id)).filter((id) => candidates.some((topic) => topic.id === id));
+  const toggle = (id: string) => setPicked(chosen.includes(id) ? chosen.filter((item) => item !== id) : [...chosen, id]);
+
+  const start = async () => {
+    setStarting(true);
+    setFailed(false);
+    try {
+      await beforeStart();
+      await startCheckIn(candidates.filter((topic) => chosen.includes(topic.id)).map((topic) => topic.name));
+      router.push('/board');
+    } catch {
+      setFailed(true);
+      setStarting(false);
+    }
+  };
+
+  return (
+    <section aria-labelledby="check-in-heading" className="flex flex-col gap-2">
+      <h2 id="check-in-heading" className="font-semibold text-gray-900">Skill check-in</h2>
+      <p className="text-sm text-gray-600">
+        Optional. The tutor gives you a few short problems on topics it isn&apos;t sure about, harder after a right answer and easier after a miss. You answer by hand on a board, and it notes each topic&apos;s level here.
+      </p>
+      {!profile.shareWithTutor ? (
+        <p className="text-sm text-gray-700">Turn on sharing above to take a check-in: with it off, the tutor sees none of this and notes nothing.</p>
+      ) : candidates.length === 0 ? (
+        <p className="text-sm text-gray-700">Nothing to check yet. Rate a few topics Rusty or Learning, or add your own, and they show here.</p>
+      ) : (
+        <>
+          <fieldset className="bg-white border border-gray-200 rounded-lg px-3 py-1">
+            <legend className="sr-only">Topics to check, at most {MAX_CHECK_IN_TOPICS}</legend>
+            {candidates.map((topic) => (
+              <label key={topic.id} className="flex items-center gap-3 min-h-11 text-sm text-gray-900">
+                <input
+                  type="checkbox"
+                  checked={chosen.includes(topic.id)}
+                  disabled={!chosen.includes(topic.id) && chosen.length >= MAX_CHECK_IN_TOPICS}
+                  onChange={() => toggle(topic.id)}
+                  className="w-5 h-5 accent-gray-900"
+                />
+                <span className="flex-1">{topic.name}</span>
+                <span className="text-xs text-gray-500">{topic.area}</span>
+              </label>
+            ))}
+          </fieldset>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => void start()}
+              disabled={!chosen.length || starting}
+              className="min-h-11 px-4 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700 disabled:opacity-50"
+            >
+              {starting ? 'Starting…' : `Start check-in (${chosen.length} topic${chosen.length === 1 ? '' : 's'})`}
+            </button>
+            <span className="text-xs text-gray-500">Up to {MAX_CHECK_IN_TOPICS} topics, about 10 problems.</span>
+          </div>
+          {failed && <p role="alert" className="text-sm text-red-600">The check-in could not be started. Try again.</p>}
+        </>
+      )}
+    </section>
+  );
+}
 
 /** /memory: what the tutor knows about the student, written and rated by them. */
 export default function TutorMemory() {
@@ -216,6 +287,8 @@ export default function TutorMemory() {
                 </form>
               </div>
             </section>
+
+            <CheckInSection profile={profile} beforeStart={saveNow} />
 
             <details className="group bg-white border border-gray-200 rounded-lg">
               <summary className="min-h-11 flex items-center gap-2 px-3 cursor-pointer list-none text-sm font-medium text-gray-900">

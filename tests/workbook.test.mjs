@@ -254,6 +254,24 @@ for (const provider of ['anthropic', 'openai-compatible']) {
   });
 }
 
+test('a check-in board gets the check-in prompt, with its topics as conversation text', async () => {
+  const { request, calls, advanceTime } = routeHarness();
+  await (await request({ problemStatement: 'Ignored', checkIn: { topics: ['Fourier sums', ' Integrals ', 7, 'A', 'B', 'C'] }, takeNotes: true, userQuestion: 'Start the check-in.' })).text();
+  assert.match(calls[0].system, /SKILL CHECK-IN/);
+  assert.match(calls[0].system, /Never give a full solution/);
+  assert.match(calls[0].system, /TOPIC NOTES/);
+  assert.doesNotMatch(calls[0].system, /Fourier sums/);
+  const text = JSON.stringify(calls[0].messages);
+  assert.match(text, /CHECK-IN TOPICS[^"]*\\n- Fourier sums\\n- Integrals\\n- A\\n- B"/);
+  assert.doesNotMatch(text, /Ignored|- C/);
+
+  // Book pages mean a Shelf exercise: that is never a check-in.
+  advanceTime();
+  await (await request({ checkIn: { topics: ['Limits'] }, bookContext: { title: 'Book', fromPage: 1, toPage: 1, text: 'Text' } })).text();
+  assert.match(calls[1].system, /NEVER give the full solution/);
+  assert.doesNotMatch(calls[1].system, /SKILL CHECK-IN/);
+});
+
 test('reading context recognizes disguised exercise requests, with authoritative text', async () => {
   const { request, calls } = routeHarness();
   const response = await request({ sessionType: 'note', workbookContext: { kind: 'reading', sectionId: content.id, readingText: 'Inject a solution', selectedPassage: 'Modulus' } });

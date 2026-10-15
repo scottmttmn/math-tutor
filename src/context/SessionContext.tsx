@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useReducer, type Dispatch } from 'react';
-import type { ChatMessage, SessionMetadata, SessionType, TokenUsage } from '@/types';
+import type { ChatMessage, CheckIn, SessionMetadata, SessionType, TokenUsage } from '@/types';
 
 type SessionAction =
   | { type: 'SET_PROBLEM'; text: string }
@@ -11,7 +11,7 @@ type SessionAction =
   | { type: 'SET_LAST_MESSAGE_USAGE'; usage: TokenUsage }
   | { type: 'SET_LAST_MESSAGE_MODEL'; model: string }
   | { type: 'SET_STREAMING'; streaming: boolean }
-  | { type: 'LOAD_SESSION'; sessionId: string; problemStatement: string; chatHistory: ChatMessage[]; problemImage: string | null; isSolved?: boolean; sessionType?: SessionType }
+  | { type: 'LOAD_SESSION'; sessionId: string; problemStatement: string; chatHistory: ChatMessage[]; problemImage: string | null; isSolved?: boolean; sessionType?: SessionType; checkIn?: CheckIn }
   | { type: 'NEW_SESSION'; sessionType?: SessionType }
   | { type: 'SET_SESSION_LIST'; sessions: SessionMetadata[] }
   | { type: 'SET_CURRENT_SESSION_ID'; id: string }
@@ -26,6 +26,8 @@ interface SessionState {
   isStreaming: boolean;
   isSolved: boolean;
   sessionType: SessionType;
+  /** Set on a skill check-in board. */
+  checkIn: CheckIn | null;
 }
 
 const initialState: SessionState = {
@@ -37,6 +39,7 @@ const initialState: SessionState = {
   isStreaming: false,
   isSolved: false,
   sessionType: 'problem',
+  checkIn: null,
 };
 
 function sessionReducer(state: SessionState, action: SessionAction): SessionState {
@@ -79,6 +82,7 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         chatHistory: action.chatHistory,
         isSolved: !!action.isSolved,
         sessionType: action.sessionType ?? 'problem',
+        checkIn: action.checkIn ?? null,
       };
     case 'NEW_SESSION':
       return {
@@ -89,6 +93,7 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         chatHistory: [],
         isSolved: false,
         sessionType: action.sessionType ?? 'problem',
+        checkIn: null,
       };
     case 'TOGGLE_SOLVED':
       return { ...state, isSolved: !state.isSolved };

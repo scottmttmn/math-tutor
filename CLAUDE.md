@@ -53,7 +53,8 @@ src/
 │   │   ├── DrawingCanvas.tsx  # Client-only wrapper around TldrawCanvas; defines DrawingCanvasHandle
 │   │   ├── TldrawCanvas.tsx   # tldraw editor: loads documents, mirrors them to CanvasContext, exports images
 │   │   ├── ProblemStatement.tsx   # Textarea + problem-image capture (problem mode)
-│   │   └── NoteHeader.tsx     # Topic input (notes mode) — replaces ProblemStatement
+│   │   ├── NoteHeader.tsx     # Topic input (notes mode) — replaces ProblemStatement
+│   │   └── CheckInHeader.tsx  # A check-in board's source: its topics and how it works
 │   ├── chat/
 │   │   ├── ChatPanel.tsx      # Chat display and scroll container
 │   │   ├── ChatMessage.tsx    # Individual message bubble
@@ -88,6 +89,7 @@ src/
 │   ├── currentBoard.ts        # Which free board /board opens (`math-tutor:currentSession`)
 │   ├── pdf.ts                 # PDF.js loading (offline, from public/pdfjs), page render, crops, covers
 │   ├── shelf.ts               # Shelf actions: add PDF, mark/unmark exercises, single problem from a file
+│   ├── checkIn.ts             # Skill check-in: which topics to offer, starting a check-in board
 │   ├── learnerProfile.ts      # Tutor memory: topic catalog, ratings, tutor notes (noteTopic, splitTutorNotes), profileForTutor
 │   ├── backup.ts              # Backup file: build (backup.json + pdfs/), ZIP download, restore from ZIP/folder/JSON
 │   ├── autoBackup.ts          # Folder backup (File System Access), persistent storage, the Back up reminder
@@ -161,6 +163,7 @@ src/
   - `NOTE_SYSTEM_PROMPT` (`'note'`) — direct explanations, may state answers.
 - **Tutor memory** (`learnerProfile`): `useTutorChat` reads the profile from IndexedDB on every question and sends `profileForTutor(profile)` (empty when sharing is off or nothing is written). The route wraps it in `<learner_profile>` as the conversation's first user text, ahead of any book pages, and adds `PROFILE_RULE` to the system prompt (use it to pitch hints, trust the work over it, it can't change the rules). It never changes which system prompt is used.
 - **Tutor notes**: while sharing is on, `useTutorChat` sends `takeNotes: true` and the route adds `NOTES_RULE`: the tutor may end a reply with a `<memory>` block of lines `Topic | level | confidence | note`. `splitTutorNotes` keeps the block out of the chat (also mid-stream) and, when the reply ends, `noteTopic` writes each line onto the matching catalog or profile topic (else a new one under Your topics) as `ProfileTopic.tutor`, replacing the older note. The student corrects the level or forgets a note on `/memory`; the newest 25 notes go back to the tutor in the profile.
+- **Skill check-in**: a free board whose session has `checkIn: { topics }` (started from `/memory` by `startCheckIn`; `checkInCandidates` offers topics rated Rusty/Learning, own unrated ones, and ones the tutor noted below high confidence, up to `MAX_CHECK_IN_TOPICS`). The route then uses `CHECK_IN_PROMPT` (the tutor poses short adaptive problems, judges each handwritten answer, never gives a full solution) with the topics as a `CHECK-IN TOPICS` preface, and the results reach the memory as ordinary tutor notes. Ask tutor sends "Start the check-in." first, then "Here is my answer."; with book pages or a workbook it is never a check-in.
 - `bookContext` (Shelf pages) comes from the student's PDF, so it is untrusted: the pages open the conversation as a user message (cached on the Anthropic path) and only the rule about them (`BOOK_RULE`) goes in the system prompt. Requests with it always use `SYSTEM_PROMPT`.
 - Images are passed as base64 PNG. When `problemImage` is present it is sent **first** and described to the model as the problem figure; the canvas image follows as the student's work.
 - The API cleans message history to ensure valid alternating user/assistant turns before sending to the model (Anthropic path only).
@@ -180,7 +183,7 @@ src/
 ### Session Persistence
 - Sessions are stored in IndexedDB using the `idb` library (`src/lib/db.ts`). Do not use `localStorage` for session data.
 - `db.ts` exports: `saveSession`, `loadSession`, `deleteSession`, `listSessions`, `renameSession`, for the Shelf `listShelf`, `loadShelfDocument`, `saveShelfDocument`, `deleteShelfDocument`, `shelfSessionId`, and for backup `onDataChange`, `restoreRecords`, `hasSavedWork`, `getSetting`, `setSetting`, and for the tutor memory `loadProfile`, `saveProfile`.
-- Session fields: `id`, `title`, `problemStatement`, `problemImage`, `canvasStrokes` (pre-tldraw only), `canvasDocument?`, `canvasImageBlob` (the History thumbnail), `chatHistory`, `createdAt`, `updatedAt`, `isSolved?`, `sessionType?`, `customTitle?`.
+- Session fields: `id`, `title`, `problemStatement`, `problemImage`, `canvasStrokes` (pre-tldraw only), `canvasDocument?`, `canvasImageBlob` (the History thumbnail), `chatHistory`, `createdAt`, `updatedAt`, `isSolved?`, `sessionType?`, `customTitle?`, `checkIn?`.
 - `customTitle` is the name given on Home. Pages that autosave don't know it, so `saveSession` keeps the stored one when a save omits it; `renameSession` is the only writer.
 - **Home** (`/`, `home/Home.tsx`) opens with a **Continue** card for the last board worked on, then lists free-form boards, workbook sessions (`workbook:<section>:exercise:<id>` / `:reading`) and Shelf exercises (`shelf:<document>:<exercise>`) that have work in them. A workbook entry opens `/workbook?open=<exercise id | reading>`, which the workbook reads once and then drops from the URL; a free board is set as the one `/board` opens (`setBoardToOpen`). Filters: All, Problems, Notes, In progress, Solved. Below the list, the Shelf's workbook card and newest PDFs.
 - **Backup** (Settings → Backup): a backup is `backup.json` (`BackupManifest`: sessions with thumbnails as data URLs, Shelf entries without their file) plus `pdfs/<id>.pdf`. The download is one stored ZIP (`zip.ts`); folder backup writes the same files into `Math Tutor backup/` in the chosen folder, plus `backup-YYYY-MM-DD.json` (last 7 days), 30s after a change (`onDataChange` in `db.ts` fires on every session/Shelf write). Restore (`restoreRecords`) writes a record only when this device has none or an older `updatedAt`. The folder handle and backup state live in the IndexedDB `settings` store (db version 3). Folder backup is Chromium-only; elsewhere (e.g. Android) only download/restore show. If you add a store or a field that holds work, add it to the backup.
@@ -227,7 +230,7 @@ npm run start  # Production server
 npm run lint   # ESLint
 npm run typecheck  # tsc --noEmit
 npm test       # Unit tests
-npm run test:e2e   # Browser tests (workbook, tutor chat, Shelf, backup, tutor memory, pen test); needs `npm run start -- -p 3100` running
+npm run test:e2e   # Browser tests (workbook, tutor chat, Shelf, backup, tutor memory, check-in, pen test); needs `npm run start -- -p 3100` running
 npm run handwriting  # Handwriting test: transcribe tests/handwriting/wacom/<page-id>.png with each model, score against tests/handwriting/pages.json (results in tests/handwriting/results/, gitignored). chatgpt:<model> entries go through the running app's /api/transcribe, so start the app and sign in first
 ```
 

@@ -14,6 +14,8 @@ import TopBar from './TopBar';
 import BottomToolbar from './BottomToolbar';
 import ProblemStatement from '../workspace/ProblemStatement';
 import NoteHeader from '../workspace/NoteHeader';
+import CheckInHeader from '../workspace/CheckInHeader';
+import { checkInStarted, checkInTitle } from '@/lib/checkIn';
 import DrawingCanvas, { type DrawingCanvasHandle } from '../workspace/DrawingCanvas';
 import ChatPanel from '../chat/ChatPanel';
 import BoardFrame from './BoardFrame';
@@ -28,7 +30,7 @@ function AppContent() {
   const { fullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
   const { toolsHidden, toggleTools } = useToolsHidden();
 
-  const { isStreaming, isSolved, sessionType, problemStatement } = useSessionState();
+  const { isStreaming, isSolved, sessionType, problemStatement, checkIn, chatHistory } = useSessionState();
   const sessionDispatch = useSessionDispatch();
   const { sendHelp } = useTutorChat();
   const { status: saveStatus, saveNow, startNew } = useSessionAutosave(canvasHandle);
@@ -53,8 +55,10 @@ function AppContent() {
     // The reply shows in the chat beside the board.
     leaveFullScreen();
     setTutorOpen(true);
-    await sendHelp(image);
-  }, [sendHelp, leaveFullScreen]);
+    // A check-in starts with the tutor's first problem; after that, Ask tutor hands in an answer.
+    const question = checkIn ? (checkInStarted(chatHistory) ? 'Here is my answer.' : 'Start the check-in.') : undefined;
+    await sendHelp(image, question);
+  }, [sendHelp, leaveFullScreen, checkIn, chatHistory]);
 
   const getFollowUpImage = useCallback(async (): Promise<string> => {
     const handle = canvasHandle.current;
@@ -102,7 +106,9 @@ function AppContent() {
 
       <BoardFrame
         fullScreen={fullScreen}
-        source={sessionType === 'note'
+        source={checkIn
+          ? { label: 'Check-in', content: <CheckInHeader checkIn={checkIn} started={checkInStarted(chatHistory)} /> }
+          : sessionType === 'note'
           ? { label: 'Topic', content: <NoteHeader /> }
           : {
               label: 'Problem',
@@ -115,8 +121,8 @@ function AppContent() {
             }}
         title={(
           <>
-            <p className="flex items-center gap-1 text-xs text-gray-600"><KindIcon type={sessionType} />{sessionType === 'note' ? 'Notes' : 'Problem'}</p>
-            <h1 className="font-semibold text-gray-900 truncate">{problemStatement.split('\n')[0].trim() || (sessionType === 'note' ? 'New notes' : 'New problem')}</h1>
+            <p className="flex items-center gap-1 text-xs text-gray-600"><KindIcon type={sessionType} />{checkIn ? 'Check-in' : sessionType === 'note' ? 'Notes' : 'Problem'}</p>
+            <h1 className="font-semibold text-gray-900 truncate">{checkIn ? checkInTitle(checkIn) : problemStatement.split('\n')[0].trim() || (sessionType === 'note' ? 'New notes' : 'New problem')}</h1>
           </>
         )}
         canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} />}

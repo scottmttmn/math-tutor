@@ -6,6 +6,7 @@ import { useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
 import { useSessionDispatch, useSessionState } from '@/context/SessionContext';
 import { hasRecoveryCopy, loadRecoveredSession, saveRecoverableSession, settleInterruptedReplies, stageSession } from '@/lib/sessionRecovery';
 import { boardToOpen, setBoardToOpen } from '@/lib/currentBoard';
+import { checkInTitle } from '@/lib/checkIn';
 import type { DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import type { AutosaveStatus, Session, SessionType } from '@/types';
 
@@ -14,7 +15,7 @@ const SAVE_DELAY_MS = 800;
 // Everything a save writes except timestamps and the thumbnail, so an unchanged session isn't rewritten.
 const contentKey = (session: Session) => JSON.stringify([
   session.problemStatement, session.problemImage, session.chatHistory, session.isSolved, session.sessionType,
-  session.canvasDocument?.store ?? null, session.canvasStrokes,
+  session.checkIn ?? null, session.canvasDocument?.store ?? null, session.canvasStrokes,
 ]);
 
 const rememberCurrent = setBoardToOpen;
@@ -59,7 +60,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
     if (!createdAt.current) createdAt.current = Date.now();
     return {
       id: s.currentSessionId ?? draftId.current!,
-      title: s.problemStatement.slice(0, 50) || 'Untitled',
+      title: s.checkIn ? checkInTitle(s.checkIn) : s.problemStatement.slice(0, 50) || 'Untitled',
       problemStatement: s.problemStatement,
       problemImage: s.problemImage,
       // Strokes from a pre-tldraw save stay until the editor has converted them.
@@ -71,6 +72,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
       updatedAt: Date.now(),
       isSolved: s.isSolved,
       sessionType: s.sessionType,
+      ...(s.checkIn ? { checkIn: s.checkIn } : {}),
     };
   }, [canvasHandle]);
 
@@ -125,6 +127,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
         chatHistory: settleInterruptedReplies(session.chatHistory),
         isSolved: session.isSolved,
         sessionType: session.sessionType,
+        checkIn: session.checkIn,
       });
       canvasDispatch({ type: 'LOAD', document: session.canvasDocument, strokes: session.canvasStrokes });
     } else {

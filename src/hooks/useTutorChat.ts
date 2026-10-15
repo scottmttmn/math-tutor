@@ -22,7 +22,7 @@ async function keepNotes(notes: TopicObservation[]) {
 
 /** `getBookContext` supplies the Shelf pages around the exercise, read fresh for every request. */
 export function useTutorChat(workbookContext?: WorkbookContext, getBookContext?: () => Promise<BookContext | null>) {
-  const { problemStatement, problemImage, chatHistory, isStreaming, sessionType } = useSessionState();
+  const { problemStatement, problemImage, chatHistory, isStreaming, sessionType, checkIn } = useSessionState();
   const dispatch = useSessionDispatch();
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
   const pendingRequest = useRef<AbortController | null>(null);
@@ -66,6 +66,7 @@ export function useTutorChat(workbookContext?: WorkbookContext, getBookContext?:
           problemStatement, chatHistory: chatHistory.filter((message) => message.content.trim()),
           canvasImage, modelConfig: getModelConfig(), userQuestion: userContent,
           problemImage: problemImage ?? undefined, sessionType, workbookContext, bookContext, learnerProfile, takeNotes,
+          checkIn: checkIn ?? undefined,
         }),
       });
       if (!response.ok) {
@@ -116,7 +117,7 @@ export function useTutorChat(workbookContext?: WorkbookContext, getBookContext?:
       pendingRequest.current = null;
       if (!abort.signal.aborted) dispatch({ type: 'SET_STREAMING', streaming: false });
     }
-  }, [problemStatement, problemImage, chatHistory, isStreaming, sessionType, workbookContext, getBookContext, dispatch]);
+  }, [problemStatement, problemImage, chatHistory, isStreaming, sessionType, checkIn, workbookContext, getBookContext, dispatch]);
 
   const sendFollowUp = useCallback(async (text: string, canvasImage = ''): Promise<boolean> => {
     if (!text.trim()) return false;
