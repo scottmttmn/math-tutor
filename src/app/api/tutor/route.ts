@@ -4,7 +4,7 @@ import { getChatGPT } from '@/lib/chatgpt';
 import { ChatGPTError } from '@/lib/siwc';
 import { CHATGPT_USAGE_URL } from '@/lib/constants';
 import type { ResponseContentPart, ResponseInputMessage } from '@/lib/siwc';
-import type { BookContext, TutorRequest, ModelConfig } from '@/types';
+import type { BookContext, TutorRequest, ModelConfig, UserPart } from '@/types';
 import { resolveWorkbookContext } from '@/lib/workbookTutor';
 import { createTutorRequestGate } from '@/lib/tutorRequestGate';
 import { isGeminiEndpoint } from '@/lib/modelConfig';
@@ -107,9 +107,6 @@ function friendlyError(error: unknown): string {
   }
   return message;
 }
-
-/** One piece of the latest help request: a label or question, or a PNG (base64). */
-type UserPart = { type: 'text'; text: string } | { type: 'image'; data: string };
 
 /**
  * The latest help request, each image led by a label saying what it is. The board image says it is
