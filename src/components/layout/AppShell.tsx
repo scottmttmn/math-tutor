@@ -15,7 +15,7 @@ import BottomToolbar from './BottomToolbar';
 import ProblemStatement from '../workspace/ProblemStatement';
 import NoteHeader from '../workspace/NoteHeader';
 import CheckInHeader from '../workspace/CheckInHeader';
-import { checkInTitle } from '@/lib/checkIn';
+import { checkInStarted, checkInTitle } from '@/lib/checkIn';
 import DrawingCanvas, { type DrawingCanvasHandle } from '../workspace/DrawingCanvas';
 import ChatPanel from '../chat/ChatPanel';
 import BoardFrame from './BoardFrame';
@@ -56,9 +56,9 @@ function AppContent() {
     leaveFullScreen();
     setTutorOpen(true);
     // A check-in starts with the tutor's first problem; after that, Ask tutor hands in an answer.
-    const question = checkIn ? (chatHistory.length ? 'Here is my answer.' : 'Start the check-in.') : undefined;
+    const question = checkIn ? (checkInStarted(chatHistory) ? 'Here is my answer.' : 'Start the check-in.') : undefined;
     await sendHelp(image, question);
-  }, [sendHelp, leaveFullScreen, checkIn, chatHistory.length]);
+  }, [sendHelp, leaveFullScreen, checkIn, chatHistory]);
 
   const getFollowUpImage = useCallback(async (): Promise<string> => {
     const handle = canvasHandle.current;
@@ -107,7 +107,7 @@ function AppContent() {
       <BoardFrame
         fullScreen={fullScreen}
         source={checkIn
-          ? { label: 'Check-in', content: <CheckInHeader checkIn={checkIn} started={chatHistory.length > 0} /> }
+          ? { label: 'Check-in', content: <CheckInHeader checkIn={checkIn} started={checkInStarted(chatHistory)} /> }
           : sessionType === 'note'
           ? { label: 'Topic', content: <NoteHeader /> }
           : {
