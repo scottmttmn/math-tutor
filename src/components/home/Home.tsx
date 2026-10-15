@@ -12,7 +12,7 @@ import AppBar from '@/components/layout/AppBar';
 import BlobImage from '@/components/common/BlobImage';
 import MoreMenu from '@/components/common/MoreMenu';
 import { KindIcon, ShelfIcon, SolvedCheck, TutorIcon } from '@/components/common/Icons';
-import { ShelfCover, WorkbookCover } from '@/components/shelf/Shelf';
+import { ShelfCover } from '@/components/shelf/Shelf';
 import type { HistoryItem, HistoryShow, HistorySort, ShelfDocument } from '@/types';
 
 const SHOW_OPTIONS: { value: HistoryShow; label: string }[] = [
@@ -30,7 +30,7 @@ const loadItems = async () => (await listSessions()).map(toHistoryItem).filter((
 
 /**
  * The page the app opens on: the board last worked on, every problem and note (free boards,
- * workbook and Shelf exercises) as a searchable grid, and what's on the Shelf.
+ * Shelf exercises) as a searchable grid, and what's on the Shelf.
  */
 export default function Home() {
   const router = useRouter();
@@ -158,12 +158,15 @@ export default function Home() {
             <h2 id="shelf-heading" className="text-lg font-semibold text-gray-900">On your Shelf</h2>
             <Link href="/shelf" className="text-sm text-gray-600 underline hover:text-gray-900">Open the Shelf</Link>
           </div>
-          <ul className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <li><WorkbookCover /></li>
-            {shelf.slice(0, SHELF_PREVIEW).map((document) => (
-              <li key={document.id} className="border border-gray-200 rounded-xl overflow-hidden"><ShelfCover document={document} /></li>
-            ))}
-          </ul>
+          {shelf.length === 0 ? (
+            <p className="text-sm text-gray-500">Nothing on your Shelf yet. Add a textbook, a problem set or a handout there as a PDF.</p>
+          ) : (
+            <ul className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {shelf.slice(0, SHELF_PREVIEW).map((document) => (
+                <li key={document.id} className="border border-gray-200 rounded-xl overflow-hidden"><ShelfCover document={document} /></li>
+              ))}
+            </ul>
+          )}
         </section>
       </main>
     </div>
@@ -195,7 +198,7 @@ function KindLine({ item }: { item: HistoryItem }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-700">
       <span className="flex items-center gap-1"><KindIcon type={item.sessionType} />{item.sessionType === 'note' ? 'Notes' : 'Problem'}</span>
-      {item.source !== 'board' && <span className="flex items-center gap-1"><ShelfIcon />{item.source === 'shelf' ? 'Shelf' : 'Workbook'}</span>}
+      {item.source === 'shelf' && <span className="flex items-center gap-1"><ShelfIcon />Shelf</span>}
       {item.isSolved && <span className="flex items-center gap-1 font-semibold text-gray-900"><SolvedCheck size={14} />Solved</span>}
     </div>
   );
@@ -227,7 +230,7 @@ function HistoryCard({ item, onOpen, onRename, onDelete }: CardProps) {
         <div className="px-3 pt-2">
           <KindLine item={item} />
           {!renaming && <p className="mt-1 text-sm font-medium text-gray-900 line-clamp-2">{item.title}</p>}
-          {/* The problem itself, when the name doesn't already show it (renamed, or a workbook exercise). */}
+          {/* The problem itself, when the name doesn't already show it (renamed, or a Shelf exercise). */}
           {item.problemStatement && !item.problemStatement.startsWith(item.title) && !renaming && (
             <p className="text-xs text-gray-500 line-clamp-1">{item.problemStatement}</p>
           )}

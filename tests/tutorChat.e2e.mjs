@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 
-const origin = process.env.WORKBOOK_TEST_URL || 'http://127.0.0.1:3100';
+const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const reply = String.raw`**Modulus:** \(a_1 + b_2\), $x^2$, \[\frac{1}{2}\], $$\sqrt{z}$$`;
 const frames = [
   { type: 'model', model: 'gemini-3.7-flash' },
@@ -17,46 +17,44 @@ try {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: frames }));
-  await page.goto(`${origin}/workbook`);
-  await page.getByRole('heading', { name: 'Reading tutor' }).waitFor();
-  const box = page.getByRole('textbox');
+  await page.goto(`${origin}/board?new=note`);
+  await page.locator('.tl-canvas').waitFor();
+  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  const chat = () => page.locator('.tutor-content').last();
+  await chat().locator('.katex').nth(3).waitFor();
+  assert.equal(await chat().locator('.katex').count(), 4);
+  assert.equal(await chat().locator('.katex-display').count(), 2);
+  await page.getByText('Answered with gemini-3.7-flash after a quota limit').waitFor();
+
+  const box = page.getByPlaceholder('Type or speak a follow-up...');
   const oneLine = (await box.boundingBox()).height;
   await box.fill('Why is the modulus of a product the product of the moduli, and does the same hold for sums of complex numbers?');
   const wrapped = (await box.boundingBox()).height;
   assert.ok(wrapped > oneLine, 'a long question wraps onto more lines');
   // Narrowing the panel rewraps the draft; the box grows without the text changing.
   await page.evaluate(() => { document.querySelector('aside').style.width = '260px'; });
-  await page.waitForFunction((before) => document.querySelector('textarea').getBoundingClientRect().height > before, wrapped);
+  await page.waitForFunction((before) => document.querySelector('aside textarea').getBoundingClientRect().height > before, wrapped);
   await page.evaluate(() => { document.querySelector('aside').style.width = ''; });
   await box.fill('Explain');
   await box.press('Shift+Enter');
   await box.pressSequentially('modulus.');
   assert.equal(await box.inputValue(), 'Explain\nmodulus.');
+  // Follow-ups wait out the five-second limit after the first question.
+  await page.getByRole('button', { name: 'Send', exact: true }).and(page.locator(':enabled')).waitFor({ timeout: 10_000 });
   const sent = page.waitForRequest('**/api/tutor');
   await box.press('Enter');
   assert.equal(JSON.parse((await sent).postData()).userQuestion, 'Explain\nmodulus.');
   assert.equal(await box.inputValue(), '');
-  const chat = page.locator('.tutor-content').last();
-  await chat.locator('.katex').nth(3).waitFor();
-  assert.equal(await chat.locator('.katex').count(), 4);
-  assert.equal(await chat.locator('.katex-display').count(), 2);
-  await page.getByText('Answered with gemini-3.7-flash after a quota limit').waitFor();
+  await page.locator('.tutor-content').nth(1).locator('.katex').nth(3).waitFor();
+
   await page.reload();
-  await page.getByText('Answered with gemini-3.7-flash after a quota limit').waitFor();
-  assert.equal(await page.locator('.tutor-content').last().locator('.katex').count(), 4);
+  await page.getByRole('button', { name: 'Tutor', exact: true }).click();
+  await page.getByText('Answered with gemini-3.7-flash after a quota limit').first().waitFor();
+  assert.equal(await chat().locator('.katex').count(), 4);
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await page.screenshot({ path: join(tmpdir(), 'tutor-math-mobile.png') });
-  console.log('PASS workbook math, fallback metadata, reload, and mobile layout');
-
-  await page.goto(`${origin}/board`);
-  await page.evaluate(() => localStorage.removeItem('lastHelpTimestamp'));
-  await page.reload();
-  await page.getByRole('button', { name: 'New', exact: true }).click();
-  await page.getByRole('button', { name: /New Notes/ }).click();
-  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
-  await page.locator('.tutor-content').last().locator('.katex').nth(3).waitFor();
-  console.log('PASS free-form chat math');
+  console.log('PASS chat math, wrapping follow-ups, fallback metadata, reload, and mobile layout');
 
   // A board written while zoomed out spans a large page area; its snapshot must stay small.
   const wide = await browser.newPage({ viewport: { width: 1440, height: 960 } });

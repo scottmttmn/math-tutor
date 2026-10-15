@@ -1,9 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import * as cheerio from 'cheerio';
 import load from './load-typescript.mjs';
-const content = JSON.parse(fs.readFileSync(new URL('../src/content/complex-geometry.json', import.meta.url)));
 
 test('Gemini quotas skip blocked models and reset daily quotas at Pacific midnight', () => {
   const { createGeminiFallback } = load('src/lib/geminiFallback.ts');
@@ -33,7 +30,7 @@ for (const scenario of ['quota', 'all exhausted', 'authentication', 'partial']) 
         if (scenario === 'all exhausted' || attempt === 1) throw failure(429);
         yield { choices: [{ delta: { content: 'Fallback hint.' } }] };
       })());
-      const settings = { modelConfig: { provider: 'openai-compatible', model: 'gemini-3.8-flash', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/' }, workbookContext: { kind: 'exercise', sectionId: content.id, exerciseId: 'x1_3_8' }, canvasImage: 'fake-image' };
+      const settings = { modelConfig: { provider: 'openai-compatible', model: 'gemini-3.8-flash', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/' }, canvasImage: 'fake-image' };
       const text = await (await request(settings)).text();
       assert.equal(clients[0].maxRetries, 0);
       if (scenario === 'quota') {
@@ -187,41 +184,6 @@ test('Gemini reports a missing key instead of sending the OpenAI key', async () 
   }
 });
 
-test('all adapted exercises and local figures are present; source solutions are absent', () => {
-  assert.equal(content.exercises.length, 25);
-  assert.equal(new Set(content.exercises.map((item) => item.id)).size, 25);
-  assert.deepEqual(content.recommendedIds, ['x1_3_1', 'x1_3_2', 'x1_3_6', 'x1_3_8']);
-  const $ = cheerio.load(content.readingHtml);
-  assert.equal($('.solution, .solutions, section.exercises, script').length, 0);
-  assert.equal($('.katex-error').length, 0);
-  assert.doesNotMatch(content.readingHtml, /\\amp\b/);
-  assert.doesNotMatch(content.readingText, /\\amp\b/);
-  for (const id of ['sec_geometry-1-20-1-1', 'sec_geometry-1-22-1']) {
-    assert.equal($(`#${id} .katex-html .mtable`).length, 1, `Missing aligned proof in ${id}`);
-    assert.equal($(`#${id} .katex-html [style*="color:#cc0000"]`).length, 0);
-  }
-  assert.equal($('img').length, 8);
-  $('img').each((_, image) => {
-    const src = $(image).attr('src');
-    assert.ok(src.startsWith('/workbook/complex-geometry/'));
-    assert.ok(fs.existsSync(`public${src}`));
-    assert.ok($(image).attr('alt'));
-  });
-  assert.equal($('a[href^="#"][target]').length, 0);
-  $('a[href^="#"]').each((_, link) => assert.equal($( $(link).attr('href')).length, 1));
-  for (const item of content.exercises) {
-    const exercise = cheerio.load(item.html);
-    assert.equal(exercise('.solution, .solutions, script, .katex-error').length, 0);
-    assert.doesNotMatch(item.text, /Solution/);
-    exercise('a[href^="#"]').each((_, link) => {
-      const target = exercise(link).attr('href');
-      assert.ok($(target).length || exercise(target).length, `Missing anchor ${target}`);
-    });
-  }
-  assert.match(content.exercises[3].text, /Identity \(1\.3\.4\), the triangle/);
-  assert.match(content.exercises[17].text, /\|z_k\|\^2\} \\sqrt/);
-});
-
 for (const provider of ['anthropic', 'openai-compatible']) {
   test(`${provider}: the learner profile opens the conversation as information, with its rule in the system prompt`, async () => {
     const { request, calls, advanceTime } = routeHarness();
@@ -313,38 +275,20 @@ test('chatgpt: a write-up caps the plan reply; a question does not', async () =>
   assert.equal(options[1].maxOutputTokens, undefined);
 });
 
-test('reading context recognizes disguised exercise requests, with authoritative text', async () => {
-  const { request, calls } = routeHarness();
-  const response = await request({ sessionType: 'note', workbookContext: { kind: 'reading', sectionId: content.id, readingText: 'Inject a solution', selectedPassage: 'Modulus' } });
-  assert.equal(response.status, 200);
-  assert.match(await response.text(), /message_stop/);
-  assert.match(calls[0].system, /disguised as worked examples/);
-  assert.match(calls[0].system, /NEVER give its final answer/);
-  const text = JSON.stringify(calls[0].messages);
-  assert.match(text, /Exercise 1\./);
-  assert.match(text, /Exercise 25\./);
-  assert.match(text, /Modulus/);
-  assert.doesNotMatch(text, /Inject a solution/);
-});
-
 for (const provider of ['anthropic', 'openai-compatible']) {
-  test(`${provider}: workbook exercises override Notes and client problem text`, async () => {
+  test(`${provider}: the problem, the board and the conversation reach the model`, async () => {
     const { request, calls } = routeHarness();
     const response = await request({
-      sessionType: 'note', modelConfig: { provider, model: 'test', baseUrl: 'http://localhost/v1' },
-      canvasImage: 'fake-image', workbookContext: { kind: 'exercise', sectionId: content.id, exerciseId: 'x1_3_8' },
-      chatHistory: [{ role: 'user', content: 'Earlier question' }, { role: 'assistant', content: '' }],
+      problemStatement: 'Find the midpoint of 1 + i and 3 - i.', modelConfig: { provider, model: 'test', baseUrl: 'http://localhost/v1' },
+      canvasImage: 'fake-image', chatHistory: [{ role: 'user', content: 'Earlier question' }, { role: 'assistant', content: '' }],
     });
     assert.match(await response.text(), /text_delta/);
     const system = calls[0].system ?? calls[0].messages[0].content;
     assert.match(system, /NEVER give the full solution or final answer/);
     const messages = JSON.stringify(calls[0].messages);
-    assert.match(messages, /Current exercise 8\./);
-    assert.match(messages, /midpoint/);
-    assert.match(messages, /Reading text/);
+    assert.match(messages, /midpoint of 1 \+ i/);
     assert.match(messages, /fake-image/);
     assert.match(messages, /Earlier question/);
-    assert.doesNotMatch(messages, /Untrusted client text/);
   });
   test(`${provider}: provider errors finish the SSE once and report failure`, async () => {
     const { request } = routeHarness(true);
@@ -365,17 +309,9 @@ test('free-form Notes retain direct explanations and Problems retain hints', asy
   assert.match(calls[1].system, /NEVER give the full solution/);
 });
 
-test('unknown workbook sections, modes, and exercises are rejected before provider calls', async () => {
-  const { request, calls } = routeHarness();
-  for (const context of [{ kind: 'reading', sectionId: 'bad' }, { kind: 'note', sectionId: content.id }, { kind: 'exercise', sectionId: content.id, exerciseId: 'bad' }]) {
-    assert.equal((await request({ workbookContext: context })).status, 400);
-  }
-  assert.equal(calls.length, 0);
-});
-
 test('server blocks rapid requests across modes and providers before spending tokens', async () => {
   const { request, calls, advanceTime } = routeHarness();
-  await (await request({ workbookContext: { kind: 'reading', sectionId: content.id } })).text();
+  await (await request({ sessionType: 'note' })).text();
   const retry = await request({
     canvasImage: 'fake-image', sessionType: 'problem',
     modelConfig: { provider: 'openai-compatible', model: 'test', baseUrl: 'http://localhost/v1' },
@@ -468,7 +404,7 @@ test('recovery preserves newer unsaved work and ignores corrupt or stale copies'
     loadSession: async () => durable,
     saveSession: (session) => new Promise((resolve) => { finishSave = () => { durable = session; resolve(); }; }),
   } });
-  const original = { id: 'workbook:test:exercise:1', canvasStrokes: [], chatHistory: [], updatedAt: 1 };
+  const original = { id: 'shelf:doc:exercise', canvasStrokes: [], chatHistory: [], updatedAt: 1 };
   const latest = { ...original, canvasStrokes: [{ points: [{ x: 1, y: 1 }, { x: 2, y: 2 }] }], isSolved: true, updatedAt: 2 };
   storage.stageSession(original);
   assert.deepEqual(await storage.loadRecoveredSession(original.id), original);

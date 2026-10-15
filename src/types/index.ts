@@ -78,7 +78,7 @@ export interface CheckIn {
   topics: string[];
 }
 
-/** One entry in History: a free-form board, or a workbook or Shelf exercise (or reading) with work in it. */
+/** One entry in History: a free-form board, or a Shelf exercise with work in it. */
 export interface HistoryItem {
   id: string;
   title: string;
@@ -90,9 +90,9 @@ export interface HistoryItem {
   sessionType: SessionType;
   renamed: boolean;
   thumbnail: Blob | null;
-  /** Where it was worked on: a free-form board, the workbook, or an exercise marked on the Shelf. */
-  source: 'board' | 'workbook' | 'shelf';
-  /** Where a workbook or Shelf entry opens; free-form boards open in place. */
+  /** Where it was worked on: a free-form board, or an exercise marked on the Shelf. */
+  source: 'board' | 'shelf';
+  /** Where a Shelf entry opens; free-form boards open in place. */
   href: string | null;
 }
 
@@ -207,7 +207,6 @@ export interface TutorRequest {
   userQuestion?: string;
   problemImage?: string;
   sessionType?: SessionType;
-  workbookContext?: WorkbookContext;
   bookContext?: BookContext;
   /** The student's tutor memory as text (see profileForTutor); absent when empty or not shared. */
   learnerProfile?: string;
@@ -228,18 +227,6 @@ export interface BookContext {
   toPage: number;
   text: string;
 }
-
-export type WorkbookContext =
-  | {
-      kind: 'reading';
-      sectionId: string;
-      selectedPassage?: string;
-    }
-  | {
-      kind: 'exercise';
-      sectionId: string;
-      exerciseId: string;
-    };
 
 export interface TutorStreamEvent {
   type: 'text_delta' | 'usage' | 'message_stop' | 'error' | 'model';

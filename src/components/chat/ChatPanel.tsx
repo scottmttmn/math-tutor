@@ -12,7 +12,7 @@ interface ChatPanelProps {
 }
 
 export default function ChatPanel({ getCanvasImage, getBookContext }: ChatPanelProps) {
-  const { chatHistory } = useSessionState();
+  const { chatHistory, isStreaming } = useSessionState();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -25,7 +25,7 @@ export default function ChatPanel({ getCanvasImage, getBookContext }: ChatPanelP
     // Sits in the board's tutor column, which carries the heading.
     <div className="flex flex-col h-full bg-white">
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3">
+      <div ref={scrollRef} aria-busy={isStreaming} className="flex-1 overflow-y-auto px-3 py-3">
         {chatHistory.length === 0 ? (
           <div className="flex items-center justify-center h-full text-center text-sm text-gray-500 px-4">
             <p>

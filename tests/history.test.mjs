@@ -10,13 +10,9 @@ const session = (overrides) => ({
 });
 const withShape = { store: { 'shape:1': {} }, schema: {} };
 
-test('workbook pages appear only once they hold work, and open in the workbook', () => {
-  assert.equal(toHistoryItem(session({ id: 'workbook:cg:exercise:x1_3_2' })), null);
-  assert.equal(toHistoryItem(session({ id: 'workbook:cg:activeExercise', isSolved: true })), null);
-  const drawn = toHistoryItem(session({ id: 'workbook:cg:exercise:x1_3_2', canvasDocument: withShape }));
-  assert.equal(drawn.href, '/workbook?open=x1_3_2');
-  const reading = toHistoryItem(session({ id: 'workbook:cg:reading', sessionType: 'note', chatHistory: [{}] }));
-  assert.equal(reading.href, '/workbook?open=reading');
+test('boards from the removed built-in workbook no longer appear', () => {
+  assert.equal(toHistoryItem(session({ id: 'workbook:cg:exercise:x1_3_2', canvasDocument: withShape, isSolved: true })), null);
+  assert.equal(toHistoryItem(session({ id: 'workbook:cg:reading', sessionType: 'note', chatHistory: [{}] })), null);
   assert.equal(toHistoryItem(session({ id: 'board-1' })).href, null);
 });
 

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { makePdf } from './makePdf.mjs';
 
-const origin = process.env.WORKBOOK_TEST_URL || 'http://127.0.0.1:3100';
+const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const requests = [];
 const browserErrors = [];
 const folder = await mkdtemp(join(tmpdir(), 'shelf-acceptance-'));
@@ -48,11 +48,11 @@ const exerciseHeading = (name) => page.getByRole('heading', { name, exact: true 
 try {
   await page.goto(`${origin}/`);
   await page.evaluate((config) => localStorage.setItem('mathTutor_modelConfig', JSON.stringify(config)), model);
-  // The app opens on Home; the Shelf is in the bar, with the built-in workbook already on it.
+  // The app opens on Home; the Shelf is in the bar, empty until a PDF is added.
   await page.getByRole('heading', { name: 'Problems and notes' }).waitFor();
+  await page.getByText('Nothing on your Shelf yet.', { exact: false }).waitFor();
   await page.getByRole('link', { name: 'Shelf', exact: true }).click();
   await page.getByText('No PDFs yet.').waitFor();
-  await page.getByRole('link', { name: 'Open Complex Analysis §1.3' }).waitFor();
 
   // Add a PDF; it lands on the Shelf with its page count.
   await page.locator('input[aria-label="Add PDF"]').setInputFiles(pdfPath);

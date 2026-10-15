@@ -5,18 +5,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 
-const origin = process.env.WORKBOOK_TEST_URL || 'http://127.0.0.1:3100';
+const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const requests = [];
 const browserErrors = [];
-const profile = await mkdtemp(join(tmpdir(), 'workbook-acceptance-'));
+const profile = await mkdtemp(join(tmpdir(), 'board-acceptance-'));
 const provider = createServer(async (req, res) => {
   let raw = '';
   for await (const part of req) raw += part;
   const body = JSON.parse(raw);
   requests.push(body);
   const system = body.messages[0].content;
-  const reply = system.includes('accompanying a student') ? 'Reading explanation.'
-    : system.includes('Give clear, direct explanations') ? 'Notes explanation.' : 'Exercise hint.';
+  const reply = system.includes('Give clear, direct explanations') ? 'Notes explanation.' : 'Problem hint.';
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
   if (JSON.stringify(body.messages.at(-1)).includes('Long response safety check')) {
     setTimeout(() => {
@@ -52,22 +51,22 @@ async function openBrowser() {
   });
   page = context.pages()[0] || await context.newPage();
   page.on('pageerror', (error) => browserErrors.push(error.message));
-  await page.goto(`${origin}/workbook`);
+  await page.goto(`${origin}/board`);
 }
-const waitReading = () => page.getByRole('heading', { name: 'Reading tutor', exact: true }).waitFor();
-const waitExercise = () => page.getByRole('region', { name: 'Exercise', exact: true }).waitFor();
+const problemBox = () => page.getByPlaceholder("Type the math problem you're working on...");
+const waitProblem = () => problemBox().waitFor();
 // The tutor is a drawer on every board, closed until asked.
 async function openTutor() {
   const closed = page.getByRole('button', { name: 'Tutor', exact: true, pressed: false });
   if (await closed.count()) await closed.click();
 }
-const exerciseButton = (number) => page.getByRole('button', { name: new RegExp(`^Exercise ${number}\\.`) });
+const followUp = () => page.getByPlaceholder('Type or speak a follow-up...');
 async function ask(question, reply) {
   const before = requests.length;
   await openTutor();
-  await page.getByRole('textbox').fill(question);
+  await followUp().fill(question);
   const responseReady = page.waitForResponse((response) => response.url() === `${origin}/api/tutor`);
-  await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
   const response = await responseReady;
   assert.equal(response.status(), 200, await response.text());
   await response.finished();
@@ -96,34 +95,38 @@ async function waitForTutorReady() {
   await page.waitForFunction(() => [...document.querySelectorAll('button')].some((button) =>
     button.textContent === 'Ask tutor' && !button.disabled));
 }
+async function askTutor(reply) {
+  const before = requests.length;
+  await waitForTutorReady();
+  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  // The board export is async, so wait for the request rather than the busy flag.
+  while (requests.length === before) await new Promise((resolve) => setTimeout(resolve, 50));
+  await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
+  await page.getByText(reply, { exact: true }).last().waitFor();
+  return requests.at(-1);
+}
+async function newBoard(type) {
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByRole('button', { name: type === 'note' ? /New Notes/ : 'New Problem' }).click();
+}
 try {
-  await openBrowser(); await waitReading();
+  await openBrowser(); await waitProblem();
   await page.evaluate((config) => localStorage.setItem('mathTutor_modelConfig', JSON.stringify(config)), model);
-  assert.equal(await page.getByRole('button', { name: /^Exercise / }).count(), 25);
-  await page.waitForFunction(() => [...document.querySelectorAll('main img')].every((image) => image.complete && image.naturalWidth > 0));
-  assert.equal(await page.locator('.katex-error, .solution, .solutions').count(), 0);
-  assert.ok(await page.getByText('CC BY 4.0', { exact: true }).isVisible());
-  await page.screenshot({ path: join(tmpdir(), 'workbook-reading-verified.png') });
-  console.log('PASS reading, attribution, all 25 exercises, and eight diagrams');
+  await page.reload(); await waitProblem();
 
-  await page.locator('main .para').first().evaluate((element) => {
-    const range = document.createRange(); range.selectNodeContents(element);
-    const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
-    element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-  });
-  await page.getByRole('button', { name: 'Clear selected passage' }).waitFor();
-  let request = await ask('What does this passage mean?', 'Reading explanation.');
-  assert.match(JSON.stringify(request.messages), /Selected passage.*Complex numbers are ordered pairs/);
-  assert.match(JSON.stringify(request.messages), /Exercise 25\./);
-  await page.getByRole('button', { name: 'Clear selected passage' }).click();
-  await page.locator('main > div').evaluate((reader) => { reader.scrollTop = 730; });
-  await exerciseButton(1).scrollIntoViewIfNeeded();
-  const readingPosition = await page.locator('main > div').evaluate((reader) => reader.scrollTop);
-  console.log('PASS selected passage and server-resolved reading/exercise context');
+  // A problem board asks for hints, never the answer.
+  await problemBox().fill('Find a strategy for a quadratic.');
+  await draw();
+  let request = await askTutor('Problem hint.');
+  assert.match(request.messages[0].content, /NEVER give the full solution/);
+  assert.match(JSON.stringify(request.messages), /Find a strategy for a quadratic/);
+  console.log('PASS a problem board gets hints with its problem and board');
 
-  await page.getByRole('textbox').fill('Long response safety check');
+  // One request at a time: a long reply blocks others past five seconds, then a follow-up can go at once.
+  await waitForTutorReady();
+  await followUp().fill('Long response safety check');
   const longResponseReady = page.waitForResponse((response) => response.url() === `${origin}/api/tutor`);
-  await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.waitForFunction(() => !!document.querySelector('[aria-busy="true"]'));
   await page.waitForTimeout(5500); // Exercise the active-request lock after the five-second interval expires.
   const duringStream = await page.evaluate(async (modelConfig) => {
@@ -137,38 +140,29 @@ try {
   assert.match(duringStream.message, /already answering/);
   await (await longResponseReady).finished();
   await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
-  await page.getByRole('textbox').fill('Follow up immediately after the long reply');
-  assert.ok(await page.getByRole('button', { name: 'Ask', exact: true }).isEnabled());
-  await ask('Follow up immediately after the long reply', 'Reading explanation.');
+  await followUp().fill('Follow up immediately after the long reply');
+  assert.ok(await page.getByRole('button', { name: 'Send', exact: true }).isEnabled());
+  await ask('Follow up immediately after the long reply', 'Problem hint.');
   console.log('PASS active stream blocks concurrent calls after five seconds, then allows an immediate follow-up');
 
-  await exerciseButton(1).click(); await waitExercise();
-  request = await ask('Where should I start?', 'Exercise hint.');
-  assert.match(JSON.stringify(request.messages), /Current exercise 1\./);
-  assert.match(JSON.stringify(request.messages), /Reading text/);
-  assert.doesNotMatch(JSON.stringify(request.messages), /Reading explanation/);
-  await draw();
+  // A reload straight after marking it solved keeps the board, the conversation and Solved.
   await page.getByRole('button', { name: 'Mark solved', exact: true }).click();
-  await page.reload(); await waitExercise(); await openTutor();
+  await page.reload(); await waitProblem(); await openTutor();
   assert.ok(await page.getByRole('button', { name: 'Solved', exact: true }).isVisible());
   assert.ok(await page.getByRole('button', { name: 'Clear', exact: true }).isEnabled());
-  assert.ok(await page.getByText('Exercise hint.', { exact: true }).isVisible());
-  console.log('PASS immediate reload preserves whiteboard, conversation, active exercise, and completion');
+  assert.ok(await page.getByText('Problem hint.', { exact: true }).first().isVisible());
+  assert.equal(await problemBox().inputValue(), 'Find a strategy for a quadratic.');
+  console.log('PASS immediate reload preserves board, conversation, problem and Solved');
 
-  // Selecting shapes sends just those shapes, trimmed, and does not leak to another exercise.
+  // Selecting shapes sends just those shapes, trimmed.
   await draw(260);
   const box = await board().boundingBox();
   await page.locator('[data-testid="tools.select"]').first().click();
   // Start below tldraw's undo/redo panel in the top-left corner.
   await page.mouse.move(box.x + 20, box.y + 60); await page.mouse.down();
   await page.mouse.move(box.x + 220, box.y + 200, { steps: 5 }); await page.mouse.up();
-  await waitForTutorReady();
-  const beforeHelp = requests.length;
-  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
-  // The whiteboard export is async, so wait for the request rather than the busy flag.
-  while (requests.length === beforeHelp) await new Promise((resolve) => setTimeout(resolve, 50));
-  await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
-  const image = imageOf(requests.at(-1));
+  request = await askTutor('Problem hint.');
+  const image = imageOf(request);
   assert.ok(image?.startsWith('data:image/png;base64,'));
   const [width, height] = await page.evaluate(async (src) => {
     const image = new Image(); image.src = src; await image.decode(); return [image.naturalWidth, image.naturalHeight];
@@ -189,68 +183,53 @@ try {
   assert.equal(rejected.status, 429);
   assert.ok(Number(rejected.retryAfter) > 0);
   assert.equal(requests.length, beforeBurst);
-  request = await ask('Does this approach make sense?', 'Exercise hint.');
+  request = await ask('Does this approach make sense?', 'Problem hint.');
   assert.equal(imageOf(request), undefined);
   await draw(120);
-  request = await ask('What about now?', 'Exercise hint.');
+  request = await ask('What about now?', 'Problem hint.');
   assert.ok(imageOf(request)?.startsWith('data:image/png;base64,'));
   console.log('PASS selected shapes reach the provider trimmed; follow-ups attach the board only after it changes; five-second limit rejects bursts');
 
-  // Full screen hides the header, exercise and tutor; the board keeps its strokes.
+  // Full screen hides the bar, problem and tutor; the board keeps its strokes.
   await page.getByRole('button', { name: 'Full screen' }).click();
-  await page.getByRole('button', { name: 'Back to reading' }).waitFor({ state: 'hidden' });
+  await page.getByRole('link', { name: 'Home', exact: true }).waitFor({ state: 'hidden' });
   assert.equal(await page.getByRole('complementary', { name: 'Tutor' }).count(), 0);
-  assert.equal(await page.getByRole('region', { name: 'Exercise' }).count(), 0);
+  assert.equal(await page.getByRole('region', { name: 'Problem' }).count(), 0);
   await page.locator('.tl-shape').first().waitFor();
   // Tutor in full screen leaves it and shows the conversation.
   await page.getByRole('button', { name: 'Tutor', exact: true }).click();
   await page.getByRole('button', { name: 'Full screen' }).waitFor();
   await page.getByRole('complementary', { name: 'Tutor' }).waitFor();
-  // The open tutor stands in the exercise's place; Show exercise closes it.
-  await page.getByRole('button', { name: 'Show exercise' }).click(); await waitExercise();
+  // The open tutor stands in the problem's place; Show problem closes it.
+  await page.getByRole('button', { name: 'Show problem' }).click(); await waitProblem();
   assert.equal(await page.getByRole('complementary', { name: 'Tutor' }).count(), 0);
-  // The exercise can give the board its room, and comes back.
-  await page.getByRole('button', { name: 'Hide exercise' }).click();
-  assert.equal(await page.getByRole('region', { name: 'Exercise' }).count(), 0);
-  await page.getByRole('button', { name: 'Show exercise' }).click(); await waitExercise();
-  console.log('PASS full-screen exercise board');
+  // The problem can give the board its room, and comes back.
+  await page.getByRole('button', { name: 'Hide problem' }).click();
+  assert.equal(await page.getByRole('region', { name: 'Problem' }).count(), 0);
+  await page.getByRole('button', { name: 'Show problem' }).click(); await waitProblem();
+  console.log('PASS full screen and the problem/tutor toggles');
 
-  await page.getByRole('button', { name: 'Back to reading' }).click(); await waitReading();
-  assert.ok(await page.getByText('Reading explanation.', { exact: true }).last().isVisible());
-  assert.equal(await page.locator('main > div').evaluate((reader) => reader.scrollTop), readingPosition);
-  assert.match(await exerciseButton(1).innerText(), /Solved/);
-  await exerciseButton(2).click(); await waitExercise();
-  assert.ok(await page.getByRole('button', { name: 'Clear', exact: true }).isDisabled());
-  assert.equal(await page.getByText('Exercise hint.', { exact: true }).count(), 0);
-  request = await ask('How should I plot these vectors?', 'Exercise hint.');
-  assert.match(JSON.stringify(request.messages), /Current exercise 2\./);
-  assert.doesNotMatch(JSON.stringify(request.messages), /Does this approach make sense/);
-  await page.getByRole('button', { name: 'Back to reading' }).click(); await waitReading();
-  await exerciseButton(1).click(); await waitExercise(); await openTutor();
-  assert.ok(await page.getByRole('button', { name: 'Clear', exact: true }).isEnabled());
-  assert.ok(await page.getByText('Does this approach make sense?', { exact: true }).isVisible());
-  console.log('PASS switching keeps boards and conversations separate and restores the reading position');
-
+  // Closing the browser and coming back reopens the same board; Solved can be taken back.
   await page.getByRole('button', { name: 'Solved', exact: true }).click();
-  await context.close(); await openBrowser(); await waitExercise();
+  await page.getByRole('button', { name: 'Mark solved', exact: true }).waitFor();
+  await page.waitForTimeout(1200); // past the autosave delay
+  await page.getByRole('status').getByText('Saved', { exact: true }).waitFor();
+  await context.close(); await openBrowser(); await waitProblem(); await openTutor();
   assert.ok(await page.getByRole('button', { name: 'Mark solved', exact: true }).isVisible());
   assert.ok(await page.getByRole('button', { name: 'Clear', exact: true }).isEnabled());
-  await page.getByRole('button', { name: 'Back to reading' }).click(); await waitReading();
-  assert.doesNotMatch(await exerciseButton(1).innerText(), /Solved/);
-  assert.ok(await page.getByText('Reading explanation.', { exact: true }).last().isVisible());
-  await ask('Explain the modulus definition again.', 'Reading explanation.');
-  console.log('PASS browser close/reopen, completion reversal, and reading follow-ups after the short request interval');
+  assert.ok(await page.getByText('Does this approach make sense?', { exact: true }).isVisible());
+  console.log('PASS browser close/reopen and taking Solved back');
 
-  await exerciseButton(4).click(); await waitExercise();
-  await page.getByRole('link', { name: '(1.3.4)', exact: true }).click(); await waitReading();
-  // The reading scrolls to the passage after it renders; wait for that rather than reading it at once.
-  await page.waitForFunction(() => {
-    const rect = document.getElementById('TriangleIneq')?.getBoundingClientRect();
-    return Boolean(rect && rect.top >= 60 && rect.top < window.innerHeight);
-  }, null, { timeout: 5000 });
-  console.log('PASS exercise identity links return to their reading passage');
+  // A new board starts empty, with its own conversation.
+  await newBoard('problem'); await waitProblem();
+  await problemBox().fill('Expand (x + 1)^2.');
+  await openTutor();
+  assert.ok(await page.getByRole('button', { name: 'Clear', exact: true }).isDisabled());
+  assert.equal(await page.getByText('Problem hint.', { exact: true }).count(), 0);
+  request = await askTutor('Problem hint.');
+  assert.doesNotMatch(JSON.stringify(request.messages), /Does this approach make sense/);
+  console.log('PASS a new board keeps its board and conversation separate');
 
-  await exerciseButton(8).click(); await waitExercise();
   // Stream errors are visible and still consume the short request interval.
   await waitForTutorReady();
   await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: 'data: {"type":"error","error":"Simulated provider failure"}\n\n' }), { times: 1 });
@@ -258,58 +237,34 @@ try {
   await page.getByText('Error: Simulated provider failure', { exact: true }).waitFor();
   assert.ok(await page.evaluate(() => Number(localStorage.getItem('lastHelpTimestamp')) > 0));
   await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: 'data: {"type":"text_delta","content":"Partial reply"}\n\n' }), { times: 1 });
-  await page.getByRole('textbox').fill('Follow up after the error.'); await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  await followUp().fill('Follow up after the error.'); await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.getByText(/The tutor response was interrupted/).waitFor();
-  await page.getByRole('textbox').fill('Hold this reply while I reload.');
-  await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  await followUp().fill('Hold this reply while I reload.');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.waitForFunction(() => !!document.querySelector('[aria-busy="true"]'));
-  await page.reload(); await waitExercise(); await openTutor();
-  await page.getByText('The tutor response was interrupted. Ask again to continue.', { exact: true }).waitFor();
+  await page.reload(); await waitProblem(); await openTutor();
+  await page.getByText('The tutor response was interrupted. Ask again to continue.', { exact: true }).last().waitFor();
   assert.equal(await page.locator('.animate-bounce').count(), 0);
   console.log('PASS SSE failures and reload during streaming recover without a stuck typing indicator');
 
-  // Leaving the workbook goes through the bar on every page: Home, then + New.
-  await page.getByRole('link', { name: 'Shelf', exact: true }).first().waitFor();
-  await page.getByRole('link', { name: 'Home', exact: true }).click();
-  await page.getByRole('heading', { name: 'Problems and notes' }).waitFor();
-  await page.getByRole('button', { name: 'New', exact: true }).click();
-  await page.getByRole('button', { name: 'New Problem' }).click();
-  await page.waitForURL(`${origin}/board`);
-  await page.getByPlaceholder("Type the math problem you're working on...").waitFor();
-  await page.getByPlaceholder("Type the math problem you're working on...").fill('Find a strategy for a quadratic.');
-  await draw();
-  await waitForTutorReady(); await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
-  await page.getByText('Exercise hint.', { exact: true }).waitFor();
-  assert.match(requests.at(-1).messages[0].content, /NEVER give the full solution/);
-  // Free-form sessions save themselves and come back after a reload.
-  await page.getByRole('status').getByText('Saved', { exact: true }).waitFor();
-  await page.reload();
-  await openTutor();
-  await page.getByText('Exercise hint.', { exact: true }).waitFor();
-  assert.equal(await page.getByPlaceholder("Type the math problem you're working on...").inputValue(), 'Find a strategy for a quadratic.');
-  await page.waitForFunction(() => document.querySelectorAll('.tl-shape').length > 0);
-  await page.getByRole('button', { name: 'New', exact: true }).click();
-  await page.getByRole('button', { name: /New Notes/ }).click();
+  // A Notes board explains directly; dictated follow-ups land in the box.
+  await newBoard('note');
   await page.getByPlaceholder("Topic or concept you're studying...").fill('Complex modulus');
-  await waitForTutorReady(); await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
-  await page.getByText('Notes explanation.', { exact: true }).waitFor();
-  assert.match(requests.at(-1).messages[0].content, /Give clear, direct explanations/);
-  assert.doesNotMatch(JSON.stringify(requests.at(-1).messages), /Current exercise/);
+  request = await askTutor('Notes explanation.');
+  assert.match(request.messages[0].content, /Give clear, direct explanations/);
   await page.getByTitle('Speak a question', { exact: true }).click();
   await page.evaluate(() => window.__testRecognition.onresult({ results: [[{ transcript: 'Explain conjugation' }]] }));
   await page.waitForFunction(() => document.querySelector('textarea[placeholder="Type or speak a follow-up..."]').value === 'Explain conjugation');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.getByText('Notes explanation.', { exact: true }).last().waitFor();
-  assert.equal(await page.getByPlaceholder('Type or speak a follow-up...').inputValue(), '');
+  assert.equal(await followUp().inputValue(), '');
+
+  // Home lists every board, offers the last one first, and searches, filters and renames.
   await page.getByRole('link', { name: 'Home', exact: true }).click();
   const history = page.getByRole('main');
   await history.getByText('Complex modulus', { exact: true }).first().waitFor();
-  // Home offers the board last worked on first.
   await page.getByRole('button', { name: 'Continue Complex modulus' }).waitFor();
   assert.ok(await history.getByText('Find a strategy for a quadratic.', { exact: true }).count() > 0);
-  // Workbook exercises with work in them are listed too, and open in the workbook.
-  const workbookCard = page.locator('[aria-labelledby="boards-heading"] li').filter({ hasText: /Complex Analysis 1\.3 · Exercise 1(?!\d)/ });
-  assert.match(await workbookCard.innerText(), /Workbook/);
   await history.getByRole('button', { name: 'Problems', exact: true }).click();
   assert.equal(await history.getByText('Complex modulus', { exact: true }).count(), 1, 'only in Continue');
   await history.getByRole('button', { name: 'All', exact: true }).click();
@@ -332,20 +287,20 @@ try {
   await page.getByRole('link', { name: 'Home', exact: true }).click();
   await history.getByRole('button', { name: 'Open Modulus notes' }).waitFor();
   await history.getByText('Complex modulus and argument').first().waitFor();
-  console.log('PASS free-form Problem/Notes policies, autosave and reload, dictated follow-ups, and History search and rename');
+  console.log('PASS free-form Notes policy, dictated follow-ups, and Home search, filter and rename');
 
-  // Opening a workbook entry from History goes to that exercise.
-  await workbookCard.getByRole('button', { name: /^Open / }).click(); await waitExercise();
-  await page.getByRole('heading', { name: 'Exercise 1', exact: true }).waitFor();
+  // Opening an older board from Home brings back its conversation.
+  await history.getByRole('searchbox', { name: 'Search problems and notes' }).fill('quadratic');
+  await history.getByRole('button', { name: 'Open Find a strategy for a quadratic.' }).click();
+  await page.waitForURL(`${origin}/board`); await waitProblem(); await openTutor();
+  assert.ok(await page.getByText('Does this approach make sense?', { exact: true }).isVisible());
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.getByRole('button', { name: 'Mark solved', exact: true }).isVisible());
-  await page.getByRole('button', { name: 'Back to reading' }).click(); await waitReading();
-  assert.ok(await page.getByRole('textbox').isVisible());
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);
   assert.deepEqual(browserErrors, []);
-  console.log('PASS mobile controls, reading navigation, and no browser exceptions');
+  console.log('PASS reopening from Home, mobile layout, and no browser exceptions');
 } catch (error) {
-  if (page) await page.screenshot({ path: join(tmpdir(), 'workbook-acceptance-failure.png'), fullPage: true }).catch(() => {});
+  if (page) await page.screenshot({ path: join(tmpdir(), 'board-acceptance-failure.png'), fullPage: true }).catch(() => {});
   throw error;
 } finally {
   await context?.close();
