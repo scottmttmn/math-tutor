@@ -60,6 +60,14 @@ export interface Session {
   sessionType?: SessionType;
   /** A name the student gave it in History; otherwise the title comes from the problem. */
   customTitle?: string;
+  /** Set on a skill check-in board: the tutor poses problems on these topics instead of helping with one. */
+  checkIn?: CheckIn;
+}
+
+/** A skill check-in: short problems on a few topics, answered by hand, that settle each topic's level in the tutor memory. */
+export interface CheckIn {
+  /** Topic names, as in the tutor memory. */
+  topics: string[];
 }
 
 /** One entry in History: a free-form board, or a workbook or Shelf exercise (or reading) with work in it. */
@@ -194,6 +202,8 @@ export interface TutorRequest {
   learnerProfile?: string;
   /** The tutor may end its reply with notes on topics for the tutor memory (see NOTES_RULE in the route). */
   takeNotes?: boolean;
+  /** On a check-in board: the topics it covers (see CHECK_IN_PROMPT in the route). */
+  checkIn?: CheckIn;
 }
 
 /** Text of the Shelf pages leading up to an exercise (never past its page), for the tutor to read. */

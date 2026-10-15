@@ -51,9 +51,9 @@ Done (step 2): the tutor notes what your boards show, per topic with a level and
 
 ### 6. Skill check-in
 
-- Optional and short, never required. Starting from the self-assessment, the tutor skips topics rated solid or never seen and asks a few problems on the uncertain ones: harder after a right answer, easier after a miss, stopping once it is confident.
-- Answers are handwritten on a normal board, so it stays pen-first and reuses the existing tutor flow.
-- Results write into the tutor-memory profile (levels and confidence), which the learner can see and edit. Also available later as **Check me on this topic** for one area.
+Done: **Skill check-in** on the Tutor memory page offers the topics nobody is sure about (rated Rusty or Learning, your own unrated ones, and ones the tutor noted without high confidence), up to 4. It opens a board where the tutor gives one short problem at a time, harder after a right answer and easier after a miss; you answer by hand and press Ask tutor, and each settled topic lands in the memory as a tutor note you can correct.
+
+- Later: **Check me on this topic** for one topic or area straight from its row.
 
 ## After the MVP
 
