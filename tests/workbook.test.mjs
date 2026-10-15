@@ -243,6 +243,14 @@ for (const provider of ['anthropic', 'openai-compatible']) {
     const plain = provider === 'anthropic' ? calls[1].system : calls[1].messages[0].content;
     assert.doesNotMatch(plain, /LEARNER PROFILE/);
     assert.doesNotMatch(JSON.stringify(calls[1].messages), /learner_profile/);
+    assert.doesNotMatch(plain, /TOPIC NOTES/);
+
+    // Taking notes adds its rule, after the Socratic rules it cannot change.
+    advanceTime();
+    await (await request({ modelConfig, takeNotes: true })).text();
+    const noting = provider === 'anthropic' ? calls[2].system : calls[2].messages[0].content;
+    assert.match(noting, /NEVER give the full solution[\s\S]*TOPIC NOTES[\s\S]*<memory>[\s\S]*Never the answer to the problem/);
+    assert.match(noting, /Integration techniques/);
   });
 }
 

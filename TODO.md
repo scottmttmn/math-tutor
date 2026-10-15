@@ -42,7 +42,7 @@ Done: **Save as…** on every board saves the whole board as a PNG or a one-page
 
 Done (step 1): **Tutor memory** (Settings → Tutor, or the line on Home while it's empty) holds **About you** and a self-assessment: topics by area, each rated Solid, Rusty, Learning or Never seen, plus topics of your own. It is sent with every question as information the tutor uses to pitch its hints (never as instructions), can be turned off, shows exactly what the tutor reads, and is in backups.
 
-- Next (step 2): the tutor updates it from your boards, per topic with a level and how sure it is, and you can see and edit what it wrote.
+Done (step 2): the tutor notes what your boards show, per topic with a level and how sure it is, at the end of a reply and out of sight of the chat. The notes show under each topic on the Tutor memory page, where you can correct the level or forget the note, and the tutor reads them back with later questions.
 
 - A local, user-editable learner profile, summarized after each session and sent with tutor requests (not the raw history).
 - Kept in app storage, so it moves with the app to the tablet.

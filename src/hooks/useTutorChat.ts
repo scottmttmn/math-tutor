@@ -6,9 +6,19 @@ import { useSessionState, useSessionDispatch } from '@/context/SessionContext';
 import { getModelConfig } from '@/lib/modelConfig';
 import { recordTutorUsage, tryStartTutorRequest, useRateLimit } from '@/hooks/useRateLimit';
 import { RATE_LIMIT_MS } from '@/lib/constants';
-import { loadProfile } from '@/lib/db';
-import { profileForTutor } from '@/lib/learnerProfile';
+import { loadProfile, saveProfile } from '@/lib/db';
+import { emptyProfile, noteTopic, profileForTutor, splitTutorNotes, type TopicObservation } from '@/lib/learnerProfile';
 import type { BookContext, ChatMessage, TutorStreamEvent, WorkbookContext } from '@/types';
+
+/** Writes the tutor's topic notes into the tutor memory, unless the student turned sharing off meanwhile. */
+async function keepNotes(notes: TopicObservation[]) {
+  try {
+    const profile = (await loadProfile()) ?? emptyProfile();
+    if (!profile.shareWithTutor) return;
+    const now = Date.now();
+    await saveProfile(notes.reduce((current, note) => noteTopic(current, note, now), profile));
+  } catch { /* The reply still stands; the notes are lost. */ }
+}
 
 /** `getBookContext` supplies the Shelf pages around the exercise, read fresh for every request. */
 export function useTutorChat(workbookContext?: WorkbookContext, getBookContext?: () => Promise<BookContext | null>) {
@@ -35,17 +45,27 @@ export function useTutorChat(workbookContext?: WorkbookContext, getBookContext?:
     const append = (content: string) => {
       if (!abort.signal.aborted) dispatch({ type: 'APPEND_TO_LAST_MESSAGE', content });
     };
+    // The reply as it arrives, and how much of it is shown: topic notes at its end are kept out of the chat.
+    let reply = '';
+    let shown = 0;
+    const appendReply = (delta: string) => {
+      reply += delta;
+      const { visible } = splitTutorNotes(reply);
+      if (visible.length > shown) { append(visible.slice(shown)); shown = visible.length; }
+    };
     try {
       const bookContext = await getBookContext?.().catch(() => null) ?? undefined;
       // Read fresh, so an edit to the tutor memory counts from the next question.
-      const learnerProfile = profileForTutor(await loadProfile().catch(() => undefined)) || undefined;
+      const profile = await loadProfile().then((saved) => saved ?? emptyProfile()).catch(() => undefined);
+      const learnerProfile = profileForTutor(profile) || undefined;
+      const takeNotes = profile?.shareWithTutor === true;
       const response = await fetch('/api/tutor', {
         method: 'POST', signal: abort.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           problemStatement, chatHistory: chatHistory.filter((message) => message.content.trim()),
           canvasImage, modelConfig: getModelConfig(), userQuestion: userContent,
-          problemImage: problemImage ?? undefined, sessionType, workbookContext, bookContext, learnerProfile,
+          problemImage: problemImage ?? undefined, sessionType, workbookContext, bookContext, learnerProfile, takeNotes,
         }),
       });
       if (!response.ok) {
@@ -62,7 +82,7 @@ export function useTutorChat(workbookContext?: WorkbookContext, getBookContext?:
         const data = frame.split(/\r?\n/).filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart()).join('\n');
         if (!data) return;
         const event: TutorStreamEvent = JSON.parse(data);
-        if (event.type === 'text_delta' && event.content) append(event.content);
+        if (event.type === 'text_delta' && event.content) appendReply(event.content);
         else if (event.type === 'model' && event.model && !abort.signal.aborted) dispatch({ type: 'SET_LAST_MESSAGE_MODEL', model: event.model });
         else if (event.type === 'usage' && event.usage) {
           if (!abort.signal.aborted) dispatch({ type: 'SET_LAST_MESSAGE_USAGE', usage: event.usage });
@@ -85,6 +105,9 @@ export function useTutorChat(workbookContext?: WorkbookContext, getBookContext?:
         }
       }
       if (!stopped && !hadError) throw new Error('The tutor response was interrupted. Please try again.');
+      const { visible, notes } = splitTutorNotes(reply);
+      if (visible.length > shown) append(visible.slice(shown));
+      if (takeNotes && notes.length && !hadError) await keepNotes(notes);
       return !hadError && !abort.signal.aborted;
     } catch (error) {
       append(`\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`);

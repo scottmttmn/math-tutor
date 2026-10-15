@@ -115,6 +115,12 @@ test('the tutor memory goes into the backup and comes back; a malformed one is l
   written.length = 0;
   await backup.restoreFromFiles([asFile(new Blob([JSON.stringify({ ...manifest, profile: { ...profile, topics: [null, { id: 1 }, { ...profile.topics[0], rating: 'great' }, ...profile.topics] } })]), 'backup.json')]);
   assert.deepEqual(written[0].profile, profile);
+  // The tutor's notes come back too; a malformed note is dropped, not its topic.
+  const note = { level: 'rusty', confidence: 'medium', note: 'Sign errors', updatedAt: 5, edited: true };
+  const noted = { ...profile, topics: [{ ...profile.topics[0], tutor: note }, { id: 'calculus/derivatives', name: 'Derivatives', area: 'Calculus', rating: null, tutor: { ...note, confidence: 'very' } }] };
+  written.length = 0;
+  await backup.restoreFromFiles([asFile(new Blob([JSON.stringify({ ...manifest, profile: noted })]), 'backup.json')]);
+  assert.deepEqual(written[0].profile.topics, [noted.topics[0], { id: 'calculus/derivatives', name: 'Derivatives', area: 'Calculus', rating: null }]);
   assert.notEqual(backup.backupFingerprint([], [], profile), backup.backupFingerprint([], [], { updatedAt: 8 }));
   assert.notEqual(backup.backupFingerprint([], [], profile), backup.backupFingerprint([], []));
 });

@@ -3,11 +3,13 @@
 import { useState } from 'react';
 import AppBar from '@/components/layout/AppBar';
 import { TutorIcon } from '@/components/common/Icons';
+import MoreMenu from '@/components/common/MoreMenu';
 import { useLearnerProfile } from '@/hooks/useLearnerProfile';
 import {
-  MAX_ABOUT_ME, OWN_AREA, RATINGS, TOPIC_AREAS, addOwnTopic, profileForTutor, rateTopic, removeTopic, topicId,
+  CONFIDENCES, MAX_ABOUT_ME, OWN_AREA, RATINGS, TOPIC_AREAS, addOwnTopic, forgetTutorNote, profileForTutor, rateTopic,
+  removeTopic, setTutorLevel, topicId,
 } from '@/lib/learnerProfile';
-import type { LearnerProfile, TopicRating } from '@/types';
+import type { LearnerProfile, ProfileTopic, TopicRating, TutorNote } from '@/types';
 
 function RatingButtons({ name, rating, onRate }: { name: string; rating: TopicRating | null; onRate: (rating: TopicRating | null) => void }) {
   return (
@@ -29,7 +31,37 @@ function RatingButtons({ name, rating, onRate }: { name: string; rating: TopicRa
   );
 }
 
-function TopicRow({ name, rating, onRate, onRemove }: { name: string; rating: TopicRating | null; onRate: (rating: TopicRating | null) => void; onRemove?: () => void }) {
+const levelLabel = (level: TopicRating) => RATINGS.find((option) => option.rating === level)?.label ?? level;
+
+/** The tutor's read of a topic, with a menu to correct its level or forget it. */
+function TutorNoteLine({ name, note, onLevel, onForget }: { name: string; note: TutorNote; onLevel: (level: TopicRating) => void; onForget: () => void }) {
+  const how = note.edited ? 'set by you' : CONFIDENCES.find((option) => option.confidence === note.confidence)?.label;
+  const when = new Date(note.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return (
+    <div data-testid={`tutor-note-${name}`} className="flex items-start gap-2 w-full pl-3 border-l-2 border-indigo-700">
+      <p className="flex-1 text-sm text-gray-700">
+        <span className="font-medium text-indigo-700">Tutor:</span> {levelLabel(note.level)}, {how} <span className="text-gray-500">· {when}</span>
+        {note.note && <span className="block text-gray-600">{note.note}</span>}
+      </p>
+      <MoreMenu
+        label={`Change the tutor's note on ${name}`}
+        items={[
+          ...RATINGS.filter((option) => option.rating !== note.level).map((option) => ({ label: `It's ${option.label}`, onSelect: () => onLevel(option.rating) })),
+          { label: 'Forget this note', onSelect: onForget },
+        ]}
+      />
+    </div>
+  );
+}
+
+interface TopicActions {
+  onRate: (rating: TopicRating | null) => void;
+  onRemove?: () => void;
+  onTutorLevel: (level: TopicRating) => void;
+  onForget: () => void;
+}
+
+function TopicRow({ name, rating, tutor, onRate, onRemove, onTutorLevel, onForget }: { name: string; rating: TopicRating | null; tutor?: TutorNote } & TopicActions) {
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 border-b border-gray-100 last:border-b-0">
       <span className="flex-1 min-w-[10rem] text-sm text-gray-900">{name}</span>
@@ -39,12 +71,13 @@ function TopicRow({ name, rating, onRate, onRemove }: { name: string; rating: To
           Remove
         </button>
       )}
+      {tutor && <TutorNoteLine name={name} note={tutor} onLevel={onTutorLevel} onForget={onForget} />}
     </li>
   );
 }
 
-const ratingOf = (profile: LearnerProfile, area: string, name: string) =>
-  profile.topics.find((topic) => topic.id === topicId(area, name))?.rating ?? null;
+const topicOf = (profile: LearnerProfile, area: string, name: string): ProfileTopic | undefined =>
+  profile.topics.find((topic) => topic.id === topicId(area, name));
 
 /** /memory: what the tutor knows about the student, written and rated by them. */
 export default function TutorMemory() {
@@ -55,6 +88,11 @@ export default function TutorMemory() {
     update((current) => addOwnTopic(current, newTopic));
     setNewTopic('');
   };
+  const actions = (area: string, name: string, id: string): TopicActions => ({
+    onRate: (rating) => update((current) => rateTopic(current, area, name, rating)),
+    onTutorLevel: (level) => update((current) => setTutorLevel(current, id, level)),
+    onForget: () => update((current) => forgetTutorNote(current, id)),
+  });
   const ownTopics = profile?.topics.filter((topic) => topic.area === OWN_AREA) ?? [];
   const preview = profile ? profileForTutor({ ...profile, shareWithTutor: true }) : '';
 
@@ -67,7 +105,7 @@ export default function TutorMemory() {
           <div className="flex-1 min-w-[16rem]">
             <h1 className="flex items-center gap-2 text-lg font-semibold text-gray-900"><span className="text-indigo-700"><TutorIcon /></span>Tutor memory</h1>
             <p className="mt-1 text-sm text-gray-600">
-              What the tutor knows about you. It reads this with every question, so its hints start at your level. It stays on this device and in your backups, and all of it is optional.
+              What the tutor knows about you. It reads this with every question, so its hints start at your level, and it notes here what your boards show about a topic. It stays on this device and in your backups, and all of it is optional.
             </p>
           </div>
           <span className="text-xs text-gray-500 pt-1" aria-live="polite">
@@ -87,7 +125,7 @@ export default function TutorMemory() {
                 className="w-5 h-5 accent-gray-900"
               />
               Share this with the tutor
-              {!profile.shareWithTutor && <span className="text-gray-500">(off: the tutor sees none of it)</span>}
+              {!profile.shareWithTutor && <span className="text-gray-500">(off: the tutor sees none of it and takes no notes)</span>}
             </label>
 
             <section aria-labelledby="about-heading" className="flex flex-col gap-2">
@@ -110,27 +148,36 @@ export default function TutorMemory() {
               <div>
                 <h2 id="topics-heading" className="font-semibold text-gray-900">What you know</h2>
                 <p className="text-sm text-gray-600">
-                  Rate the topics you want the tutor to know about and skip the rest. Tap a rating again to clear it.
+                  Rate the topics you want the tutor to know about and skip the rest. Tap a rating again to clear it. The tutor&apos;s own notes show under a topic; use ⋯ to correct or forget one.
                 </p>
               </div>
               {TOPIC_AREAS.map(({ area, topics }) => {
-                const rated = topics.filter((name) => ratingOf(profile, area, name)).length;
+                const rated = topics.filter((name) => topicOf(profile, area, name)?.rating).length;
+                const noted = topics.filter((name) => topicOf(profile, area, name)?.tutor).length;
                 return (
-                  <details key={area} open={rated > 0} className="group bg-white border border-gray-200 rounded-lg">
+                  <details key={area} open={rated + noted > 0} className="group bg-white border border-gray-200 rounded-lg">
                     <summary className="flex items-center gap-2 min-h-11 px-3 cursor-pointer list-none text-sm font-medium text-gray-900">
                       <span aria-hidden="true" className="w-3 text-gray-500 group-open:rotate-90">›</span>
                       <span className="flex-1">{area}</span>
-                      {rated > 0 && <span className="text-xs font-normal text-gray-500">{rated} rated</span>}
+                      {rated + noted > 0 && (
+                        <span className="text-xs font-normal text-gray-500">
+                          {[rated && `${rated} rated`, noted && `${noted} noted by the tutor`].filter(Boolean).join(', ')}
+                        </span>
+                      )}
                     </summary>
                     <ul className="px-3 pb-1">
-                      {topics.map((name) => (
-                        <TopicRow
-                          key={name}
-                          name={name}
-                          rating={ratingOf(profile, area, name)}
-                          onRate={(rating) => update((current) => rateTopic(current, area, name, rating))}
-                        />
-                      ))}
+                      {topics.map((name) => {
+                        const topic = topicOf(profile, area, name);
+                        return (
+                          <TopicRow
+                            key={name}
+                            name={name}
+                            rating={topic?.rating ?? null}
+                            tutor={topic?.tutor}
+                            {...actions(area, name, topic?.id ?? topicId(area, name))}
+                          />
+                        );
+                      })}
                     </ul>
                   </details>
                 );
@@ -145,7 +192,8 @@ export default function TutorMemory() {
                         key={topic.id}
                         name={topic.name}
                         rating={topic.rating}
-                        onRate={(rating) => update((current) => rateTopic(current, OWN_AREA, topic.name, rating))}
+                        tutor={topic.tutor}
+                        {...actions(OWN_AREA, topic.name, topic.id)}
                         onRemove={() => update((current) => removeTopic(current, topic.id))}
                       />
                     ))}
