@@ -99,9 +99,8 @@ export default function Shelf() {
       )}
 
       <main className={`flex-1 p-4 ${dragging ? 'outline-2 outline-dashed outline-gray-900 -outline-offset-8 bg-gray-100' : ''}`}>
-        {documents === null ? null : (
+        {!documents?.length ? null : (
           <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            <li><WorkbookCover /></li>
             {documents.map((document) => <ShelfCard key={document.id} document={document} onRemove={() => remove(document)} />)}
           </ul>
         )}
@@ -153,23 +152,6 @@ export function ShelfCover({ document }: { document: ShelfDocument }) {
           {document.pageCount} {document.pageCount === 1 ? 'page' : 'pages'}
           {marked > 0 ? ` · ${marked} ${marked === 1 ? 'exercise' : 'exercises'}` : ''}
         </p>
-      </div>
-    </Link>
-  );
-}
-
-/** The built-in workbook section, which sits on the Shelf like a PDF. */
-export function WorkbookCover() {
-  return (
-    <Link href="/workbook" aria-label="Open Complex Analysis §1.3" className="block h-full bg-white border border-gray-200 rounded-xl overflow-hidden hover:bg-gray-50">
-      <div className="aspect-[3/4] bg-gray-100 border-b border-gray-100 flex flex-col justify-center gap-1 px-4 border-l-8 border-l-gray-900">
-        <span className="text-xs uppercase tracking-wide text-gray-500">Workbook</span>
-        <span className="text-lg font-semibold text-gray-900 leading-tight">The Geometry of Complex Numbers</span>
-        <span className="text-xs text-gray-500">§1.3</span>
-      </div>
-      <div className="px-3 py-2">
-        <p className="text-sm font-medium text-gray-900 line-clamp-2">Complex Analysis §1.3</p>
-        <p className="text-xs text-gray-500">Built-in workbook · reading and exercises</p>
       </div>
     </Link>
   );

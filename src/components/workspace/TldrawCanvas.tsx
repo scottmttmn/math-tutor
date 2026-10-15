@@ -23,7 +23,7 @@ const assetUrls = getAssetUrls({ baseUrl: '/tldraw-assets' });
 
 // Bumped synchronously on every document change, unlike the debounced mirror, so callers can
 // tell whether the board changed since they last captured it. Module-level so it never repeats
-// across remounts (the workbook remounts the canvas per exercise).
+// across remounts (e.g. when another board opens).
 let documentRevision = 0;
 
 // Drawing changes the store on every pointer move; mirror it once the pen rests.

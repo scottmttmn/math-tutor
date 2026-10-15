@@ -17,17 +17,17 @@ Done: the handwriting test, autosave on the main page, the 5-second request limi
 
 ### 2. Problem history
 
-Done: **Home** is the page the app opens on: a Continue card for the last board, then a grid of every free-form board, workbook exercise or reading, and Shelf exercise that has work in it, with thumbnails, search, rename, sort, and filters (All / Problems / Notes / In progress / Solved). Every page has the same bar: Home, Shelf, + New, Settings.
+Done: **Home** is the page the app opens on: a Continue card for the last board, then a grid of every free-form board and Shelf exercise that has work in it, with thumbnails, search, rename, sort, and filters (All / Problems / Notes / In progress / Solved). Every page has the same bar: Home, Shelf, + New, Settings.
 
 - Later: more ways to organize problems and notes, probably folders.
 
 ### 3. PDF Shelf
 
-Done: **Shelf** (in the bar) holds what you work from: PDFs of any kind (textbooks, problem sets, handouts) added or dropped in, and the built-in workbook. Open one to read it page by page; **Mark exercise** and drag a box around a problem, and it opens on its own board beside the page (below it on an upright tablet), stays marked on the page (✓ once solved), and shows on Home. **Single problem** puts a picture or a PDF's first page straight onto a new board. Works offline; the tutor gets the marked region as the problem figure, plus the text of the book pages leading up to it (from the section's bookmark, at most 15 pages, never past the exercise; adjustable or off on the board).
+Done: **Shelf** (in the bar) holds what you work from: PDFs of any kind (textbooks, problem sets, handouts) added or dropped in. Open one to read it page by page; **Mark exercise** and drag a box around a problem, and it opens on its own board beside the page (below it on an upright tablet), stays marked on the page (✓ once solved), and shows on Home. **Single problem** puts a picture or a PDF's first page straight onto a new board. Works offline; the tutor gets the marked region as the problem figure, plus the text of the book pages leading up to it (from the section's bookmark, at most 15 pages, never past the exercise; adjustable or off on the board).
 
 Done: one look across the app: ink on paper, with only the tutor in color (**Ask tutor**, its drawer and replies), Solved as a filled ink check everywhere, kind icons on cards and in **+ New**, 44px controls, and Delete/Remove in a "⋯" menu.
 
-Every board has the same layout: what it works from beside it (the problem, the exercise, the PDF page), which can be hidden, and the tutor as a drawer that opens when you ask. Every board has **Full screen** (in its toolbar), and a problem picture can be **put on the board**. **Hide tools** collapses the drawing tools, and the Shelf's Exercises list can be hidden so the page gets the full width.
+Every board has the same layout: what it works from beside it (the problem or topic, the PDF page), which can be hidden, and the tutor as a drawer that opens when you ask. Every board has **Full screen** (in its toolbar), and a problem picture can be **put on the board**. **Hide tools** collapses the drawing tools, and the Shelf's Exercises list can be hidden so the page gets the full width.
 
 - Next: **notes on Shelf pages**, listed beside the page with the exercises and hidden with that list.
 - Still to do: a PDF's pages scroll one at a time (no continuous scroll or zoom yet); marks can't be moved or renamed after saving.
@@ -57,15 +57,14 @@ Done: **Skill check-in** on the Tutor memory page offers the topics nobody is su
 
 ## After the MVP
 
-- **Handwriting to TeX write-up.** Done (free boards): **TeX write-up** in the board's toolbar has the tutor transcribe the board (or the selected part) as LaTeX without solving anything; edit it beside a KaTeX preview and **Download .tex**. It saves with the board and goes in backups. Still to do: drawings come out as `\fbox{Figure: …}` placeholders rather than images; workbook and Shelf boards don't have the button yet.
+- **Handwriting to TeX write-up.** Done (free boards): **TeX write-up** in the board's toolbar has the tutor transcribe the board (or the selected part) as LaTeX without solving anything; edit it beside a KaTeX preview and **Download .tex**. It saves with the board and goes in backups. Still to do: drawings come out as `\fbox{Figure: …}` placeholders rather than images; Shelf boards don't have the button yet.
 - **Replace the chat pane.** Pen-only actions on a selection (Explain this, Give me a hint, Review my work), with replies as cards beside the work. The tutor waits until invited.
 - **Android shell** for the tablet, once there is a device to test pen latency on. Sign in with ChatGPT won't carry over there; API keys will.
-- More openly licensed workbook sections at different levels (today there is one section of one book).
 
 ## Later
 
 - Multi-page notebooks (tldraw supports pages; they're turned off today).
-- Highlights and margin notes in the workbook reader.
+- Notes and highlights on Shelf pages, and reading without flipping page by page (to be designed first).
 - Graph paper background and function plots on the canvas.
 
 ## Down the road (not now)

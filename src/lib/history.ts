@@ -1,28 +1,26 @@
 import type { HistoryItem, HistoryShow, HistorySort, Session } from '@/types';
 
-const WORKBOOK_ENTRY = /^workbook:[^:]+:(?:exercise:([^:]+)|reading)$/;
 const SHELF_ENTRY = /^shelf:([^:]+):([^:]+)$/;
 
 function hasDrawing(session: Session) {
   return session.canvasStrokes.length > 0 || Object.keys(session.canvasDocument?.store ?? {}).some((key) => key.startsWith('shape:'));
 }
 
-/** A saved session as History shows it, or null for workbook and Shelf pages that were only opened. */
+/**
+ * A saved session as History shows it, or null for Shelf exercises that were only opened
+ * and for boards of the built-in workbook, which the app no longer has.
+ */
 export function toHistoryItem(session: Session): HistoryItem | null {
   let href: string | null = null;
   let source: HistoryItem['source'] = 'board';
-  if (session.id.startsWith('workbook:') || session.id.startsWith('shelf:')) {
-    // Both save every exercise they open; only ones with work in them belong in History.
+  if (session.id.startsWith('workbook:')) return null;
+  if (session.id.startsWith('shelf:')) {
+    // The reader saves every exercise it opens; only ones with work in them belong in History.
     if (session.chatHistory.length === 0 && !hasDrawing(session) && !session.isSolved) return null;
-    const workbook = WORKBOOK_ENTRY.exec(session.id);
     const shelf = SHELF_ENTRY.exec(session.id);
-    if (workbook) {
-      source = 'workbook';
-      href = `/workbook?open=${encodeURIComponent(workbook[1] ?? 'reading')}`;
-    } else if (shelf) {
-      source = 'shelf';
-      href = `/shelf/read?doc=${encodeURIComponent(shelf[1])}&open=${encodeURIComponent(shelf[2])}`;
-    } else return null;
+    if (!shelf) return null;
+    source = 'shelf';
+    href = `/shelf/read?doc=${encodeURIComponent(shelf[1])}&open=${encodeURIComponent(shelf[2])}`;
   }
   const sessionType = session.sessionType ?? 'problem';
   return {

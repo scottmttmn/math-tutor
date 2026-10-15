@@ -8,7 +8,7 @@ import load from './load-typescript.mjs';
 
 const { readZip } = load('src/lib/zip.ts');
 
-const origin = process.env.WORKBOOK_TEST_URL || 'http://127.0.0.1:3100';
+const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const browserErrors = [];
 const folder = await mkdtemp(join(tmpdir(), 'backup-acceptance-'));
 const pdfPath = join(folder, 'Geometry.pdf');

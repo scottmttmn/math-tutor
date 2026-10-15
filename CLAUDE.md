@@ -34,7 +34,7 @@ src/
 │   ├── api/transcribe/route.ts# One image read by the ChatGPT plan (used by the handwriting test)
 │   ├── page.tsx               # Home: Continue, every problem and note, what's on the Shelf
 │   ├── board/page.tsx         # A free board (renders AppShell; ?new=problem|note starts one)
-│   ├── shelf/page.tsx         # The Shelf: what you work from (PDFs of any kind, plus the built-in workbook)
+│   ├── shelf/page.tsx         # The Shelf: what you work from (PDFs of any kind)
 │   ├── shelf/read/page.tsx    # One Shelf PDF beside the open exercise's board (?doc=<id>&open=<exercise id>)
 │   ├── memory/page.tsx        # Tutor memory: About you, topic self-ratings and the tutor's notes, sent with every question
 │   ├── pen-test/page.tsx      # Bare canvas (no tldraw) for judging pen latency on a device, e.g. the BOOX
@@ -63,7 +63,7 @@ src/
 │   ├── memory/
 │   │   └── TutorMemory.tsx    # /memory: About you, topic ratings by area, own topics, "What the tutor reads"
 │   ├── home/
-│   │   └── Home.tsx           # Home page: Continue card, every board, workbook and Shelf exercise (thumbnails, search, filter, sort, rename), Shelf row
+│   │   └── Home.tsx           # Home page: Continue card, every board and Shelf exercise (thumbnails, search, filter, sort, rename), Shelf row
 │   ├── pentest/
 │   │   └── PenTest.tsx        # /pen-test: draws straight to a canvas, reports samples/s, event delay, longest gap
 │   ├── shelf/
@@ -137,11 +137,11 @@ src/
 - Buttons follow a consistent pattern: base classes + hover/disabled variants. Match existing button styles.
 
 ### Canvas
-- The canvas is **tldraw**, mounted by `TldrawCanvas.tsx` through `DrawingCanvas.tsx`, which loads it with `next/dynamic` and `ssr: false`. `DrawingCanvas` fills its nearest positioned ancestor, so the wrapper in `AppShell` / `Workbook` must be `relative` with a size. Its wrapper is `isolate`d so tldraw's own z-indexes (up to 10000) stay under the app's dialogs.
+- The canvas is **tldraw**, mounted by `TldrawCanvas.tsx` through `DrawingCanvas.tsx`, which loads it with `next/dynamic` and `ssr: false`. `DrawingCanvas` fills its nearest positioned ancestor, so the wrapper in `AppShell` / `ShelfReader` must be `relative` with a size. Its wrapper is `isolate`d so tldraw's own z-indexes (up to 10000) stay under the app's dialogs.
 - `DrawingCanvasHandle` (pass a ref as `handleRef`): `captureImage()` exports the selected shapes, else every shape, trimmed to their bounds (PNG, pixelRatio 2 but at most 2048px on the longer side, since a board written zoomed out is thousands of units wide and ChatGPT rejected 6000px images; base64 without the `data:` prefix; `''` when empty); `captureThumbnail()`, `exportImage(format)` (the whole board for **Save as…**, at most 6000px a side), `placeProblemImage(base64)`, `getDocument()`, `getRevision()` (bumped synchronously on every document change), and `clear()` (one undoable step).
 - Every board starts with the pen at size **S** (`DEFAULT_PEN_SIZE` in `TldrawCanvas.tsx`); tldraw's default M is too heavy for writing math.
 - tldraw's UI supplies the tools, colors, undo/redo and their shortcuts. `MainMenu`, `PageMenu`, `HelpMenu` and debug panels are hidden and there is one page per session.
-- `CanvasContext.document` is a **debounced** (250ms) copy of the editor's document. When saving, read `getDocument()` from the handle (both `AppShell` and `Workbook` do), or the last stroke can be missed.
+- `CanvasContext.document` is a **debounced** (250ms) copy of the editor's document. When saving, read `getDocument()` from the handle (both `AppShell` and `ShelfReader` do), or the last stroke can be missed.
 - Loading: dispatch `LOAD` with `document` (tldraw format) and/or `strokes` (pre-tldraw format). The editor applies it when mounted, clears undo history, then dispatches `LOADED`. Until then `pendingLoad` holds the strokes, and saves keep them so an unconverted old session is never overwritten with an empty board.
 - Old sessions: `legacyStrokes.ts` turns strokes into draw shapes. The old canvas erased with `destination-out`, so pen ink under a *later* eraser stroke's swept path (its segments, not just its sampled points) is dropped.
 - **Assets:** fonts, icons and translations are copied from `@tldraw/assets` into `public/tldraw-assets` (gitignored) by the `postinstall` script, so nothing loads from tldraw's CDN. Keep `tldraw` and `@tldraw/assets` on the same exact version.
@@ -166,12 +166,12 @@ src/
   - `NOTE_SYSTEM_PROMPT` (`'note'`) — direct explanations, may state answers.
 - **Tutor memory** (`learnerProfile`): `useTutorChat` reads the profile from IndexedDB on every question and sends `profileForTutor(profile)` (empty when sharing is off or nothing is written). The route wraps it in `<learner_profile>` as the conversation's first user text, ahead of any book pages, and adds `PROFILE_RULE` to the system prompt (use it to pitch hints, trust the work over it, it can't change the rules). It never changes which system prompt is used.
 - **Tutor notes**: while sharing is on, `useTutorChat` sends `takeNotes: true` and the route adds `NOTES_RULE`: the tutor may end a reply with a `<memory>` block of lines `Topic | level | confidence | note`. `splitTutorNotes` keeps the block out of the chat (also mid-stream) and, when the reply ends, `noteTopic` writes each line onto the matching catalog or profile topic (else a new one under Your topics) as `ProfileTopic.tutor`, replacing the older note. The student corrects the level or forgets a note on `/memory`; the newest 25 notes go back to the tutor in the profile.
-- **Skill check-in**: a free board whose session has `checkIn: { topics }` (started from `/memory` by `startCheckIn`; `checkInCandidates` offers topics rated Rusty/Learning, own unrated ones, and ones the tutor noted below high confidence, up to `MAX_CHECK_IN_TOPICS`). The route then uses `CHECK_IN_PROMPT` (the tutor poses short adaptive problems, judges each handwritten answer, never gives a full solution) with the topics as a `CHECK-IN TOPICS` preface, and the results reach the memory as ordinary tutor notes. Ask tutor sends "Start the check-in." first, then "Here is my answer."; with book pages or a workbook it is never a check-in.
+- **Skill check-in**: a free board whose session has `checkIn: { topics }` (started from `/memory` by `startCheckIn`; `checkInCandidates` offers topics rated Rusty/Learning, own unrated ones, and ones the tutor noted below high confidence, up to `MAX_CHECK_IN_TOPICS`). The route then uses `CHECK_IN_PROMPT` (the tutor poses short adaptive problems, judges each handwritten answer, never gives a full solution) with the topics as a `CHECK-IN TOPICS` preface, and the results reach the memory as ordinary tutor notes. Ask tutor sends "Start the check-in." first, then "Here is my answer."; with book pages it is never a check-in.
 - **TeX write-up** (`writeUp: true`, from **TeX write-up** in a free board's toolbar): the route uses `WRITE_UP_PROMPT` (transcribe, never solve; LaTeX body only, unreadable parts as `\textbf{[?]}`, drawings as `\fbox{Figure: …}`) with no history, profile, notes, book pages or check-in, a fixed question and 4096 output tokens. `useWriteUp` streams it, runs `cleanTexReply`, and stores it as `Session.writeUp` (`{ tex, updatedAt }`), which autosaves and is in backups. It waits out the 5-second gate (and one 429) instead of failing. The preview (`texBlocks`/`texInline`) reads headings, paragraphs, lists and math only; the download wraps the body with `texDocument`.
 - `bookContext` (Shelf pages) comes from the student's PDF, so it is untrusted: the pages open the conversation as a user message (cached on the Anthropic path) and only the rule about them (`BOOK_RULE`) goes in the system prompt. Requests with it always use `SYSTEM_PROMPT`.
 - Images are passed as base64 PNG. When `problemImage` is present it is sent **first** and described to the model as the problem figure; the canvas image follows as the student's work.
 - The API cleans message history to ensure valid alternating user/assistant turns before sending to the model (Anthropic path only).
-- Request body shape: `{ problemStatement, chatHistory, canvasImage, modelConfig, userQuestion?, problemImage?, sessionType?, workbookContext?, bookContext?, learnerProfile?, takeNotes?, checkIn?, writeUp? }` (see `TutorRequest` in `src/types/index.ts`).
+- Request body shape: `{ problemStatement, chatHistory, canvasImage, modelConfig, userQuestion?, problemImage?, sessionType?, bookContext?, learnerProfile?, takeNotes?, checkIn?, writeUp? }` (see `TutorRequest` in `src/types/index.ts`).
 - Google Gemini uses `GOOGLE_API_KEY` or `GEMINI_API_KEY` at its OpenAI-compatible endpoint. Other OpenAI-compatible providers use `OPENAI_API_KEY` and fall back to `'ollama'` when it is unset, so local Ollama works with no key.
 - A third path, `provider: 'chatgpt'`, uses Sign in with ChatGPT: the Responses API with the student's OAuth token, billed to their ChatGPT plan instead of an API key. Images go as `input_image` parts.
 
@@ -189,7 +189,7 @@ src/
 - `db.ts` exports: `saveSession`, `loadSession`, `deleteSession`, `listSessions`, `renameSession`, for the Shelf `listShelf`, `loadShelfDocument`, `saveShelfDocument`, `deleteShelfDocument`, `shelfSessionId`, and for backup `onDataChange`, `restoreRecords`, `hasSavedWork`, `getSetting`, `setSetting`, and for the tutor memory `loadProfile`, `saveProfile`.
 - Session fields: `id`, `title`, `problemStatement`, `problemImage`, `canvasStrokes` (pre-tldraw only), `canvasDocument?`, `canvasImageBlob` (the History thumbnail), `chatHistory`, `createdAt`, `updatedAt`, `isSolved?`, `sessionType?`, `customTitle?`, `checkIn?`, `writeUp?`.
 - `customTitle` is the name given on Home. Pages that autosave don't know it, so `saveSession` keeps the stored one when a save omits it; `renameSession` is the only writer.
-- **Home** (`/`, `home/Home.tsx`) opens with a **Continue** card for the last board worked on, then lists free-form boards, workbook sessions (`workbook:<section>:exercise:<id>` / `:reading`) and Shelf exercises (`shelf:<document>:<exercise>`) that have work in them. A workbook entry opens `/workbook?open=<exercise id | reading>`, which the workbook reads once and then drops from the URL; a free board is set as the one `/board` opens (`setBoardToOpen`). Filters: All, Problems, Notes, In progress, Solved. Below the list, the Shelf's workbook card and newest PDFs.
+- **Home** (`/`, `home/Home.tsx`) opens with a **Continue** card for the last board worked on, then lists free-form boards and Shelf exercises (`shelf:<document>:<exercise>`) that have work in them. A Shelf entry opens beside its page; a free board is set as the one `/board` opens (`setBoardToOpen`). Filters: All, Problems, Notes, In progress, Solved. Below the list, the Shelf's newest PDFs. Sessions left from the removed built-in workbook (`workbook:…` ids) stay stored and in backups but are not listed.
 - **Backup** (Settings → Backup): a backup is `backup.json` (`BackupManifest`: sessions with thumbnails as data URLs, Shelf entries without their file) plus `pdfs/<id>.pdf`. The download is one stored ZIP (`zip.ts`); folder backup writes the same files into `Math Tutor backup/` in the chosen folder, plus `backup-YYYY-MM-DD.json` (last 7 days), 30s after a change (`onDataChange` in `db.ts` fires on every session/Shelf write). Restore (`restoreRecords`) writes a record only when this device has none or an older `updatedAt`. The folder handle and backup state live in the IndexedDB `settings` store (db version 3). Folder backup is Chromium-only; elsewhere (e.g. Android) only download/restore show. If you add a store or a field that holds work, add it to the backup.
 - **Tutor memory** (`/memory`, from Settings → Tutor and, while empty, a line on Home): a `LearnerProfile` (`aboutMe`, rated `topics`, `shareWithTutor`, `updatedAt`) in the `settings` store under `learnerProfile` (`loadProfile` / `saveProfile`). Catalog topics (`TOPIC_AREAS`) exist in the profile only while rated or noted by the tutor; topics the student adds stay until removed. Topic ids are `area/name` slugs, so don't rename catalog entries' ids casually. It is in backups (`BackupManifest.profile`; newer `updatedAt` wins on restore).
 - `SessionMetadata` (used for session list): `id`, `title`, `problemStatement`, `createdAt`, `updatedAt`, `messageCount`, `isSolved?`, `sessionType?`.
@@ -234,7 +234,7 @@ npm run start  # Production server
 npm run lint   # ESLint
 npm run typecheck  # tsc --noEmit
 npm test       # Unit tests
-npm run test:e2e   # Browser tests (workbook, tutor chat, Shelf, backup, tutor memory, check-in, TeX write-up, pen test); needs `npm run start -- -p 3100` running
+npm run test:e2e   # Browser tests (boards, tutor chat, Shelf, backup, tutor memory, check-in, TeX write-up, pen test); needs `npm run start -- -p 3100` running
 npm run handwriting  # Handwriting test: transcribe tests/handwriting/wacom/<page-id>.png with each model, score against tests/handwriting/pages.json (results in tests/handwriting/results/, gitignored). chatgpt:<model> entries go through the running app's /api/transcribe, so start the app and sign in first
 ```
 
@@ -259,36 +259,35 @@ ESLint uses the Next.js core web vitals config. Run `npm run lint` before commit
 6. The session **autosaves** (see below); there is no Save button.
 
 ### Follow-up Chat
-- `useTutorChat.sendFollowUp(text, canvasImage?)` uses the same `/api/tutor` endpoint. `AppShell` (via `ChatPanel` → `ChatInput`) and `Workbook` attach a fresh `captureImage()` only when the handle's `getRevision()` changed since the tutor last saw the board; otherwise the follow-up is text-only. Don't use the debounced `CanvasContext.document` for this: it misses a stroke finished just before sending.
+- `useTutorChat.sendFollowUp(text, canvasImage?)` uses the same `/api/tutor` endpoint. `ChatInput` (on free and Shelf boards) attaches a fresh `captureImage()` only when the handle's `getRevision()` changed since the tutor last saw the board; otherwise the follow-up is text-only. Don't use the debounced `CanvasContext.document` for this: it misses a stroke finished just before sending.
 
 ### Session Save/Load
 - **Autosave:** `useSessionAutosave` saves 800ms after the last change (problem, image, chat, solved, type, drawing), reading the live document from the handle. It skips an untouched new session and a session that was only opened (it compares content, not timestamps), keeps `createdAt`, and serializes saves. The top bar shows Saving…/Saved, or a Retry button after a failure. New saves write `canvasStrokes: []`.
-- **Reload:** the open session's id is kept in `localStorage` (`math-tutor:currentSession`) and reopened on load. On `pagehide`/hidden it stages a synchronous recovery copy via `src/lib/sessionRecovery.ts` (shared with the workbook); a session reopened from that copy is written back to IndexedDB.
+- **Reload:** the open session's id is kept in `localStorage` (`math-tutor:currentSession`) and reopened on load. On `pagehide`/hidden it stages a synchronous recovery copy via `src/lib/sessionRecovery.ts` (shared with the Shelf reader); a session reopened from that copy is written back to IndexedDB.
 - **Open / New:** Home opens a free board by setting it as `/board`'s session; `startNew` saves the current session first, then loads an empty one.
 - **New:** **+ New** in `AppBar` (every page) is a dropdown — *New Problem* or *New Notes*. On `/board` it calls `AppShell.handleNew()`; elsewhere it goes to `/board?new=<type>`, which starts the board once and drops the parameter.
 
 ### Navigation
 - `AppBar` is on every page (hidden in full screen): **Home** and **Shelf** tabs, **+ New**, and a Settings gear. Pass `locked` while a tutor reply streams so links can't leave the page.
-- The built-in workbook sits on the Shelf as a card (`WorkbookCover`) beside the PDFs; its and the reader's breadcrumbs lead back to the Shelf.
+- The reader's breadcrumb leads back to the Shelf.
 - Design direction (agreed 2026-10-14): boards, the Shelf, and a tutor you call. Later: folders (or similar) for problems and notes, and a new name for the app.
 
 ### Visual language
 - Ink on paper: grays, black and white. Meaning is carried by icon, shape and word, so every screen still reads in greyscale on an e-ink tablet.
 - **Only the tutor has a color**, Tailwind `indigo-700` (`indigo-50` for its replies and tints): **Ask tutor**, the **Tutor** toggle, the drawer's edge and heading, Send/Ask in a chat, "Tutor reads". Nothing else uses indigo, and the tutor uses nothing else. Focus rings and links are ink.
-- **Solved** is a filled ink check (`SolvedCheck` in `common/Icons.tsx`) plus the word, everywhere (boards, Home, workbook, Shelf lists; the Shelf page's mark gets a filled label). No green. Workbook exercises say Solved too.
-- Kinds wear their icon (`KindIcon`: Problem, Notes; `ShelfIcon` for Shelf/workbook) on cards, in the board's title line and in **+ New**.
+- **Solved** is a filled ink check (`SolvedCheck` in `common/Icons.tsx`) plus the word, everywhere (boards, Home, Shelf lists; the Shelf page's mark gets a filled label). No green.
+- Kinds wear their icon (`KindIcon`: Problem, Notes; `ShelfIcon` for the Shelf) on cards, in the board's title line and in **+ New**.
 - Controls are at least 44px tall (`min-h-11`) and labelled in words. One solid ink button per screen for its main action. Delete, Rename and Remove live in a `MoreMenu` ("⋯"), with an inline confirm for deletes.
 - Red is only for errors and failed saves, always with words.
 
 ### Board frame
-- Every board (free board, workbook exercise, Shelf exercise) renders `BoardFrame`: the **source** it works from (typed problem or topic, workbook exercise, PDF page with its page toolbar; `wide` for the page), then the board with a header (title, actions, a **Hide/Show {source}** toggle) and the `BottomToolbar`, then the **tutor**.
+- Every board (free board, Shelf exercise) renders `BoardFrame`: the **source** it works from (typed problem or topic, PDF page with its page toolbar; `wide` for the page), then the board with a header (title, actions, a **Hide/Show {source}** toggle) and the `BottomToolbar`, then the **tutor**.
 - The tutor is a drawer, closed until asked: **Ask tutor** opens it, the toolbar's **Tutor** button toggles it, **Close** in its header shuts it. A new or switched board opens with it closed.
 - Below 2xl (96rem) the open tutor takes the source's place (above the board on narrow screens), so the board keeps its room; the header toggle then reads **Show {source}** and closes the tutor. On 2xl screens all three sit side by side.
-- The workbook's reading view is not a board: it keeps its always-open **Reading tutor** column.
 
 ### Full screen and tools
 - **Hide tools** (`BottomToolbar` `tools` prop, `useToolsHidden`, remembered in `localStorage` as `math-tutor:toolsHidden` for every board) passes `hideUi` to tldraw: toolbars and style panel go, the current tool (the pen) keeps working.
-- Every board (main page, workbook exercise, Shelf) has a **Full screen** button in `BottomToolbar` (`fullScreen` prop), driven by `useBoardFullScreen`: the page hides everything but the board and toolbar and asks the browser for full screen. Esc, Exit full screen, **Tutor** or **Ask tutor** (so the reply is visible) leaves it.
+- Every board (main page, Shelf) has a **Full screen** button in `BottomToolbar` (`fullScreen` prop), driven by `useBoardFullScreen`: the page hides everything but the board and toolbar and asks the browser for full screen. Esc, Exit full screen, **Tutor** or **Ask tutor** (so the reply is visible) leaves it.
 
 ### Keyboard Shortcuts
 Registered once in `AppShell` (handlers read latest values through refs):

@@ -202,7 +202,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
     };
   }, [flush]);
 
-  // Leaving through a link (e.g. to the workbook) unmounts the page without a pagehide. A layout
+  // Leaving through a link (e.g. to the Shelf) unmounts the page without a pagehide. A layout
   // cleanup runs while the editor handle is still attached, so the last stroke is included.
   useLayoutEffect(() => () => flush(), [flush]);
 
