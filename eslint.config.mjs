@@ -17,6 +17,8 @@ const eslintConfig = defineConfig([
     ".claude/**",
     // Copied from pdfjs-dist on npm install.
     "public/pdfjs/**",
+    // The Android project; its web assets are a copy of out/.
+    "android/**",
   ]),
 ]);
 

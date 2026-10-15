@@ -109,6 +109,8 @@ src/
 └── types/
     ├── index.ts               # All shared TypeScript types
     └── speech-recognition.d.ts# Web Speech API type declarations
+android/                       # The Android app (Capacitor 8): a WebView serving the bundled app from out/
+capacitor.config.ts            # App id, webDir `out`, androidScheme `http`
 ```
 
 ---
@@ -230,11 +232,12 @@ The app shows user-friendly error messages for missing/invalid keys.
 ```bash
 npm run dev    # Development server (port 3000; webpack, like build — Turbopack + turbopack.root on Next 16.1.6 resolves Tailwind one folder up)
 npm run build  # Production build
+npm run build:android  # The app bundled with no server (static export to out/), copied into android/ by `cap sync`
 npm run start  # Production server
 npm run lint   # ESLint
 npm run typecheck  # tsc --noEmit
 npm test       # Unit tests
-npm run test:e2e   # Browser tests (workbook, tutor chat, Shelf, backup, tutor memory, check-in, TeX write-up, pen test); needs `npm run start -- -p 3100` running
+npm run test:e2e   # Browser tests (workbook, tutor chat, Shelf, backup, tutor memory, check-in, TeX write-up, pen test; `npm run test:android:e2e` checks the Android bundle in out/); needs `npm run start -- -p 3100` running
 npm run handwriting  # Handwriting test: transcribe tests/handwriting/wacom/<page-id>.png with each model, score against tests/handwriting/pages.json (results in tests/handwriting/results/, gitignored). chatgpt:<model> entries go through the running app's /api/transcribe, so start the app and sign in first
 ```
 
@@ -242,6 +245,14 @@ npm run handwriting  # Handwriting test: transcribe tests/handwriting/wacom/<pag
 - Every change goes through a branch and a PR, whoever makes it (Scott alternates Codex and Claude; Codex reads `AGENTS.md`, which points here). Push before stopping.
 - `.github/workflows/ci.yml` runs on every PR and on `main`: `npm ci`, `lint`, `typecheck`, `npm test`, `build`, then `npm run test:e2e` against the production build on port 3100. The browser tests use a mock provider, so CI needs no API keys.
 - Review comments are addressed (fixed, or answered with why not) and resolved before merging; `main` requires resolved conversations and a green `check` job.
+- The `android` job in the same workflow runs `npm run build:android`, `npm run test:android:e2e` (the bundle served the way the app serves it) and `./gradlew assembleDebug`, and attaches the APK to the run as `math-tutor-android`. The container used for cloud sessions can't download the Android SDK, so the APK is only built there.
+
+### Android app
+- **Step 1 of the standalone tablet app** (agreed 2026-10-15: no Mac needed). Later steps: tutor calls from the device with keys stored on it, Sign in with ChatGPT on the device (127.0.0.1 loopback + Android Keystore; personal local use needs no OpenAI waitlist), then BOOX's pen SDK.
+- `BUILD_TARGET=android` makes `next.config.ts` export statically and only treat `.tsx` (and `.mdx`) files as pages, which leaves the API routes out. A one-entry `pageExtensions` (`['tsx']`) breaks the webpack build on Next 16.1.6.
+- Capacitor answers every extensionless path with `index.html` (Home). So in the Android build the root layout adds a script that sends a full load of `/board` to `/board.html` and puts `/board` back in the address before the app starts. Soft navigation is unaffected.
+- `androidScheme: 'http'`: `http://localhost` is still a secure context, and tldraw treats http origins as development (no license key).
+- With no server, `/api/tutor` answers with Home's HTML; `useTutorChat` and `useWriteUp` turn a non-SSE reply into `TUTOR_UNAVAILABLE`.
 
 ### Linting
 ESLint uses the Next.js core web vitals config. Run `npm run lint` before committing. There is no Prettier config; formatting follows ESLint rules.
