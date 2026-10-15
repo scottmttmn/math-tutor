@@ -180,6 +180,9 @@ export interface TranscribeResponse {
   cutOff: boolean;
 }
 
+/** One piece of the latest help request as the tutor route builds it: a label or question, or a PNG (base64). */
+export type UserPart = { type: 'text'; text: string } | { type: 'image'; data: string };
+
 export interface TutorRequest {
   problemStatement: string;
   chatHistory: ChatMessage[];

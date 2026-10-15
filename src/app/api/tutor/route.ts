@@ -4,7 +4,7 @@ import { getChatGPT } from '@/lib/chatgpt';
 import { ChatGPTError } from '@/lib/siwc';
 import { CHATGPT_USAGE_URL } from '@/lib/constants';
 import type { ResponseContentPart, ResponseInputMessage } from '@/lib/siwc';
-import type { BookContext, TutorRequest, ModelConfig } from '@/types';
+import type { BookContext, TutorRequest, ModelConfig, UserPart } from '@/types';
 import { resolveWorkbookContext } from '@/lib/workbookTutor';
 import { createTutorRequestGate } from '@/lib/tutorRequestGate';
 import { isGeminiEndpoint } from '@/lib/modelConfig';
@@ -34,7 +34,7 @@ Explain definitions, notation, examples, and arguments in the reading directly a
 const SYSTEM_PROMPT = `You are a patient, encouraging math tutor helping a student work through problems.
 You can see the student's handwritten work as an image. The problem they are working on is provided in the conversation.
 
-When a problem figure image is provided (labeled as "Problem figure" and appearing first), it shows the geometry diagram or figure that defines the problem — treat it as the question itself. Any subsequent image shows the student's current work toward solving it.
+When a problem figure image is provided (labeled "Problem figure" and appearing first), it shows the diagram or figure that defines the problem — treat it as the question itself. The image labeled "My board" shows the student's current work toward solving it. The student may have put a copy of the problem figure on the board to write on and around it; the handwriting on and around that copy is their work, so read it.
 
 RULES YOU MUST FOLLOW:
 
@@ -108,17 +108,30 @@ function friendlyError(error: unknown): string {
   return message;
 }
 
-/** The text that accompanies the images in the latest help request. */
-function latestUserText(
+/**
+ * The latest help request, each image led by a label saying what it is. The board image says it is
+ * the student's work: on a board where the problem figure was put on the board it also shows that
+ * figure, and without a label models read it as a second copy of the problem and missed the ink.
+ */
+function latestUserParts(
   problemStatement: string,
   canvasImage: string,
   userQuestion?: string,
   problemImage?: string,
-): string {
-  let text = '';
+): UserPart[] {
+  const parts: UserPart[] = [];
   if (problemImage) {
-    text += 'Problem figure: shown in the first image above.\n\n';
+    parts.push({ type: 'text', text: 'Problem figure:' }, { type: 'image', data: problemImage });
   }
+  if (canvasImage) {
+    parts.push({
+      type: 'text',
+      text: problemImage
+        ? 'My board, with my handwritten work (if the problem figure is on it too, I put a copy there to write on and around; the handwriting is my work):'
+        : 'My board, with my handwritten work:',
+    }, { type: 'image', data: canvasImage });
+  }
+  let text = '';
   if (problemStatement) {
     text += `The problem I'm working on: ${problemStatement}\n\n`;
   }
@@ -129,7 +142,8 @@ function latestUserText(
       ? 'Here is my work so far. Can you give me a hint?'
       : 'Can you give me a hint on what to do next?';
   }
-  return text;
+  parts.push({ type: 'text', text });
+  return parts;
 }
 
 function friendlyChatGPTError(error: unknown): string {
@@ -161,14 +175,11 @@ function streamChatGPTResponse(
       .map((msg): ResponseInputMessage => ({ role: msg.role === 'user' ? 'user' : 'assistant', content: msg.content })),
   ];
 
-  const parts: ResponseContentPart[] = [];
-  if (problemImage) {
-    parts.push({ type: 'input_image', image_url: `data:image/png;base64,${problemImage}` });
-  }
-  if (canvasImage) {
-    parts.push({ type: 'input_image', image_url: `data:image/png;base64,${canvasImage}` });
-  }
-  parts.push({ type: 'input_text', text: latestUserText(problemStatement, canvasImage, userQuestion, problemImage) });
+  const parts = latestUserParts(problemStatement, canvasImage, userQuestion, problemImage).map((part): ResponseContentPart => (
+    part.type === 'image'
+      ? { type: 'input_image', image_url: `data:image/png;base64,${part.data}` }
+      : { type: 'input_text', text: part.text }
+  ));
   input.push({ role: 'user', content: parts });
 
   const encoder = new TextEncoder();
@@ -297,25 +308,11 @@ function streamOpenAIResponse(
   }
 
   // Build the latest user message with images if provided
-  const userParts: OpenAI.ChatCompletionContentPart[] = [];
-
-  if (problemImage) {
-    userParts.push({
-      type: 'image_url',
-      image_url: { url: `data:image/png;base64,${problemImage}` },
-    });
-  }
-
-  if (canvasImage) {
-    userParts.push({
-      type: 'image_url',
-      image_url: { url: `data:image/png;base64,${canvasImage}` },
-    });
-  }
-
-  const textContent = latestUserText(problemStatement, canvasImage, userQuestion, problemImage);
-
-  userParts.push({ type: 'text', text: textContent });
+  const userParts = latestUserParts(problemStatement, canvasImage, userQuestion, problemImage).map((part): OpenAI.ChatCompletionContentPart => (
+    part.type === 'image'
+      ? { type: 'image_url', image_url: { url: `data:image/png;base64,${part.data}` } }
+      : { type: 'text', text: part.text }
+  ));
   messages.push({ role: 'user', content: userParts });
 
   const encoder = new TextEncoder();
@@ -472,33 +469,11 @@ export async function POST(request: Request) {
         }
       }
 
-      const userContent: Anthropic.ContentBlockParam[] = [];
-
-      if (problemImage) {
-        userContent.push({
-          type: 'image',
-          source: {
-            type: 'base64',
-            media_type: 'image/png',
-            data: problemImage,
-          },
-        });
-      }
-
-      if (canvasImage) {
-        userContent.push({
-          type: 'image',
-          source: {
-            type: 'base64',
-            media_type: 'image/png',
-            data: canvasImage,
-          },
-        });
-      }
-
-      const textContent = latestUserText(contextualProblemStatement, canvasImage, userQuestion, problemImage);
-
-      userContent.push({ type: 'text', text: textContent });
+      const userContent = latestUserParts(contextualProblemStatement, canvasImage, userQuestion, problemImage).map((part): Anthropic.ContentBlockParam => (
+        part.type === 'image'
+          ? { type: 'image', source: { type: 'base64', media_type: 'image/png', data: part.data } }
+          : { type: 'text', text: part.text }
+      ));
       messages.push({ role: 'user', content: userContent });
 
       const cleanedMessages = cleanMessages(messages);
