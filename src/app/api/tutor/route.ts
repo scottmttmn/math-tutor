@@ -72,6 +72,18 @@ RULES YOU MUST FOLLOW:
 
 9. ${MATH_FORMAT}`;
 
+// A TeX write-up: a neat handwritten page turned into an editable LaTeX document body. It
+// transcribes and never solves, so it is safe on a problem board too.
+const WRITE_UP_PROMPT = `You turn a student's handwritten math into a clean LaTeX write-up they can edit and keep.
+
+RULES:
+1. Transcribe, don't solve. Keep the student's own steps, order and wording. Never add a step, an answer, a correction or a comment that is not on the page; if something is wrong, write it as written.
+2. Output only the body of a LaTeX document: no preamble, no \\documentclass, no \\begin{document}, no code fences, no remarks before or after.
+3. Headings the student wrote become \\section*{...} or \\subsection*{...}. Prose stays prose. Inline math goes in $...$. A displayed equation goes in \\[ ... \\]; a chain of steps lined up on = goes in \\begin{align*} ... \\end{align*}. Lists become itemize or enumerate.
+4. Leave out anything crossed out. Write a part you cannot read as \\textbf{[?]}.
+5. For a drawing, write a line \\fbox{Figure: <one-line description>} where it sits.
+6. If the problem is given, start with \\textbf{Problem.} and the problem text, then \\textbf{Solution.} before the work. Use only amsmath and amssymb commands.`;
+
 // A skill check-in: the tutor poses short problems instead of helping with one, to settle how well
 // the student knows a few topics. The results go into the tutor memory through NOTES_RULE.
 const CHECK_IN_PROMPT = `You are running a short, optional SKILL CHECK-IN for a self-motivated learner. The conversation opens with the topics it covers. You do not teach here: you find out how well they know each topic, so their tutor can start at the right level later.
@@ -268,12 +280,13 @@ function streamAnthropicResponse(
   messages: Anthropic.MessageParam[],
   systemPrompt: string = SYSTEM_PROMPT,
   onFinish: () => void = () => {},
+  maxTokens = 1024,
 ): ReadableStream {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   const stream = anthropic.messages.stream({
     model: modelConfig.model,
-    max_tokens: 1024,
+    max_tokens: maxTokens,
     system: systemPrompt,
     messages,
   });
@@ -311,6 +324,7 @@ function streamOpenAIResponse(
   systemPrompt: string = SYSTEM_PROMPT,
   onFinish: () => void = () => {},
   book = '',
+  maxTokens = 1024,
 ): ReadableStream {
   const isGemini = isGeminiEndpoint(modelConfig.baseUrl);
   const apiKey = isGemini
@@ -362,7 +376,8 @@ function streamOpenAIResponse(
           try {
             const stream = await openai.chat.completions.create({
               model,
-              max_tokens: isGemini ? 2048 : 1024,
+              // Gemini's thinking spends part of the budget before it answers.
+              max_tokens: isGemini ? Math.max(2048, maxTokens * 2) : maxTokens,
               ...(isGemini ? { reasoning_effort: 'low' as const } : {}),
               messages,
               stream: true,
@@ -431,7 +446,7 @@ export async function POST(request: Request) {
   let release: (() => void) | undefined;
   try {
     const body: TutorRequest = await request.json();
-    const { problemStatement, chatHistory, canvasImage, modelConfig, userQuestion, problemImage, sessionType, workbookContext, bookContext, learnerProfile, takeNotes, checkIn } = body;
+    const { problemStatement, chatHistory, canvasImage, modelConfig, userQuestion, problemImage, sessionType, workbookContext, bookContext, learnerProfile, takeNotes, checkIn, writeUp } = body;
 
     let resolvedWorkbook;
     if (workbookContext) {
@@ -441,17 +456,23 @@ export async function POST(request: Request) {
         return new Response(error instanceof Error ? error.message : 'Invalid workbook context.', { status: 400 });
       }
     }
-    const book = bookReference(bookContext);
+    // A write-up reads only the board (and the problem): no conversation, memory or book pages.
+    const isWriteUp = writeUp === true;
+    const book = isWriteUp ? '' : bookReference(bookContext);
     // Book pages come with Shelf exercises, which are problems: they never get the Notes prompt.
-    const checkInTopics = resolvedWorkbook || book ? '' : checkInReference(checkIn);
-    const systemPrompt = checkInTopics ? CHECK_IN_PROMPT : resolvedWorkbook?.kind === 'reading'
+    const checkInTopics = isWriteUp || resolvedWorkbook || book ? '' : checkInReference(checkIn);
+    const systemPrompt = isWriteUp ? WRITE_UP_PROMPT : checkInTopics ? CHECK_IN_PROMPT : resolvedWorkbook?.kind === 'reading'
       ? READING_SYSTEM_PROMPT
       : resolvedWorkbook || book ? SYSTEM_PROMPT : sessionType === 'note' ? NOTE_SYSTEM_PROMPT : SYSTEM_PROMPT;
-    const profile = profileReference(learnerProfile);
-    const fullSystemPrompt = [systemPrompt, profile && PROFILE_RULE, book && BOOK_RULE, takeNotes === true && NOTES_RULE].filter(Boolean).join('\n\n');
+    const profile = isWriteUp ? '' : profileReference(learnerProfile);
+    const fullSystemPrompt = [systemPrompt, profile && PROFILE_RULE, book && BOOK_RULE, !isWriteUp && takeNotes === true && NOTES_RULE].filter(Boolean).join('\n\n');
     // What opens the conversation: the profile, then the book pages (both stable across a board's questions).
     const preface = [profile, book, checkInTopics].filter(Boolean).join('\n\n');
     const contextualProblemStatement = checkInTopics ? '' : resolvedWorkbook?.text ?? problemStatement;
+    const history = isWriteUp ? [] : chatHistory;
+    const question = isWriteUp ? 'Write up the handwritten work on my board in LaTeX.' : userQuestion;
+    // A whole page of LaTeX needs more room than a short hint.
+    const maxTokens = isWriteUp ? 4096 : 1024;
 
     const permit = requestGate.acquire();
     if (!permit.accepted) {
@@ -467,10 +488,10 @@ export async function POST(request: Request) {
     if (modelConfig.provider === 'chatgpt') {
       readableStream = streamChatGPTResponse(
         modelConfig,
-        chatHistory,
+        history,
         canvasImage,
         contextualProblemStatement,
-        userQuestion,
+        question,
         problemImage,
         fullSystemPrompt,
         release,
@@ -479,14 +500,15 @@ export async function POST(request: Request) {
     } else if (modelConfig.provider === 'openai-compatible') {
       readableStream = streamOpenAIResponse(
         modelConfig,
-        chatHistory,
+        history,
         canvasImage,
         contextualProblemStatement,
-        userQuestion,
+        question,
         problemImage,
         fullSystemPrompt,
         release,
         preface,
+        maxTokens,
       );
     } else {
       // Anthropic path
@@ -495,7 +517,7 @@ export async function POST(request: Request) {
         ? [{ role: 'user', content: [{ type: 'text', text: preface, cache_control: { type: 'ephemeral' } }] }]
         : [];
 
-      for (const msg of chatHistory) {
+      for (const msg of history) {
         if (msg.role === 'user') {
           messages.push({ role: 'user', content: msg.content });
         } else {
@@ -503,7 +525,7 @@ export async function POST(request: Request) {
         }
       }
 
-      const userContent = latestUserParts(contextualProblemStatement, canvasImage, userQuestion, problemImage).map((part): Anthropic.ContentBlockParam => (
+      const userContent = latestUserParts(contextualProblemStatement, canvasImage, question, problemImage).map((part): Anthropic.ContentBlockParam => (
         part.type === 'image'
           ? { type: 'image', source: { type: 'base64', media_type: 'image/png', data: part.data } }
           : { type: 'text', text: part.text }
@@ -511,7 +533,7 @@ export async function POST(request: Request) {
       messages.push({ role: 'user', content: userContent });
 
       const cleanedMessages = cleanMessages(messages);
-      readableStream = streamAnthropicResponse(modelConfig, cleanedMessages, fullSystemPrompt, release);
+      readableStream = streamAnthropicResponse(modelConfig, cleanedMessages, fullSystemPrompt, release, maxTokens);
     }
 
     return new Response(readableStream, {
