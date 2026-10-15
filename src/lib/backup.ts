@@ -1,7 +1,7 @@
 import { listSessions, listShelf, loadProfile, restoreRecords } from '@/lib/db';
 import { readZip, writeZip } from '@/lib/zip';
 import { RATINGS } from '@/lib/learnerProfile';
-import type { BackupManifest, LearnerProfile, ProfileTopic, RestoreResult, Session, ShelfDocument, TopicRating } from '@/types';
+import type { BackupManifest, LearnerProfile, ProfileTopic, RestoreResult, Session, ShelfDocument, TopicRating, TutorNote } from '@/types';
 
 const TOPIC_RATINGS: (TopicRating | null)[] = RATINGS.map((option) => option.rating);
 
@@ -114,8 +114,18 @@ function validProfile(profile: unknown): LearnerProfile | undefined {
     const t = topic as ProfileTopic | null;
     return !!t && typeof t.id === 'string' && typeof t.name === 'string' && typeof t.area === 'string'
       && (t.rating === null || TOPIC_RATINGS.includes(t.rating));
-  }).map(({ id, name, area, rating }) => ({ id, name, area, rating }));
+  }).map(({ id, name, area, rating, tutor }) => {
+    const note = validTutorNote(tutor);
+    return { id, name, area, rating, ...(note ? { tutor: note } : {}) };
+  });
   return { aboutMe: candidate.aboutMe, topics, shareWithTutor: candidate.shareWithTutor !== false, updatedAt: candidate.updatedAt };
+}
+
+function validTutorNote(note: unknown): TutorNote | undefined {
+  const t = note as TutorNote | undefined;
+  if (!t || !TOPIC_RATINGS.includes(t.level) || !['low', 'medium', 'high'].includes(t.confidence)
+    || typeof t.note !== 'string' || !Number.isFinite(t.updatedAt)) return undefined;
+  return { level: t.level, confidence: t.confidence, note: t.note, updatedAt: t.updatedAt, ...(t.edited === true ? { edited: true } : {}) };
 }
 
 // A folder picked with <input webkitdirectory> names files from the picked folder ("Backup/pdfs/x.pdf").

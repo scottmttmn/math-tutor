@@ -11,7 +11,10 @@ const provider = createServer(async (req, res) => {
   for await (const part of req) raw += part;
   requests.push(JSON.parse(raw));
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
-  res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'Memory hint.' } }] })}\n\n`);
+  // The reply ends with a topic note, split across chunks the way a stream splits it.
+  for (const content of ['Memory hint.', '\n\n<mem', 'ory>\nLimits | learning | medium | Mixed up left and', ' right limits\n</memory>']) {
+    res.write(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`);
+  }
   res.end('data: [DONE]\n\n');
 });
 await new Promise((resolve) => provider.listen(0, '127.0.0.1', resolve));
@@ -24,6 +27,25 @@ page.on('pageerror', (error) => browserErrors.push(error.message));
 
 const profileSent = () => requests.at(-1).messages.find((message) => message.role === 'user' && typeof message.content === 'string' && message.content.includes('<learner_profile>'));
 const rating = (topic, label) => page.getByRole('group', { name: topic, exact: true }).getByRole('button', { name: label, exact: true });
+
+/** Waits until the saved tutor memory passes `check` (run here on the stored profile). */
+async function waitForProfile(check, timeout = 10_000) {
+  const read = () => page.evaluate(() => new Promise((resolve) => {
+    const open = indexedDB.open('math-tutor');
+    open.onsuccess = () => {
+      const get = open.result.transaction('settings').objectStore('settings').get('learnerProfile');
+      get.onsuccess = () => { open.result.close(); resolve(get.result ?? null); };
+      get.onerror = () => { open.result.close(); resolve(null); };
+    };
+    open.onerror = () => resolve(null);
+  }));
+  for (const deadline = Date.now() + timeout; ;) {
+    const profile = await read();
+    if (profile && check(profile)) return;
+    if (Date.now() > deadline) throw new Error(`Saved tutor memory never matched: ${JSON.stringify(profile)}`);
+    await page.waitForTimeout(200);
+  }
+}
 
 async function ask() {
   const before = requests.length;
@@ -83,19 +105,39 @@ try {
   assert.match(profileSent().content, /Retired engineer[\s\S]*- Solid: Derivatives[\s\S]*- Rusty: Limits/);
   console.log('PASS questions carry the tutor memory');
 
-  // Settings leads there too; with sharing off, nothing is sent.
+  // The tutor's topic note stays out of the chat and lands in the memory.
+  assert.match(system.content, /TOPIC NOTES/);
+  assert.doesNotMatch(await page.locator('body').innerText(), /Mixed up|memory>|<mem/);
+  // The notes are saved once the reply ends; wait for that before opening the memory page.
+  await waitForProfile((profile) => profile.topics.some((item) => item.name === 'Limits' && item.tutor));
+
+  // Settings leads there too; the note shows under its topic, and the student can correct it.
   await page.getByRole('button', { name: 'Settings' }).click();
   await page.getByRole('button', { name: /Tutor memory/ }).click();
   await page.getByRole('heading', { name: 'Tutor memory' }).waitFor();
-  await page.getByLabel('Share this with the tutor').uncheck();
+  const note = page.getByTestId('tutor-note-Limits');
+  assert.match(await note.innerText(), /Tutor: Learning, fairly sure[\s\S]*Mixed up left and right limits/);
+  await page.getByRole('button', { name: "Change the tutor's note on Limits" }).click();
+  await page.getByRole('menuitem', { name: "It's Rusty" }).click();
+  assert.match(await note.innerText(), /Tutor: Rusty, set by you/);
   await page.getByText('Saved', { exact: true }).waitFor();
+  await page.getByText('What the tutor reads').click();
+  assert.match(await page.getByTestId('tutor-reads').innerText(), /- Limits: Rusty \(set by the student\): Mixed up left and right limits/);
+  console.log('PASS the tutor notes a topic out of sight of the chat; the student sees and corrects it');
+
+  // With sharing off, nothing is sent and no notes are taken.
+  await page.getByLabel('Share this with the tutor').uncheck();
+  await waitForProfile((profile) => profile.shareWithTutor === false);
   await page.goto(`${origin}/board`);
   await page.locator('.tl-canvas').waitFor();
   // All tutor requests are at least five seconds apart.
   await page.waitForTimeout(5200);
   await ask();
   assert.equal(profileSent(), undefined);
-  assert.doesNotMatch(requests.at(-1).messages[0].content, /LEARNER PROFILE/);
+  assert.doesNotMatch(requests.at(-1).messages[0].content, /LEARNER PROFILE|TOPIC NOTES/);
+  await page.goto(`${origin}/memory`);
+  await page.getByRole('heading', { name: 'Tutor memory' }).waitFor();
+  assert.match(await page.getByTestId('tutor-note-Limits').innerText(), /Tutor: Rusty, set by you/);
 
   // Home no longer offers it once something is written.
   await page.goto(`${origin}/`);

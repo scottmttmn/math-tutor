@@ -192,6 +192,8 @@ export interface TutorRequest {
   bookContext?: BookContext;
   /** The student's tutor memory as text (see profileForTutor); absent when empty or not shared. */
   learnerProfile?: string;
+  /** The tutor may end its reply with notes on topics for the tutor memory (see NOTES_RULE in the route). */
+  takeNotes?: boolean;
 }
 
 /** Text of the Shelf pages leading up to an exercise (never past its page), for the tutor to read. */
@@ -244,8 +246,23 @@ export interface ProfileTopic {
   id: string;
   name: string;
   area: string;
-  /** Null only for a topic the student added and hasn't rated yet. */
+  /** The student's own rating. Null for a topic they added and haven't rated, or one only the tutor has noted. */
   rating: TopicRating | null;
+  /** What the tutor made of the student's work on this topic, from their boards; the student can change or forget it. */
+  tutor?: TutorNote;
+}
+
+export type TutorConfidence = 'low' | 'medium' | 'high';
+
+/** The tutor's latest read of one topic. A newer board replaces it, so one old answer never fixes the picture. */
+export interface TutorNote {
+  level: TopicRating;
+  confidence: TutorConfidence;
+  /** One short line on what the work showed. */
+  note: string;
+  updatedAt: number;
+  /** The student set the level themselves. */
+  edited?: boolean;
 }
 
 /** What the tutor knows about the student: kept on this device, edited by the student, sent with questions. */
