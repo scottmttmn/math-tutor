@@ -6,6 +6,8 @@ import { useSessionState, useSessionDispatch } from '@/context/SessionContext';
 import { getModelConfig } from '@/lib/modelConfig';
 import { recordTutorUsage, tryStartTutorRequest, useRateLimit } from '@/hooks/useRateLimit';
 import { RATE_LIMIT_MS } from '@/lib/constants';
+import { loadProfile } from '@/lib/db';
+import { profileForTutor } from '@/lib/learnerProfile';
 import type { BookContext, ChatMessage, TutorStreamEvent, WorkbookContext } from '@/types';
 
 /** `getBookContext` supplies the Shelf pages around the exercise, read fresh for every request. */
@@ -35,13 +37,15 @@ export function useTutorChat(workbookContext?: WorkbookContext, getBookContext?:
     };
     try {
       const bookContext = await getBookContext?.().catch(() => null) ?? undefined;
+      // Read fresh, so an edit to the tutor memory counts from the next question.
+      const learnerProfile = profileForTutor(await loadProfile().catch(() => undefined)) || undefined;
       const response = await fetch('/api/tutor', {
         method: 'POST', signal: abort.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           problemStatement, chatHistory: chatHistory.filter((message) => message.content.trim()),
           canvasImage, modelConfig: getModelConfig(), userQuestion: userContent,
-          problemImage: problemImage ?? undefined, sessionType, workbookContext, bookContext,
+          problemImage: problemImage ?? undefined, sessionType, workbookContext, bookContext, learnerProfile,
         }),
       });
       if (!response.ok) {

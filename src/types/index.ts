@@ -190,6 +190,8 @@ export interface TutorRequest {
   sessionType?: SessionType;
   workbookContext?: WorkbookContext;
   bookContext?: BookContext;
+  /** The student's tutor memory as text (see profileForTutor); absent when empty or not shared. */
+  learnerProfile?: string;
 }
 
 /** Text of the Shelf pages leading up to an exercise (never past its page), for the tutor to read. */
@@ -232,6 +234,30 @@ export interface PenTestStats {
   worstGapMs: number;
 }
 
+// === Tutor memory ===
+
+/** How well the student says they know a topic. */
+export type TopicRating = 'solid' | 'rusty' | 'learning' | 'never';
+
+/** A topic the student rated (or added). Catalog topics keep their catalog id; added ones get their own. */
+export interface ProfileTopic {
+  id: string;
+  name: string;
+  area: string;
+  /** Null only for a topic the student added and hasn't rated yet. */
+  rating: TopicRating | null;
+}
+
+/** What the tutor knows about the student: kept on this device, edited by the student, sent with questions. */
+export interface LearnerProfile {
+  /** In the student's own words: what they study and why, how they like to be helped. */
+  aboutMe: string;
+  topics: ProfileTopic[];
+  /** Off: nothing here goes to the tutor. */
+  shareWithTutor: boolean;
+  updatedAt: number;
+}
+
 // === Backup ===
 
 /** A saved session in a backup: the thumbnail Blob as a data URL. */
@@ -247,12 +273,16 @@ export interface BackupManifest {
   createdAt: number;
   sessions: BackupSession[];
   shelf: BackupShelfDocument[];
+  /** Tutor memory; missing in backups made before it existed. */
+  profile?: LearnerProfile;
 }
 
 /** What a restore did: records added or updated, and those left alone because this device's copy is as new. */
 export interface RestoreResult {
   restoredSessions: number;
   restoredShelf: number;
+  /** The tutor memory was newer in the backup and replaced this device's. */
+  restoredProfile: boolean;
   skipped: number;
   /** Shelf PDFs listed in the backup whose file wasn't with it (and isn't on this device). */
   missingPdfs: string[];

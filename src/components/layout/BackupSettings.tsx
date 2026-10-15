@@ -22,10 +22,15 @@ function describeRestore(result: RestoreResult) {
   const parts: string[] = [];
   const boards = result.restoredSessions;
   const pdfs = result.restoredShelf;
-  if (boards || pdfs) {
-    parts.push(`Restored ${[boards && `${boards} board${boards === 1 ? '' : 's'}`, pdfs && `${pdfs} Shelf PDF${pdfs === 1 ? '' : 's'}`].filter(Boolean).join(' and ')}.`);
+  const restored = [
+    boards && `${boards} board${boards === 1 ? '' : 's'}`,
+    pdfs && `${pdfs} Shelf PDF${pdfs === 1 ? '' : 's'}`,
+    result.restoredProfile && 'your tutor memory',
+  ].filter(Boolean);
+  if (restored.length) {
+    parts.push(`Restored ${restored.length > 1 ? `${restored.slice(0, -1).join(', ')} and ${restored.at(-1)}` : restored[0]}.`);
   } else parts.push('Nothing to restore: this device already has everything in the backup.');
-  if (result.skipped && (boards || pdfs)) parts.push(`${result.skipped} already up to date here.`);
+  if (result.skipped && restored.length) parts.push(`${result.skipped} already up to date here.`);
   if (result.missingPdfs.length) parts.push(`Not restored, because the PDF wasn't with the backup: ${result.missingPdfs.join(', ')}.`);
   return parts.join(' ');
 }
@@ -82,7 +87,7 @@ export default function BackupSettings({ onClose, saveOpenBoard, restoredMessage
     void run('restore', async () => {
       await saveBoard();
       const result = await restoreFromFiles(picked);
-      if (!result.restoredSessions && !result.restoredShelf) return describeRestore(result);
+      if (!result.restoredSessions && !result.restoredShelf && !result.restoredProfile) return describeRestore(result);
       // The page still holds what it loaded before the restore, and its next autosave would write
       // that over a restored copy; reload so it shows what is saved now.
       try { sessionStorage.setItem(RESTORE_RESULT_KEY, describeRestore(result)); } catch { /* The reload still happens. */ }
@@ -124,7 +129,7 @@ export default function BackupSettings({ onClose, saveOpenBoard, restoredMessage
       <section aria-label="Download and restore" className="mb-5">
         <h3 className="font-semibold text-gray-900 mb-1">Download or restore</h3>
         <p className="mb-2">
-          One file with every board, note and Shelf PDF.
+          One file with every board, note and Shelf PDF, and your tutor memory.
           {status.lastDownloadAt ? ` Last downloaded ${timeAgo(status.lastDownloadAt)}.` : ''}
         </p>
         <div className="flex flex-wrap gap-2">
