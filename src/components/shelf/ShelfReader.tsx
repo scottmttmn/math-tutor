@@ -71,7 +71,7 @@ export default function ShelfReader() {
     const current = book.current;
     return current ? readBookPages(current.pdf, current.document, current.range) : null;
   }, []);
-  const { sendHelp } = useTutorChat(undefined, getBookContext);
+  const { sendHelp } = useTutorChat(getBookContext);
   const { status: saveStatus, saveNow, openSession, startNew } = useSessionAutosave(canvasHandle, { reopenLast: false });
 
   const updateDocument = useCallback((next: ShelfDocument) => {

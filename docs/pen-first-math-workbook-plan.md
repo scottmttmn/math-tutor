@@ -2,6 +2,8 @@
 
 Recorded September 28, 2026, from the product discussion with Scott.
 
+> October 15, 2026: the built-in Complex Analysis workbook this refers to has been removed. Books now come in as PDFs on the Shelf, so read "the book" below as a Shelf PDF; the principles still apply.
+
 ## Intended experience
 
 A focused math book that the learner can write in, with a tutor available when invited. Reading, writing equations, drawing diagrams, and revising an argument should feel like one activity. The core learning flow should work with a pen and taps, without requiring a keyboard.

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { chromium } from 'playwright';
 
-const origin = process.env.WORKBOOK_TEST_URL || 'http://127.0.0.1:3100';
+const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const requests = [];
 const browserErrors = [];
 

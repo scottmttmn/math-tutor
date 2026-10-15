@@ -18,7 +18,7 @@ export function NotesIcon() {
   return <Icon><rect x="2.5" y="1.5" width="11" height="13" rx="1.5" /><path d="M5 5h6M5 8h6M5 11h4" /></Icon>;
 }
 
-/** Anything on the Shelf: a PDF or the workbook. */
+/** Anything on the Shelf: a PDF. */
 export function ShelfIcon() {
   return <Icon><path d="M3.5 1.5h6l3 3v10h-9z" /><path d="M9.5 1.5v3h3M5.5 8h5M5.5 10.5h5" /></Icon>;
 }

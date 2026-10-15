@@ -73,6 +73,7 @@ try {
   });
   await app.goto(`${origin}/board`);
   await app.getByPlaceholder("Type the math problem you're working on...").fill('Find x when 2x + 3 = 7');
+  await app.locator('.tl-canvas').waitFor();
   const board = await app.locator('.tl-canvas').boundingBox();
   await app.mouse.move(board.x + 120, board.y + 120);
   await app.mouse.down();

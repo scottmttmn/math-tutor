@@ -17,7 +17,7 @@ interface ChatInputProps {
 export default function ChatInput({ getCanvasImage, getBookContext }: ChatInputProps) {
   const [text, setText] = useState('');
   const { chatHistory, isStreaming } = useSessionState();
-  const { sendFollowUp, isLimited } = useTutorChat(undefined, getBookContext);
+  const { sendFollowUp, isLimited } = useTutorChat(getBookContext);
   const { isListening, isSupported, error, startListening, stopListening, resetTranscript } =
     useSpeechRecognition(setText);
 
