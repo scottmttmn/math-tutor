@@ -76,8 +76,8 @@ export default function BackupSettings({ onClose, saveOpenBoard, restoredMessage
 
   const download = () => run('download', async () => {
     await saveBoard();
-    downloadBlob(await backupZip(), backupFileName());
-    await recordDownload();
+    // A cancelled Save dialog (Android app) is not a backup, so the reminder stays.
+    if (await downloadBlob(await backupZip(), backupFileName())) await recordDownload();
     return null;
   });
 

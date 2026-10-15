@@ -253,6 +253,7 @@ npm run handwriting  # Handwriting test: transcribe tests/handwriting/wacom/<pag
 - Capacitor answers every extensionless path with `index.html` (Home). So in the Android build the root layout adds a script that sends a full load of `/board` to `/board.html` and puts `/board` back in the address before the app starts. Soft navigation is unaffected.
 - `androidScheme: 'http'`: `http://localhost` is still a secure context, and tldraw treats http origins as development (no license key).
 - With no server, `/api/tutor` answers with Home's HTML; `useTutorChat` and `useWriteUp` turn a non-SSE reply into `TUTOR_UNAVAILABLE`.
+- The WebView can't save `blob:` downloads, so `downloadBlob` (`src/lib/backup.ts`) sends files to the app's own `SaveFile` plugin (`android/app/src/main/java/com/scottmttmn/mathtutor/SaveFilePlugin.java`, registered in `MainActivity`), which opens Android's Save dialog. It resolves `false` when the dialog is cancelled, and then the backup isn't recorded.
 
 ### Linting
 ESLint uses the Next.js core web vitals config. Run `npm run lint` before committing. There is no Prettier config; formatting follows ESLint rules.

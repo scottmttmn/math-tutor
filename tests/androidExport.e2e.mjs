@@ -55,6 +55,53 @@ try {
   assert.equal(new URL(page.url()).pathname, '/pen-test');
   console.log('PASS reloading or opening a page directly shows that page; the tutor says it is not connected');
 
+  // In the app, files go through Android's Save dialog (SaveFilePlugin), not a blob: download.
+  // Stand in for the native side: Capacitor sees an Android bridge and the plugin's header.
+  const app = await browser.newPage({ viewport: { width: 1024, height: 1366 } });
+  app.on('pageerror', (error) => errors.push(error.message));
+  await app.addInitScript(() => {
+    window.saves = [];
+    window.saveAnswers = [];
+    window.androidBridge = { postMessage() {} };
+    window.Capacitor = {
+      PluginHeaders: [{ name: 'SaveFile', methods: [{ name: 'save', rtype: 'promise' }] }],
+      nativePromise: async (plugin, method, options) => {
+        window.saves.push({ plugin, method, ...options });
+        return { saved: window.saveAnswers.shift() ?? true };
+      },
+    };
+  });
+  await app.goto(`${origin}/board`);
+  await app.getByPlaceholder("Type the math problem you're working on...").fill('Find x when 2x + 3 = 7');
+  const board = await app.locator('.tl-canvas').boundingBox();
+  await app.mouse.move(board.x + 120, board.y + 120);
+  await app.mouse.down();
+  await app.mouse.move(board.x + 300, board.y + 200, { steps: 8 });
+  await app.mouse.up();
+  await app.getByText('Saved', { exact: true }).waitFor();
+  await app.getByRole('button', { name: 'Save board as' }).click();
+  await app.getByRole('menuitem', { name: 'PNG picture' }).click();
+  await app.waitForFunction(() => window.saves.length === 1);
+  const png = await app.evaluate(() => window.saves[0]);
+  assert.equal(png.plugin, 'SaveFile');
+  assert.equal(png.name, 'Find x when 2x + 3 = 7.png');
+  assert.equal(png.mimeType, 'image/png');
+  assert.deepEqual([...Buffer.from(png.data, 'base64').subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+
+  // A cancelled Save dialog is not a backup: the reminder stays until one is saved.
+  await app.evaluate(() => window.saveAnswers.push(false));
+  await app.getByRole('button', { name: 'Back up', exact: true }).click();
+  await app.getByRole('button', { name: 'Download backup' }).click();
+  await app.waitForFunction(() => window.saves.length === 2);
+  assert.match((await app.evaluate(() => window.saves[1])).name, /^math-tutor-backup-\d{4}-\d{2}-\d{2}\.zip$/);
+  await app.waitForTimeout(300);
+  assert.equal(await app.getByText(/Last downloaded/).count(), 0);
+  await app.getByRole('button', { name: 'Download backup' }).click();
+  await app.getByText(/Last downloaded just now/).waitFor();
+  await app.getByRole('button', { name: 'Done' }).click();
+  assert.equal(await app.getByRole('button', { name: 'Back up', exact: true }).count(), 0);
+  console.log('PASS in the app, Save as and the backup go through the Save dialog; a cancelled one keeps the reminder');
+
   assert.deepEqual(errors, []);
   console.log('PASS no browser exceptions');
 } finally {

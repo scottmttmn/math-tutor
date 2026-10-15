@@ -99,7 +99,7 @@ export default function WriteUpPanel({ onClose, title, writeUp, draft, error, on
             </button>
           )}
           <button
-            onClick={() => downloadBlob(new Blob([texDocument(title, writeUp?.tex ?? '')], { type: 'application/x-tex' }), exportFileName(title, 'tex'))}
+            onClick={() => void downloadBlob(new Blob([texDocument(title, writeUp?.tex ?? '')], { type: 'application/x-tex' }), exportFileName(title, 'tex'))}
             disabled={!writeUp?.tex.trim() || converting}
             className={writeUp ? solid : plain}
           >
