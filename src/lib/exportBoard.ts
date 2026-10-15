@@ -74,6 +74,6 @@ export async function saveBoardAs(handle: DrawingCanvasHandle | null, format: 'p
   const image = await handle?.exportImage(format === 'pdf' ? 'jpeg' : 'png');
   if (!image) return false;
   const blob = format === 'pdf' ? jpegToPdf(new Uint8Array(await image.blob.arrayBuffer()), image.pixelRatio) : image.blob;
-  downloadBlob(blob, exportFileName(title, format));
+  await downloadBlob(blob, exportFileName(title, format));
   return true;
 }

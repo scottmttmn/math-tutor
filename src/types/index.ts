@@ -330,3 +330,8 @@ export interface BackupStatus {
   /** Saved boards or Shelf PDFs exist, so there is something to lose. */
   hasWork: boolean;
 }
+
+/** The Android app's native Save dialog (android/…/SaveFilePlugin.java); data is base64. */
+export interface SaveFilePlugin {
+  save(options: { name: string; mimeType: string; data: string }): Promise<{ saved: boolean }>;
+}

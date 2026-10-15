@@ -8,6 +8,7 @@
     "dev": "next dev --webpack",
     "prebuild": "node scripts/check-deps.mjs",
     "build": "next build --webpack",
+    "build:android": "node scripts/check-deps.mjs && BUILD_TARGET=android next build --webpack && cap sync android",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
@@ -22,10 +23,13 @@
     "test:checkin:e2e": "node tests/checkin.e2e.mjs",
     "test:writeup:e2e": "node tests/writeUp.e2e.mjs",
     "test:pen:e2e": "node tests/penTest.e2e.mjs",
-    "handwriting": "node scripts/handwriting/run.mjs"
+    "handwriting": "node scripts/handwriting/run.mjs",
+    "test:android:e2e": "node tests/androidExport.e2e.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@capacitor/android": "8.5.3",
+    "@capacitor/core": "8.5.3",
     "@napi-rs/keyring": "^2.1.0",
     "@tldraw/assets": "5.4.2",
     "geist": "^1.7.2",
@@ -42,6 +46,7 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.5.3",
     "@tailwindcss/postcss": "^4",
     "@types/katex": "^0.16.8",
     "@types/node": "^20",

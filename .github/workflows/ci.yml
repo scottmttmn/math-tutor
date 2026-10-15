@@ -40,3 +40,39 @@ jobs:
       - name: Server log
         if: failure()
         run: cat server.log || true
+
+  # The Android app: the app bundled with no server (npm run build:android), checked in a browser
+  # the way the app serves it, then built into an install file (APK) attached to the run.
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - run: npm ci
+      - run: npm run build:android
+
+      - name: Install Chromium for the bundle test
+        run: npx playwright install --with-deps chromium
+      - run: npm run test:android:e2e
+
+      - name: Build the APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: math-tutor-android
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

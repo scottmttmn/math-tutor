@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useSessionState, useSessionDispatch } from '@/context/SessionContext';
 import { getModelConfig } from '@/lib/modelConfig';
 import { recordTutorUsage, tryStartTutorRequest, useRateLimit } from '@/hooks/useRateLimit';
-import { RATE_LIMIT_MS } from '@/lib/constants';
+import { RATE_LIMIT_MS, TUTOR_UNAVAILABLE } from '@/lib/constants';
 import { loadProfile, saveProfile } from '@/lib/db';
 import { emptyProfile, noteTopic, profileForTutor, splitTutorNotes, type TopicObservation } from '@/lib/learnerProfile';
 import type { BookContext, ChatMessage, TutorStreamEvent } from '@/types';
@@ -73,6 +73,7 @@ export function useTutorChat(getBookContext?: () => Promise<BookContext | null>)
         if (response.status === 429) recordTutorUsage();
         throw new Error(await response.text() || response.statusText);
       }
+      if (!response.headers.get('Content-Type')?.includes('text/event-stream')) throw new Error(TUTOR_UNAVAILABLE);
       const reader = response.body?.getReader();
       if (!reader) throw new Error('No response stream');
       const decoder = new TextDecoder();

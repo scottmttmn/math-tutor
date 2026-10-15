@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSessionDispatch, useSessionState } from '@/context/SessionContext';
 import { getModelConfig } from '@/lib/modelConfig';
+import { TUTOR_UNAVAILABLE } from '@/lib/constants';
 import { getTutorWaitMs, recordTutorUsage, tryStartTutorRequest } from '@/hooks/useRateLimit';
 import { cleanTexReply } from '@/lib/texWriteUp';
 import type { TutorStreamEvent } from '@/types';
@@ -59,6 +60,7 @@ export function useWriteUp() {
         if (response.status === 429) recordTutorUsage();
         throw new Error(await response.text() || response.statusText);
       }
+      if (!response.headers.get('Content-Type')?.includes('text/event-stream')) throw new Error(TUTOR_UNAVAILABLE);
       const reader = response.body?.getReader();
       if (!reader) throw new Error('No response stream');
       const decoder = new TextDecoder();
