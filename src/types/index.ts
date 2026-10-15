@@ -62,6 +62,14 @@ export interface Session {
   customTitle?: string;
   /** Set on a skill check-in board: the tutor poses problems on these topics instead of helping with one. */
   checkIn?: CheckIn;
+  /** The board's TeX write-up: a LaTeX document body, converted from the handwriting and edited by the student. */
+  writeUp?: WriteUp;
+}
+
+export interface WriteUp {
+  /** The body of a LaTeX document (no preamble); see texDocument for the downloadable file. */
+  tex: string;
+  updatedAt: number;
 }
 
 /** A skill check-in: short problems on a few topics, answered by hand, that settle each topic's level in the tutor memory. */
@@ -207,6 +215,8 @@ export interface TutorRequest {
   takeNotes?: boolean;
   /** On a check-in board: the topics it covers (see CHECK_IN_PROMPT in the route). */
   checkIn?: CheckIn;
+  /** Turn the board's handwriting into a LaTeX write-up (WRITE_UP_PROMPT) instead of tutoring. */
+  writeUp?: boolean;
 }
 
 /** Text of the Shelf pages leading up to an exercise (never past its page), for the tutor to read. */

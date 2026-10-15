@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useReducer, type Dispatch } from 'react';
-import type { ChatMessage, CheckIn, SessionMetadata, SessionType, TokenUsage } from '@/types';
+import type { ChatMessage, CheckIn, SessionMetadata, SessionType, TokenUsage, WriteUp } from '@/types';
 
 type SessionAction =
   | { type: 'SET_PROBLEM'; text: string }
@@ -11,11 +11,12 @@ type SessionAction =
   | { type: 'SET_LAST_MESSAGE_USAGE'; usage: TokenUsage }
   | { type: 'SET_LAST_MESSAGE_MODEL'; model: string }
   | { type: 'SET_STREAMING'; streaming: boolean }
-  | { type: 'LOAD_SESSION'; sessionId: string; problemStatement: string; chatHistory: ChatMessage[]; problemImage: string | null; isSolved?: boolean; sessionType?: SessionType; checkIn?: CheckIn }
+  | { type: 'LOAD_SESSION'; sessionId: string; problemStatement: string; chatHistory: ChatMessage[]; problemImage: string | null; isSolved?: boolean; sessionType?: SessionType; checkIn?: CheckIn; writeUp?: WriteUp }
   | { type: 'NEW_SESSION'; sessionType?: SessionType }
   | { type: 'SET_SESSION_LIST'; sessions: SessionMetadata[] }
   | { type: 'SET_CURRENT_SESSION_ID'; id: string }
-  | { type: 'TOGGLE_SOLVED' };
+  | { type: 'TOGGLE_SOLVED' }
+  | { type: 'SET_WRITE_UP'; writeUp: WriteUp | null };
 
 interface SessionState {
   currentSessionId: string | null;
@@ -28,6 +29,8 @@ interface SessionState {
   sessionType: SessionType;
   /** Set on a skill check-in board. */
   checkIn: CheckIn | null;
+  /** The board's TeX write-up, once made. */
+  writeUp: WriteUp | null;
 }
 
 const initialState: SessionState = {
@@ -40,6 +43,7 @@ const initialState: SessionState = {
   isSolved: false,
   sessionType: 'problem',
   checkIn: null,
+  writeUp: null,
 };
 
 function sessionReducer(state: SessionState, action: SessionAction): SessionState {
@@ -83,6 +87,7 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         isSolved: !!action.isSolved,
         sessionType: action.sessionType ?? 'problem',
         checkIn: action.checkIn ?? null,
+        writeUp: action.writeUp ?? null,
       };
     case 'NEW_SESSION':
       return {
@@ -94,9 +99,12 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
         isSolved: false,
         sessionType: action.sessionType ?? 'problem',
         checkIn: null,
+        writeUp: null,
       };
     case 'TOGGLE_SOLVED':
       return { ...state, isSolved: !state.isSolved };
+    case 'SET_WRITE_UP':
+      return { ...state, writeUp: action.writeUp };
     case 'SET_SESSION_LIST':
       return { ...state, savedSessions: action.sessions };
     case 'SET_CURRENT_SESSION_ID':

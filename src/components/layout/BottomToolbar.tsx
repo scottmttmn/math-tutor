@@ -23,9 +23,11 @@ interface Props {
   tutor?: { open: boolean; toggle: () => void };
   /** Shows Save as, which saves the whole board as a PNG or a PDF. */
   onSaveAs?: (format: 'png' | 'pdf') => void;
+  /** Shows TeX write-up, which opens the board's LaTeX write-up. */
+  onWriteUp?: () => void;
 }
 
-export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs }: Props) {
+export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp }: Props) {
   const { hasContent } = useCanvasState();
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
   const helpDisabled = isLimited || isStreaming;
@@ -58,6 +60,12 @@ export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSo
 
       {/* Spacer */}
       <div className="flex-1" />
+
+      {onWriteUp && (
+        <button onClick={onWriteUp} className={plain} title="Turn the handwriting into a LaTeX document you can edit and download">
+          TeX write-up
+        </button>
+      )}
 
       {onSaveAs && (
         <MoreMenu

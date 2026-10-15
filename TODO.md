@@ -57,7 +57,7 @@ Done: **Skill check-in** on the Tutor memory page offers the topics nobody is su
 
 ## After the MVP
 
-- **Handwriting to TeX write-up.** Work by hand, write a neat version, then **Convert to TeX**: an editable LaTeX document with a live KaTeX preview, downloadable as `.tex` (drawings exported as images). Converting a selection in place is a smaller version. Depends on the handwriting test results.
+- **Handwriting to TeX write-up.** Done (free boards): **TeX write-up** in the board's toolbar has the tutor transcribe the board (or the selected part) as LaTeX without solving anything; edit it beside a KaTeX preview and **Download .tex**. It saves with the board and goes in backups. Still to do: drawings come out as `\fbox{Figure: …}` placeholders rather than images; workbook and Shelf boards don't have the button yet.
 - **Replace the chat pane.** Pen-only actions on a selection (Explain this, Give me a hint, Review my work), with replies as cards beside the work. The tutor waits until invited.
 - **Android shell** for the tablet, once there is a device to test pen latency on. Sign in with ChatGPT won't carry over there; API keys will.
 - More openly licensed workbook sections at different levels (today there is one section of one book).

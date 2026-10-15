@@ -8,6 +8,7 @@ import { getTutorWaitMs } from '@/hooks/useRateLimit';
 import { useSessionAutosave } from '@/hooks/useSessionAutosave';
 import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
 import { useToolsHidden } from '@/hooks/useToolsHidden';
+import { useWriteUp } from '@/hooks/useWriteUp';
 
 import type { SessionType } from '@/types';
 import TopBar from './TopBar';
@@ -19,6 +20,7 @@ import { checkInStarted, checkInTitle } from '@/lib/checkIn';
 import DrawingCanvas, { type DrawingCanvasHandle } from '../workspace/DrawingCanvas';
 import ChatPanel from '../chat/ChatPanel';
 import BoardFrame from './BoardFrame';
+import WriteUpPanel from '../workspace/WriteUpPanel';
 import { KindIcon } from '@/components/common/Icons';
 import { saveBoardAs } from '@/lib/exportBoard';
 
@@ -27,6 +29,7 @@ function AppContent() {
   // The board revision the tutor last saw, so follow-ups only attach a snapshot when it changed.
   const sentRevision = useRef<number | null>(null);
   const [tutorOpen, setTutorOpen] = useState(false);
+  const [writeUpOpen, setWriteUpOpen] = useState(false);
   const { fullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
   const { toolsHidden, toggleTools } = useToolsHidden();
 
@@ -34,9 +37,17 @@ function AppContent() {
   const sessionDispatch = useSessionDispatch();
   const { sendHelp } = useTutorChat();
   const { status: saveStatus, saveNow, startNew } = useSessionAutosave(canvasHandle);
+  const writeUp = useWriteUp();
+  const boardTitle = checkIn ? checkInTitle(checkIn) : problemStatement || (sessionType === 'note' ? 'Notes' : 'Problem');
 
   // A new board opens with its tutor closed, so the problem or topic is in view.
-  const handleNew = useCallback((type: SessionType = 'problem') => { setTutorOpen(false); void startNew(type); }, [startNew]);
+  const { cancel: cancelWriteUp } = writeUp;
+  const handleNew = useCallback((type: SessionType = 'problem') => {
+    setTutorOpen(false);
+    setWriteUpOpen(false);
+    cancelWriteUp();
+    void startNew(type);
+  }, [startNew, cancelWriteUp]);
 
   // New from another page arrives as /board?new=problem|note; start it once, then drop it from the URL.
   useEffect(() => {
@@ -137,11 +148,26 @@ function AppContent() {
             fullScreen={{ on: fullScreen, toggle: toggleFullScreen }}
             tools={{ hidden: toolsHidden, toggle: toggleTools }}
             tutor={{ open: tutorOpen, toggle: () => setTutorOpen((open) => !open) }}
-            onSaveAs={(format) => void saveBoardAs(canvasHandle.current, format, problemStatement || (sessionType === 'note' ? 'Notes' : 'Problem'))}
+            onSaveAs={(format) => void saveBoardAs(canvasHandle.current, format, boardTitle)}
+            onWriteUp={() => setWriteUpOpen(true)}
           />
         )}
         tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel getCanvasImage={getFollowUpImage} /> }}
       />
+
+      {writeUpOpen && (
+        <WriteUpPanel
+          // Closing stops a write-up in progress, so it can't hold up the tutor unseen.
+          onClose={() => { writeUp.cancel(); setWriteUpOpen(false); }}
+          title={boardTitle}
+          writeUp={writeUp.writeUp}
+          draft={writeUp.draft}
+          error={writeUp.error}
+          tutorBusy={writeUp.tutorBusy}
+          onEdit={writeUp.edit}
+          onConvert={() => void writeUp.convert(async () => await canvasHandle.current?.captureImage() ?? '')}
+        />
+      )}
     </div>
   );
 }

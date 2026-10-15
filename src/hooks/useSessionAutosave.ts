@@ -15,7 +15,7 @@ const SAVE_DELAY_MS = 800;
 // Everything a save writes except timestamps and the thumbnail, so an unchanged session isn't rewritten.
 const contentKey = (session: Session) => JSON.stringify([
   session.problemStatement, session.problemImage, session.chatHistory, session.isSolved, session.sessionType,
-  session.checkIn ?? null, session.canvasDocument?.store ?? null, session.canvasStrokes,
+  session.checkIn ?? null, session.writeUp?.tex ?? null, session.canvasDocument?.store ?? null, session.canvasStrokes,
 ]);
 
 const rememberCurrent = setBoardToOpen;
@@ -73,6 +73,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
       isSolved: s.isSolved,
       sessionType: s.sessionType,
       ...(s.checkIn ? { checkIn: s.checkIn } : {}),
+      ...(s.writeUp ? { writeUp: s.writeUp } : {}),
     };
   }, [canvasHandle]);
 
@@ -128,6 +129,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
         isSolved: session.isSolved,
         sessionType: session.sessionType,
         checkIn: session.checkIn,
+        writeUp: session.writeUp,
       });
       canvasDispatch({ type: 'LOAD', document: session.canvasDocument, strokes: session.canvasStrokes });
     } else {

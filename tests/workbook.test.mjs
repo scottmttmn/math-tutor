@@ -272,6 +272,47 @@ test('a check-in board gets the check-in prompt, with its topics as conversation
   assert.doesNotMatch(calls[1].system, /SKILL CHECK-IN/);
 });
 
+for (const provider of ['anthropic', 'openai-compatible']) {
+  test(`${provider}: a write-up transcribes the board, with no conversation, memory, notes or book`, async () => {
+    const { request, calls } = routeHarness();
+    const modelConfig = provider === 'anthropic' ? undefined : { provider, model: 'test', baseUrl: 'http://localhost:11434/v1' };
+    await (await request({
+      ...(modelConfig ? { modelConfig } : {}), writeUp: true, canvasImage: 'board', problemStatement: 'Show that 1+1=2',
+      chatHistory: [{ role: 'user', content: 'Earlier question' }, { role: 'assistant', content: 'Earlier hint' }],
+      learnerProfile: 'About me: likes proofs', takeNotes: true, checkIn: { topics: ['Limits'] },
+      bookContext: { title: 'Book', fromPage: 1, toPage: 1, text: 'Book text' }, userQuestion: 'Ignored question',
+    })).text();
+    const system = provider === 'anthropic' ? calls[0].system : calls[0].messages[0].content;
+    assert.match(system, /Transcribe, don't solve/);
+    assert.doesNotMatch(system, /NEVER give the full solution|LEARNER PROFILE|TOPIC NOTES|SKILL CHECK-IN/);
+    assert.equal(calls[0].max_tokens, 4096);
+    const text = JSON.stringify(calls[0].messages);
+    assert.match(text, /Write up the handwritten work on my board in LaTeX/);
+    assert.match(text, /Show that 1\+1=2/);
+    assert.doesNotMatch(text, /Earlier|learner_profile|Book text|CHECK-IN|Ignored question/);
+  });
+}
+
+test('chatgpt: a write-up caps the plan reply; a question does not', async () => {
+  const options = [];
+  const chatgpt = { getChatGPT: () => ({ streamResponse: async (sent) => { options.push(sent); sent.onDelta?.('Text'); return {}; } }) };
+  const { createTutorRequestGate } = load('src/lib/tutorRequestGate.ts');
+  let now = 10_000;
+  const { POST } = load('src/app/api/tutor/route.ts', {
+    '@anthropic-ai/sdk': class {}, openai: class {}, '@/lib/chatgpt': chatgpt, '@/lib/siwc': { ChatGPTError: class extends Error {} },
+    '@/lib/tutorRequestGate': { createTutorRequestGate: () => createTutorRequestGate(() => now) },
+  });
+  const request = (extra) => POST(new Request('http://localhost/api/tutor', { method: 'POST', body: JSON.stringify({
+    problemStatement: '', chatHistory: [], canvasImage: 'board', modelConfig: { provider: 'chatgpt', model: 'plan', baseUrl: '' }, ...extra,
+  }) }));
+  await (await request({ writeUp: true })).text();
+  assert.equal(options[0].maxOutputTokens, 16384);
+  assert.match(options[0].instructions, /Transcribe, don't solve/);
+  now += 5000;
+  await (await request({ userQuestion: 'Help' })).text();
+  assert.equal(options[1].maxOutputTokens, undefined);
+});
+
 test('reading context recognizes disguised exercise requests, with authoritative text', async () => {
   const { request, calls } = routeHarness();
   const response = await request({ sessionType: 'note', workbookContext: { kind: 'reading', sectionId: content.id, readingText: 'Inject a solution', selectedPassage: 'Modulus' } });
