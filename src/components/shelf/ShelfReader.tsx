@@ -13,24 +13,29 @@ import { getTutorWaitMs } from '@/hooks/useRateLimit';
 import { loadInk, loadShelfDocument, savePageInk, saveShelfDocument, shelfSessionId } from '@/lib/db';
 import { openPdf, trimmedArea } from '@/lib/pdf';
 import { findPage, pageName } from '@/lib/reader';
-import { ensureExerciseBoard, markExercise, nextLabel, setReadFrom, solvedExercises, unmarkExercise } from '@/lib/shelf';
+import { ensureExerciseBoard, isNote, markExercise, nextLabel, setReadFrom, solvedExercises, unmarkExercise } from '@/lib/shelf';
+import { paperFor } from '@/lib/paper';
 import { MAX_BOOK_PAGES, loadContents, loadSectionStarts, readBookPages, readingRange, type ContentsEntry, type ReadingRange, type SectionStart } from '@/lib/bookContext';
-import type { BookContext, InkStroke, InkTool, PageRect, ShelfDocument, ShelfExercise } from '@/types';
+import type { BookContext, InkStroke, InkTool, PageRect, ShelfDocument, ShelfExercise, ShelfMarkKind } from '@/types';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
 import AppBar from '@/components/layout/AppBar';
 import ChatPanel, { focusTutorQuestion } from '@/components/chat/ChatPanel';
 import MoreMenu from '@/components/common/MoreMenu';
-import { ProblemIcon, SolvedCheck } from '@/components/common/Icons';
+import { KindIcon } from '@/components/common/Icons';
 import BoardFrame from '@/components/layout/BoardFrame';
 import { saveBoardAs } from '@/lib/exportBoard';
 import PdfPage from './PdfPage';
+import BookList from './BookList';
 
-// Whether the Exercises list beside the page is hidden, so the page gets the width.
+// Whether the list beside the page is hidden, so the page gets the width.
 const LIST_HIDDEN_KEY = 'math-tutor:shelfListHidden';
 
-// Which list is beside the page: the marked exercises or the PDF's contents.
-type ListTab = 'exercises' | 'contents';
+// Which list is beside the page: what the student made in the book, or the PDF's contents.
+type ListTab = 'list' | 'contents';
+const LIST_TABS: { tab: ListTab; label: string }[] = [{ tab: 'list', label: 'Your list' }, { tab: 'contents', label: 'Contents' }];
+// What a box being marked will be.
+const MARK_KINDS: { kind: ShelfMarkKind; label: string }[] = [{ kind: 'exercise', label: 'Exercise' }, { kind: 'note', label: 'Note' }];
 
 // The page toolbar's ink tools, as labelled there.
 const INK_TOOLS: { tool: InkTool; label: string }[] = [
@@ -56,7 +61,7 @@ function writeUrl(documentId: string, exerciseId: string | null) {
   window.history.replaceState(null, '', `${window.location.pathname}${query}`);
 }
 
-/** A Shelf PDF, page by page, with marked exercises; each opens on its own board beside the page. */
+/** A Shelf PDF, page by page, with marked exercises and note pages; each opens on its own board beside the page. */
 export default function ShelfReader() {
   const [shelfDocument, setShelfDocument] = useState<ShelfDocument | null>(null);
   const documentRef = useRef<ShelfDocument | null>(null);
@@ -67,6 +72,7 @@ export default function ShelfReader() {
   const [marking, setMarking] = useState(false);
   const [pendingMark, setPendingMark] = useState<PageRect | null>(null);
   const [markLabel, setMarkLabel] = useState('');
+  const [markKind, setMarkKind] = useState<ShelfMarkKind>('exercise');
   const [openId, setOpenId] = useState<string | null>(null);
   const [solvedIds, setSolvedIds] = useState<string[]>([]);
   const [tutorOpen, setTutorOpen] = useState(false);
@@ -75,7 +81,7 @@ export default function ShelfReader() {
   const { fullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
   const { toolsHidden, toggleTools } = useToolsHidden();
   const [listHidden, setListHidden] = useState(false);
-  const [listTab, setListTab] = useState<ListTab>('exercises');
+  const [listTab, setListTab] = useState<ListTab>('list');
   // Printed page numbers ("xii", "47") when the PDF records them; the PDF's bookmarks.
   const [labels, setLabels] = useState<string[] | null>(null);
   const [contents, setContents] = useState<ContentsEntry[]>([]);
@@ -98,7 +104,7 @@ export default function ShelfReader() {
 
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
   const sentRevision = useRef<number | null>(null);
-  const { isStreaming, isSolved, currentSessionId, problemImage } = useSessionState();
+  const { isStreaming, isSolved, currentSessionId, problemImage, paper: chosenPaper } = useSessionState();
   const sessionDispatch = useSessionDispatch();
   // An exercise opened on an empty board is put on it, once it has loaded (so the tutor also reads
   // anything written on the figure). A board with work keeps it as it is.
@@ -112,6 +118,7 @@ export default function ShelfReader() {
     if (!hasContent && problemImage) void canvasHandle.current?.placeProblemImage(problemImage);
   }, [placeOn, currentSessionId, pendingLoad, hasContent, problemImage]);
   // The pages before the open exercise, read when a question is sent (each page's text is kept).
+  // A note page sends none: the tutor explains directly there, and book pages would make it hold back.
   const getBookContext = useCallback(async (): Promise<BookContext | null> => {
     const current = book.current;
     return current ? readBookPages(current.pdf, current.document, current.range) : null;
@@ -153,7 +160,7 @@ export default function ShelfReader() {
       setTutorOpen(false);
       writeUrl(source.document.id, exercise.id);
     } catch {
-      setError('That exercise could not be opened. Try again.');
+      setError(`That ${isNote(exercise) ? 'note page' : 'exercise'} could not be opened. Try again.`);
     } finally { switching.current = false; }
   }, [pdf, isStreaming, openSession]);
 
@@ -266,13 +273,13 @@ export default function ShelfReader() {
     setPendingMark(null);
     try {
       const { document: next, exercise } = await writeDocument(async (current) => {
-        const marked = await markExercise(pdf, current, markPage, rect, markLabel);
+        const marked = await markExercise(pdf, current, markPage, rect, markLabel, markKind);
         updateDocument(marked.document);
         return marked;
       });
       await openExercise(exercise, { pdf, document: next });
     } catch {
-      setError('The exercise could not be saved. Try again.');
+      setError(`The ${markKind === 'note' ? 'note page' : 'exercise'} could not be saved. Try again.`);
     }
   };
 
@@ -290,7 +297,7 @@ export default function ShelfReader() {
     try {
       await writeDocument(async (latest) => updateDocument(await unmarkExercise(latest, exercise.id)));
       setSolvedIds((ids) => ids.filter((id) => id !== exercise.id));
-    } catch { setError('The exercise could not be removed. Try again.'); }
+    } catch { setError(`The ${isNote(exercise) ? 'note page' : 'exercise'} could not be removed. Try again.`); }
   };
 
   // A page's ink changed: show it now, and save it (one page's writes at a time, in order).
@@ -340,7 +347,7 @@ export default function ShelfReader() {
   };
 
   const openExerciseForBook = shelfDocument?.exercises.find((item) => item.id === openId) ?? null;
-  const range = shelfDocument && openExerciseForBook ? readingRange(shelfDocument, openExerciseForBook, sectionStarts) : null;
+  const range = shelfDocument && openExerciseForBook && !isNote(openExerciseForBook) ? readingRange(shelfDocument, openExerciseForBook, sectionStarts) : null;
   book.current = pdf && shelfDocument && range ? { pdf, document: shelfDocument, range } : null;
 
   // Say so when the pages have no text to read (a scanned book).
@@ -396,6 +403,7 @@ export default function ShelfReader() {
   const crop = trim ? printed ?? null : null;
 
   const exercise = openExerciseForBook;
+  const paper = paperFor(chosenPaper, exercise && isNote(exercise) ? 'note' : 'problem');
   // An open board always shows; with none open, the list can make way for the page.
   const pageOnly = listHidden && !exercise;
   const marksOnPage = shelfDocument.exercises.filter((item) => item.page === page);
@@ -442,15 +450,16 @@ export default function ShelfReader() {
       <button
         onClick={() => { setMarking((on) => !on); setPendingMark(null); setInkTool(null); }}
         aria-pressed={marking}
+        title="Box an exercise to work it, or a passage to take notes on"
         className={`min-h-11 px-3 text-sm font-medium rounded-lg border border-gray-900 ${marking ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 hover:bg-gray-100'}`}
       >
-        {marking ? 'Done marking' : 'Mark exercise'}
+        {marking ? 'Done marking' : 'Mark'}
       </button>
     </>
   );
   const pageView = (
     <div ref={pageArea} className="p-3">
-      {marking && <p className="mb-2 text-sm font-medium text-gray-900">{pendingMark ? 'Name it and save, or drag again to redraw the box.' : 'Drag a box around an exercise on the page.'}</p>}
+      {marking && <p className="mb-2 text-sm font-medium text-gray-900">{pendingMark ? 'Choose Exercise or Note, name it and save, or drag again to redraw the box.' : 'Drag a box around an exercise, or around a passage to take notes on.'}</p>}
       <PdfPage
         pdf={pdf} pageNumber={page} marks={marksOnPage} solvedIds={solvedIds} activeId={openId} marking={marking}
         pending={pendingMark}
@@ -458,6 +467,17 @@ export default function ShelfReader() {
           <form onSubmit={(event) => { event.preventDefault(); void saveMark(); }}
             onKeyDown={(event) => { if (event.key === 'Escape') setPendingMark(null); }}
             className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-white border border-gray-900 shadow-md w-max max-w-[22rem]">
+            <div role="radiogroup" aria-label="Mark as" className="flex w-full gap-1">
+              {MARK_KINDS.map(({ kind, label }) => (
+                <button key={kind} type="button" role="radio" aria-checked={markKind === kind}
+                  onClick={() => {
+                    // A name still the default follows the kind ("Exercise 3" becomes "Note 1").
+                    if (markLabel === nextLabel(shelfDocument, markKind)) setMarkLabel(nextLabel(shelfDocument, kind));
+                    setMarkKind(kind);
+                  }}
+                  className={`flex-1 min-h-11 px-3 text-sm rounded-lg border border-gray-900 ${markKind === kind ? 'bg-gray-900 text-white font-medium' : 'bg-white text-gray-900 hover:bg-gray-100'}`}>{label}</button>
+              ))}
+            </div>
             <label className="text-sm text-gray-900" htmlFor="mark-label">Name</label>
             <input id="mark-label" value={markLabel} onChange={(event) => setMarkLabel(event.target.value)}
               className="w-36 min-h-11 px-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
@@ -465,7 +485,7 @@ export default function ShelfReader() {
             <button type="button" onClick={() => setPendingMark(null)} className="min-h-11 px-3 text-sm text-gray-600 border border-gray-300 bg-white rounded-lg hover:bg-gray-50">Cancel</button>
           </form>
         )}
-        onMark={(rect) => { if (!pendingMark) setMarkLabel(nextLabel(shelfDocument)); setPendingMark(rect); }}
+        onMark={(rect) => { if (!pendingMark) setMarkLabel(nextLabel(shelfDocument, markKind)); setPendingMark(rect); }}
         onOpenMark={(mark) => void openExercise(mark)}
         crop={crop}
         onTurn={turn}
@@ -477,15 +497,15 @@ export default function ShelfReader() {
     </div>
   );
 
-  // The book's lists: its marked exercises, and its contents from the PDF's bookmarks.
+  // The book's lists: what the student made in it, and its contents from the PDF's bookmarks.
   const listPanel = (
     <>
       <div className="flex items-center gap-2 px-4 pt-3 border-b border-gray-200">
         <div role="tablist" aria-label="Lists" className="flex gap-1">
-          {(['exercises', 'contents'] as const).map((tab) => (
+          {LIST_TABS.map(({ tab, label }) => (
             <button key={tab} role="tab" aria-selected={listTab === tab} onClick={() => setListTab(tab)}
               className={`min-h-11 px-3 text-sm ${listTab === tab ? 'font-semibold text-gray-900 shadow-[inset_0_-3px_0_#111827]' : 'text-gray-600 hover:text-gray-900'}`}>
-              {tab === 'exercises' ? 'Exercises' : 'Contents'}
+              {label}
             </button>
           ))}
         </div>
@@ -513,21 +533,9 @@ export default function ShelfReader() {
               ))}
             </ul>
           )
-        ) : shelfDocument.exercises.length === 0 ? (
-          <p className="text-sm text-gray-500">Tap <strong>Mark exercise</strong> and drag a box around a problem on the page. It opens here on its own board, and stays marked on the page.</p>
         ) : (
-          <ul className="grid gap-2">
-            {[...shelfDocument.exercises].sort((a, b) => a.page - b.page || a.rect.y - b.rect.y).map((item) => (
-              <li key={item.id}>
-                <button onClick={() => { setPanelOpen(false); void openExercise(item); }} disabled={isStreaming}
-                  className="w-full text-left p-3 rounded-lg border border-gray-200 bg-white hover:border-gray-900 hover:bg-gray-50 disabled:opacity-50">
-                  <span className="font-medium text-gray-900">{item.label}</span>
-                  <span className="ml-2 text-xs text-gray-500">Page {pageName(labels, item.page)}</span>
-                  {solvedIds.includes(item.id) && <span className="ml-2 inline-flex items-center gap-1 align-middle text-xs font-semibold text-gray-900"><SolvedCheck size={14} />Solved</span>}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <BookList pdf={pdf} marks={shelfDocument.exercises} solvedIds={solvedIds} ink={ink} contents={contents} labels={labels}
+            onOpen={(mark) => { setPanelOpen(false); void openExercise(mark); }} onGoTo={goToEntry} disabled={isStreaming} />
         )}
       </div>
     </>
@@ -560,8 +568,8 @@ export default function ShelfReader() {
             <>
               <h2 className="font-semibold text-gray-900 truncate">{exercise.label}</h2>
               <p className="flex flex-wrap items-center gap-x-1 text-xs text-gray-600">
-                <ProblemIcon />Problem · p. {exercise.page} ·{' '}
-                <label className="text-indigo-700">
+                <KindIcon type={isNote(exercise) ? 'note' : 'problem'} />{isNote(exercise) ? 'Notes' : 'Problem'} · p. {pageName(labels, exercise.page)}
+                {!isNote(exercise) && <>{' · '}<label className="text-indigo-700">
                   Tutor reads{' '}
                   <select
                     value={range?.from ?? 0}
@@ -574,7 +582,7 @@ export default function ShelfReader() {
                       <option key={from} value={from}>{from === exercise.page ? `p. ${from}` : `pp. ${from}–${exercise.page}`}</option>
                     ))}
                   </select>
-                </label>
+                </label></>}
                 {range && !bookHasText && <span className="font-medium text-gray-900"> · no text in this PDF to read</span>}
               </p>
             </>
@@ -587,16 +595,16 @@ export default function ShelfReader() {
                   className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Put on board</button>
               )}
               {!fullScreen && exercise.page !== page && (
-                <button onClick={() => { setPage(exercise.page); setTutorOpen(false); }} className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Back to p. {exercise.page}</button>
+                <button onClick={() => { setPage(exercise.page); setTutorOpen(false); }} className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Back to p. {pageName(labels, exercise.page)}</button>
               )}
               <button onClick={() => void closeExercise()} disabled={isStreaming} aria-label="Close board" className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">Close</button>
               {!fullScreen && (
                 <MoreMenu label={`More for ${exercise.label}`} disabled={isStreaming}
-                  items={[{ label: 'Remove exercise', onSelect: () => void removeMark(exercise) }]} />
+                  items={[{ label: isNote(exercise) ? 'Remove note page' : 'Remove exercise', onSelect: () => void removeMark(exercise) }]} />
               )}
             </>
           )}
-          canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} />}
+          canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} paper={paper} />}
           toolbar={(
             <BottomToolbar
               onAskForHelp={(question) => void askForHelp(question)}
@@ -605,7 +613,8 @@ export default function ShelfReader() {
               isStreaming={isStreaming}
               isSolved={isSolved}
               onToggleSolved={() => sessionDispatch({ type: 'TOGGLE_SOLVED' })}
-              sessionType="problem"
+              sessionType={isNote(exercise) ? 'note' : 'problem'}
+              paper={{ value: paper, onChange: (next) => sessionDispatch({ type: 'SET_PAPER', paper: next }) }}
               fullScreen={{ on: fullScreen, toggle: toggleFullScreen }}
               tools={{ hidden: toolsHidden, toggle: toggleTools }}
               tutor={{ open: tutorOpen, toggle: () => setTutorOpen((open) => !open) }}
@@ -621,7 +630,7 @@ export default function ShelfReader() {
             <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-900 bg-white">
               <button onClick={toggleFullScreen} className={smallButton}>Exit full screen</button>
               <span className="min-w-0 flex-1 truncate font-semibold text-gray-900">{shelfDocument.title}</span>
-              <button onClick={() => setPanelOpen((open) => !open)} aria-pressed={panelOpen} aria-label="Book: exercises and contents"
+              <button onClick={() => setPanelOpen((open) => !open)} aria-pressed={panelOpen} aria-label="Book: your list and contents"
                 className={`min-h-11 px-3 text-sm rounded-lg border border-gray-900 ${panelOpen ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 hover:bg-gray-100'}`}>Book</button>
             </div>
           )}
@@ -642,8 +651,8 @@ export default function ShelfReader() {
             <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-white border-b border-gray-200">
               {pageToolbar}
               {pageOnly && (
-                <button onClick={() => changeListHidden(false)} title="Show the exercises and contents beside the page"
-                  className={smallButton}>Exercises</button>
+                <button onClick={() => changeListHidden(false)} title="Show your list and the contents beside the page"
+                  className={smallButton}>Your list</button>
               )}
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto">{pageView}</div>

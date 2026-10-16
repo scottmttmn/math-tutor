@@ -14,8 +14,8 @@ export function ProblemIcon() {
   return <Icon><rect x="2" y="2" width="12" height="12" rx="2" /><path d="M5 8.5l2 2 4-4.5" /></Icon>;
 }
 
-export function NotesIcon() {
-  return <Icon><rect x="2.5" y="1.5" width="11" height="13" rx="1.5" /><path d="M5 5h6M5 8h6M5 11h4" /></Icon>;
+export function NotesIcon({ size }: { size?: number } = {}) {
+  return <Icon size={size}><rect x="2.5" y="1.5" width="11" height="13" rx="1.5" /><path d="M5 5h6M5 8h6M5 11h4" /></Icon>;
 }
 
 /** Anything on the Shelf: a PDF. */

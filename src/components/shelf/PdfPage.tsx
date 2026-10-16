@@ -6,11 +6,12 @@ import { renderPage } from '@/lib/pdf';
 import { toPage, toShown } from '@/lib/reader';
 import { ERASER_RADIUS, drawStroke, drawStrokes, eraseAt, inkPoint, pageScale } from '@/lib/ink';
 import type { InkStroke, InkTool, PageRect, ShelfExercise } from '@/types';
+import { NotesIcon } from '@/components/common/Icons';
 
 interface Props {
   pdf: PDFDocumentProxy;
   pageNumber: number;
-  /** Exercises marked on this page. */
+  /** Exercises and note pages marked on this page. */
   marks: ShelfExercise[];
   solvedIds: string[];
   activeId: string | null;
@@ -294,11 +295,12 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
                 onClick={() => onOpenMark(mark)}
                 aria-label={`Open ${mark.label}`}
                 style={percent(toShown(mark.rect, crop))}
-                // Ink only, so marks read on e-ink: the open one is heavier, a solved one has a filled label.
-                className={`absolute rounded border-gray-900 ${active ? 'border-[3px] bg-gray-900/10' : 'border-2'} ${marking || tool ? 'pointer-events-none' : ''} hover:bg-gray-900/10`}
+                // Ink only, so marks read on e-ink: the open one is heavier, a solved one has a filled
+                // label, and a note page's box is dotted with its icon on the label.
+                className={`absolute rounded border-gray-900 ${mark.kind === 'note' ? 'border-dotted' : ''} ${active ? 'border-[3px] bg-gray-900/10' : 'border-2'} ${marking || tool ? 'pointer-events-none' : ''} hover:bg-gray-900/10`}
               >
-                <span className={`absolute bottom-full left-0 mb-0.5 px-1.5 rounded border border-gray-900 text-[11px] leading-5 font-medium whitespace-nowrap ${solved || active ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
-                  {solved ? '✓ ' : ''}{mark.label}
+                <span className={`absolute bottom-full left-0 mb-0.5 px-1.5 flex items-center gap-1 rounded border border-gray-900 text-[11px] leading-5 font-medium whitespace-nowrap ${solved || active ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
+                  {mark.kind === 'note' && <NotesIcon size={12} />}{solved ? '✓ ' : ''}{mark.label}
                 </span>
               </button>
             );

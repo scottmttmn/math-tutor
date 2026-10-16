@@ -107,7 +107,7 @@ export default function Shelf() {
         {documents?.length === 0 && (
           <div className="max-w-md mx-auto text-center text-sm text-gray-500 py-12 space-y-2">
             <p className="text-base text-gray-700">No PDFs yet.</p>
-            <p>Add a textbook, a problem set or a handout as a PDF, or drop one here. Mark exercises on its pages and each one gets its own board beside the page.</p>
+            <p>Add a textbook, a problem set or a handout as a PDF, or drop one here. Mark exercises, or passages to take notes on, and each one gets its own board beside the page.</p>
             <p>For one problem, <strong>Single problem</strong> puts a picture or PDF straight onto a new board.</p>
           </div>
         )}
@@ -140,7 +140,8 @@ function ShelfCard({ document, onRemove }: { document: ShelfDocument; onRemove: 
 
 /** A PDF's cover, name and size, opening it in the reader. Also used on Home. */
 export function ShelfCover({ document }: { document: ShelfDocument }) {
-  const marked = document.exercises.length;
+  const notes = document.exercises.filter((item) => item.kind === 'note').length;
+  const exercises = document.exercises.length - notes;
   return (
     <Link href={`/shelf/read?doc=${encodeURIComponent(document.id)}`} aria-label={`Open ${document.title}`} className="block bg-white hover:bg-gray-50">
       <div className="aspect-[3/4] bg-gray-100 border-b border-gray-100 flex items-center justify-center overflow-hidden">
@@ -150,7 +151,8 @@ export function ShelfCover({ document }: { document: ShelfDocument }) {
         <p className="text-sm font-medium text-gray-900 line-clamp-2">{document.title}</p>
         <p className="text-xs text-gray-500">
           {document.pageCount} {document.pageCount === 1 ? 'page' : 'pages'}
-          {marked > 0 ? ` · ${marked} ${marked === 1 ? 'exercise' : 'exercises'}` : ''}
+          {exercises > 0 ? ` · ${exercises} ${exercises === 1 ? 'exercise' : 'exercises'}` : ''}
+          {notes > 0 ? ` · ${notes} ${notes === 1 ? 'note page' : 'note pages'}` : ''}
         </p>
       </div>
     </Link>

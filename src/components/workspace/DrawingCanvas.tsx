@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import type { RefObject } from 'react';
-import type { CanvasDocument } from '@/types';
+import type { CanvasDocument, Paper } from '@/types';
 
 export interface DrawingCanvasHandle {
   /** PNG (base64, no data: prefix) of the selected shapes, else the whole drawing; '' when nothing is drawn. */
@@ -28,11 +28,11 @@ const TldrawCanvas = dynamic(() => import('./TldrawCanvas'), {
 });
 
 /** Fills its nearest positioned ancestor; give that element a size. */
-export default function DrawingCanvas({ handleRef, toolsHidden = false }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden?: boolean }) {
+export default function DrawingCanvas({ handleRef, toolsHidden = false, paper = 'blank' }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden?: boolean; paper?: Paper }) {
   return (
     // isolate: tldraw's toolbars use z-indexes up to 10000; keep them below the app's dialogs.
     <div className="absolute inset-0 isolate">
-      <TldrawCanvas handleRef={handleRef} toolsHidden={toolsHidden} />
+      <TldrawCanvas handleRef={handleRef} toolsHidden={toolsHidden} paper={paper} />
     </div>
   );
 }

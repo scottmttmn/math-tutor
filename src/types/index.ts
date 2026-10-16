@@ -44,6 +44,9 @@ export interface ChatMessage {
 
 export type SessionType = 'problem' | 'note';
 
+/** The paper a board is drawn on. Unset: lined for notes, blank for problems (`paperFor`). */
+export type Paper = 'blank' | 'grid' | 'lined';
+
 export interface Session {
   id: string;
   title: string;
@@ -64,6 +67,8 @@ export interface Session {
   checkIn?: CheckIn;
   /** The board's TeX write-up: a LaTeX document body, converted from the handwriting and edited by the student. */
   writeUp?: WriteUp;
+  /** The paper the student chose for this board; unset until they choose. */
+  paper?: Paper;
 }
 
 export interface WriteUp {
@@ -110,9 +115,17 @@ export interface PageRect {
   height: number;
 }
 
-/** An exercise marked on a Shelf PDF; its board is the session `shelf:<document id>:<exercise id>`. */
+/** What a box marked on a Shelf page is: an exercise (a Problem board) or a note page (a Notes board). */
+export type ShelfMarkKind = 'exercise' | 'note';
+
+/**
+ * An exercise or a note page marked on a Shelf PDF; its board is the session
+ * `shelf:<document id>:<exercise id>`.
+ */
 export interface ShelfExercise {
   id: string;
+  /** Unset: an exercise (marks saved before note pages existed). */
+  kind?: ShelfMarkKind;
   label: string;
   /** 1-based page number. */
   page: number;
@@ -122,7 +135,7 @@ export interface ShelfExercise {
   readFrom?: number;
 }
 
-/** A PDF on the Shelf, with the exercises marked on it. */
+/** A PDF on the Shelf, with the exercises and note pages marked on it. */
 export interface ShelfDocument {
   id: string;
   title: string;

@@ -63,7 +63,7 @@ try {
   await page.getByText('Page 1 of 2').waitFor();
 
   // Mark an exercise: drag a box on the page, keep the suggested name, and its board opens.
-  await page.getByRole('button', { name: 'Mark exercise' }).click();
+  await page.getByRole('button', { name: 'Mark', exact: true }).click();
   const overlay = await page.getByTestId('page-overlay').boundingBox();
   await page.mouse.move(overlay.x + overlay.width * 0.1, overlay.y + overlay.height * 0.13);
   await page.mouse.down();
@@ -108,11 +108,13 @@ try {
   await exerciseHeading('Exercise 1').waitFor();
   await page.locator('.tl-image').waitFor();
   assert.equal(await shapeCount(), 2);
+  const pictureOnBoard = () => page.locator('.tl-image').first().evaluate((image) => image.src);
+  const firstPicture = await pictureOnBoard();
 
   // A second exercise on page 2 gets its own empty board; the first keeps its work.
   await page.getByRole('button', { name: 'Next page' }).click();
   await page.getByText('Page 2 of 2').waitFor();
-  await page.getByRole('button', { name: 'Mark exercise' }).click();
+  await page.getByRole('button', { name: 'Mark', exact: true }).click();
 
   // A box near the foot of a scrolled page stays drawn, its form opens beside it in view, and
   // dragging again redraws it.
@@ -150,6 +152,9 @@ try {
   await exerciseHeading('Problem 3').waitFor();
   await page.locator('.tl-image').waitFor();
   assert.equal(await shapeCount(), 1);
+  // Its own picture: the last board's (locked) one doesn't stay behind.
+  await page.waitForTimeout(300);
+  assert.notEqual(await pictureOnBoard(), firstPicture);
   await page.getByRole('button', { name: 'Previous page' }).click();
   await page.getByRole('button', { name: 'Open Exercise 1' }).click();
   await exerciseHeading('Exercise 1').waitFor();
@@ -197,16 +202,16 @@ try {
 
   // History lists the exercise with work in it (not the empty one) and opens it beside its page.
   await page.getByRole('button', { name: 'Close board' }).click();
-  await page.getByRole('tab', { name: 'Exercises', exact: true }).waitFor();
+  await page.getByRole('tab', { name: 'Your list', exact: true }).waitFor();
   // The list beside the page can be hidden, so the page gets the width; it stays hidden after a reload.
   const pageWidth = (await page.getByTestId('page-overlay').boundingBox()).width;
   await page.getByRole('button', { name: 'Hide', exact: true }).click();
-  await page.getByRole('tab', { name: 'Exercises', exact: true }).waitFor({ state: 'detached' });
+  await page.getByRole('tab', { name: 'Your list', exact: true }).waitFor({ state: 'detached' });
   await page.waitForTimeout(500);
   assert.ok((await page.getByTestId('page-overlay').boundingBox()).width > pageWidth * 1.3, 'the page is wider');
   await page.reload();
-  await page.getByRole('button', { name: 'Exercises', exact: true }).click();
-  await page.getByRole('tab', { name: 'Exercises', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Your list', exact: true }).click();
+  await page.getByRole('tab', { name: 'Your list', exact: true }).waitFor();
   await page.getByRole('link', { name: 'Home', exact: true }).click();
   const history = page.locator('[aria-labelledby="boards-heading"]');
   await history.getByRole('button', { name: /^Open Exercise 1/ }).waitFor();
@@ -219,7 +224,7 @@ try {
   // Removing a mark removes its board.
   await page.getByRole('button', { name: 'More for Exercise 1' }).click();
   await page.getByRole('menuitem', { name: 'Remove exercise' }).click();
-  await page.getByRole('tab', { name: 'Exercises', exact: true }).waitFor();
+  await page.getByRole('tab', { name: 'Your list', exact: true }).waitFor();
   // The board closes before the mark's removal is written, so wait for the mark to go.
   await page.getByRole('button', { name: 'Open Exercise 1' }).waitFor({ state: 'detached' });
   console.log('PASS History opens Shelf exercises; removing a mark removes its board');

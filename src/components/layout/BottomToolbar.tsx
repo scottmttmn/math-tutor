@@ -3,7 +3,8 @@
 import { useCanvasState } from '@/context/CanvasContext';
 import { useRateLimit } from '@/hooks/useRateLimit';
 import { RATE_LIMIT_MS } from '@/lib/constants';
-import type { SessionType } from '@/types';
+import type { Paper, SessionType } from '@/types';
+import { PAPERS } from '@/lib/paper';
 import { askChoices, askQuestion } from '@/lib/tutorAsk';
 import MoreMenu from '@/components/common/MoreMenu';
 import { FullScreenIcon, SolvedCheck, TutorIcon, UnsolvedCheck } from '@/components/common/Icons';
@@ -29,9 +30,11 @@ interface Props {
   onSaveAs?: (format: 'png' | 'pdf') => void;
   /** Shows TeX write-up, which opens the board's LaTeX write-up. */
   onWriteUp?: () => void;
+  /** Shows Paper, which picks the board's paper: blank, lined or grid. */
+  paper?: { value: Paper; onChange: (paper: Paper) => void };
 }
 
-export default function BottomToolbar({ onAskForHelp, onAskOwn, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp }: Props) {
+export default function BottomToolbar({ onAskForHelp, onAskOwn, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp, paper }: Props) {
   const { hasContent } = useCanvasState();
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
   const helpDisabled = isLimited || isStreaming;
@@ -61,6 +64,15 @@ export default function BottomToolbar({ onAskForHelp, onAskOwn, onClear, isStrea
         >
           {tools.hidden ? 'Show tools' : 'Hide tools'}
         </button>
+      )}
+
+      {paper && (
+        <MoreMenu
+          label={`Paper: ${PAPERS.find((item) => item.paper === paper.value)?.label}`}
+          button={`Paper: ${PAPERS.find((item) => item.paper === paper.value)?.label}`}
+          above
+          items={PAPERS.map((item) => ({ label: item.label, onSelect: () => paper.onChange(item.paper) }))}
+        />
       )}
 
       {/* Spacer */}

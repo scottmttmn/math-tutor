@@ -4,7 +4,7 @@ import { deleteSession, deleteShelfDocument, loadSession, saveSession, saveShelf
 import { cropPage, imageFileToPng, openPdf, pageImage, renderCover } from '@/lib/pdf';
 import { discardRecoveryCopy } from '@/lib/sessionRecovery';
 import { setBoardToOpen } from '@/lib/currentBoard';
-import type { PageRect, Session, ShelfDocument, ShelfExercise } from '@/types';
+import type { PageRect, Session, ShelfDocument, ShelfExercise, ShelfMarkKind } from '@/types';
 
 
 const isPdf = (file: File) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
@@ -45,11 +45,14 @@ export async function startProblemFromFile(file: File): Promise<string> {
   return session.id;
 }
 
-/** The problem text (and, cut to 50 characters, the board's title); the marked region goes with it as the problem image. */
+/** Whether a mark is a note page (a Notes board) rather than an exercise. */
+export const isNote = (mark: ShelfExercise) => mark.kind === 'note';
+
+/** The problem text, or a note page's topic (and, cut to 50 characters, the board's title); the marked region goes with it as the problem image. */
 export const exerciseStatement = (document: ShelfDocument, exercise: ShelfExercise) =>
   `${exercise.label} · ${document.title}, p. ${exercise.page}`;
 
-/** Makes sure an exercise has its board, creating it with a picture of the marked region if needed. */
+/** Makes sure an exercise or note page has its board, creating it with a picture of the marked region if needed. */
 export async function ensureExerciseBoard(pdf: PDFDocumentProxy, document: ShelfDocument, exercise: ShelfExercise) {
   const id = shelfSessionId(document.id, exercise.id);
   if (await loadSession(id)) return id;
@@ -58,14 +61,16 @@ export async function ensureExerciseBoard(pdf: PDFDocumentProxy, document: Shelf
   await saveSession({
     id, title: problemStatement.slice(0, 50), problemStatement, problemImage: await cropPage(pdf, exercise.page, exercise.rect),
     canvasStrokes: [], canvasDocument: null, canvasImageBlob: null, chatHistory: [], createdAt: now, updatedAt: now,
-    isSolved: false, sessionType: 'problem',
+    isSolved: false, sessionType: isNote(exercise) ? 'note' : 'problem',
   });
   return id;
 }
 
-/** Marks a region of a page as an exercise with its own board. Returns the updated document. */
-export async function markExercise(pdf: PDFDocumentProxy, document: ShelfDocument, page: number, rect: PageRect, label: string): Promise<{ document: ShelfDocument; exercise: ShelfExercise }> {
-  const exercise: ShelfExercise = { id: uuidv4(), label: label.trim() || nextLabel(document), page, rect, createdAt: Date.now() };
+/** Marks a region of a page as an exercise or a note page, with its own board. Returns the updated document. */
+export async function markExercise(pdf: PDFDocumentProxy, document: ShelfDocument, page: number, rect: PageRect, label: string, kind: ShelfMarkKind = 'exercise'): Promise<{ document: ShelfDocument; exercise: ShelfExercise }> {
+  const exercise: ShelfExercise = {
+    id: uuidv4(), ...(kind === 'note' ? { kind } : {}), label: label.trim() || nextLabel(document, kind), page, rect, createdAt: Date.now(),
+  };
   await ensureExerciseBoard(pdf, document, exercise);
   const updated = { ...document, exercises: [...document.exercises, exercise], updatedAt: Date.now() };
   await saveShelfDocument(updated);
@@ -82,13 +87,15 @@ export async function setReadFrom(document: ShelfDocument, exerciseId: string, r
   return updated;
 }
 
-/** A name for the next mark: one past the highest "Exercise N" so far. */
-export function nextLabel(document: ShelfDocument) {
-  const numbers = document.exercises.map((item) => Number(/^Exercise (\d+)$/.exec(item.label)?.[1] ?? 0));
-  return `Exercise ${Math.max(0, ...numbers) + 1}`;
+/** A name for the next mark: one past the highest "Exercise N" (or "Note N") so far. */
+export function nextLabel(document: ShelfDocument, kind: ShelfMarkKind = 'exercise') {
+  const word = kind === 'note' ? 'Note' : 'Exercise';
+  const pattern = new RegExp(`^${word} (\\d+)$`);
+  const numbers = document.exercises.map((item) => Number(pattern.exec(item.label)?.[1] ?? 0));
+  return `${word} ${Math.max(0, ...numbers) + 1}`;
 }
 
-/** Removes a marked exercise and its board. */
+/** Removes a marked exercise or note page and its board. */
 export async function unmarkExercise(document: ShelfDocument, exerciseId: string): Promise<ShelfDocument> {
   const updated = { ...document, exercises: document.exercises.filter((item) => item.id !== exerciseId), updatedAt: Date.now() };
   await saveShelfDocument(updated);
@@ -104,8 +111,9 @@ export async function removeFromShelf(document: ShelfDocument) {
   for (const exercise of document.exercises) discardRecoveryCopy(shelfSessionId(document.id, exercise.id));
 }
 
-/** Ids of the document's exercises marked solved on their boards. */
+/** Ids of the document's exercises marked solved on their boards (note pages aren't solved). */
 export async function solvedExercises(document: ShelfDocument): Promise<string[]> {
-  const sessions = await Promise.all(document.exercises.map((item) => loadSession(shelfSessionId(document.id, item.id))));
-  return document.exercises.filter((_, index) => sessions[index]?.isSolved).map((item) => item.id);
+  const exercises = document.exercises.filter((item) => !isNote(item));
+  const sessions = await Promise.all(exercises.map((item) => loadSession(shelfSessionId(document.id, item.id))));
+  return exercises.filter((_, index) => sessions[index]?.isSolved).map((item) => item.id);
 }

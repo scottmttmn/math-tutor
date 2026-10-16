@@ -1,15 +1,43 @@
 'use client';
 
-import { useCallback, useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react';
-import { AssetRecordType, Box, DefaultSizeStyle, Tldraw, createShapeId, type Editor, type TLComponents, type TLShape, type TLShapeId } from 'tldraw';
+import { createContext, useCallback, useContext, useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react';
+import { AssetRecordType, Box, DefaultSizeStyle, Tldraw, createShapeId, useEditor, useValue, type Editor, type TLComponents, type TLShape, type TLShapeId } from 'tldraw';
 import 'tldraw/tldraw.css';
 import { getAssetUrls } from '@tldraw/assets/selfHosted';
 import { useCanvasDispatch, useCanvasState, type CanvasLoad } from '@/context/CanvasContext';
 import { legacyStrokesToShapes } from '@/lib/legacyStrokes';
+import { GRID_SPACING, LINE_SPACING, paperLines } from '@/lib/paper';
+import type { Paper } from '@/types';
 import type { DrawingCanvasHandle } from './DrawingCanvas';
+
+const PaperContext = createContext<Paper>('blank');
+
+// The board's paper: ruled lines or a grid that move and zoom with the board. It is only a
+// background, so exports and what the tutor sees are the writing alone, and nothing snaps to it.
+function PaperBackground() {
+  const paper = useContext(PaperContext);
+  const editor = useEditor();
+  const camera = useValue('camera', () => editor.getCamera(), [editor]);
+  const lines = paper === 'blank' ? null : paperLines(camera, paper === 'grid' ? GRID_SPACING : LINE_SPACING);
+  return (
+    <div className="tl-background" data-paper={paper}>
+      {lines && (
+        <svg className="absolute inset-0 w-full h-full" aria-hidden="true">
+          <defs>
+            <pattern id="board-paper" patternUnits="userSpaceOnUse" x={lines.x} y={lines.y} width={lines.gap} height={lines.gap}>
+              <path d={paper === 'grid' ? `M0 0.5H${lines.gap}M0.5 0V${lines.gap}` : `M0 0.5H${lines.gap}`} stroke="#c4c8ce" strokeWidth="1" fill="none" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#board-paper)" />
+        </svg>
+      )}
+    </div>
+  );
+}
 
 // One page per session; no file menu, sharing or help menus.
 const components: TLComponents = {
+  Background: PaperBackground,
   MainMenu: null,
   PageMenu: null,
   HelpMenu: null,
@@ -124,17 +152,18 @@ function applyLoad(editor: Editor, load: CanvasLoad) {
   if (load.document) {
     editor.loadSnapshot(load.document);
   } else {
+    // ignoreShapeLock: the last board's problem picture is locked, and must not stay on this one.
     editor.run(() => {
       editor.deleteShapes([...editor.getCurrentPageShapeIds()]);
       editor.createShapes(legacyStrokesToShapes(load.strokes));
-    }, { history: 'ignore' });
+    }, { history: 'ignore', ignoreShapeLock: true });
   }
   // Undo must not step back into the previous session.
   editor.clearHistory();
   startDrawing(editor);
 }
 
-export default function TldrawCanvas({ handleRef, toolsHidden }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden: boolean }) {
+export default function TldrawCanvas({ handleRef, toolsHidden, paper }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden: boolean; paper: Paper }) {
   const [editor, setEditor] = useState<Editor | null>(null);
   const { document, pendingLoad } = useCanvasState();
   const dispatch = useCanvasDispatch();
@@ -225,5 +254,9 @@ export default function TldrawCanvas({ handleRef, toolsHidden }: { handleRef: Re
     },
   }), [editor]);
 
-  return <Tldraw assetUrls={assetUrls} components={components} options={{ maxPages: 1 }} onMount={handleMount} hideUi={toolsHidden} />;
+  return (
+    <PaperContext.Provider value={paper}>
+      <Tldraw assetUrls={assetUrls} components={components} options={{ maxPages: 1 }} onMount={handleMount} hideUi={toolsHidden} />
+    </PaperContext.Provider>
+  );
 }

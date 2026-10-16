@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { makePdf } from './makePdf.mjs';
 
-// Reading a Shelf PDF: turning pages, printed page numbers, contents, trimmed margins, full screen.
+// Reading a Shelf PDF: turning pages, printed page numbers, contents, trimmed margins, full screen,
+// ink, Your list and note pages.
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const browserErrors = [];
 const folder = await mkdtemp(join(tmpdir(), 'reader-acceptance-'));
@@ -76,7 +77,7 @@ try {
   await page.getByLabel('Go to page').press('Escape');
   await at('p. ii (2 of 5)');
   // A box drawn but not saved doesn't follow you to another page (its crop would be of the wrong page).
-  await page.getByRole('button', { name: 'Mark exercise' }).click();
+  await page.getByRole('button', { name: 'Mark', exact: true }).click();
   const marking = await page.getByTestId('page-overlay').boundingBox();
   await page.mouse.move(marking.x + marking.width * 0.2, marking.y + marking.height * 0.2);
   await page.mouse.down();
@@ -128,7 +129,7 @@ try {
   await tapPage(0.5, 0.4);
   await at('p. 2 (4 of 5)');
   // The book's lists open as a panel over the page; choosing a section closes it.
-  await page.getByRole('button', { name: 'Book: exercises and contents' }).click();
+  await page.getByRole('button', { name: 'Book: your list and contents' }).click();
   await page.getByRole('tab', { name: 'Contents' }).click();
   await page.getByRole('button', { name: /^2 Functions/ }).click();
   await at('p. 3 (5 of 5)');
@@ -187,15 +188,71 @@ try {
   await inkShown(withHighlight);
   console.log('PASS ink on the page: pen, highlighter, eraser, undo, kept after reload');
 
+  // Your list: what was made in the book, by section; a highlight across a line of print quotes it.
+  // The rows of print on the page, as fractions of its height (from the rendered page's dark pixels).
+  const printRows = await page.getByLabel(/^Page \d+$/).evaluate((canvas) => {
+    const { width, height } = canvas;
+    const data = canvas.getContext('2d').getImageData(0, 0, width, height).data;
+    const rows = [];
+    let from = -1;
+    for (let y = 0; y <= height; y += 1) {
+      let dark = false;
+      for (let x = 0; y < height && x < width && !dark; x += 2) dark = data[(y * width + x) * 4] < 128;
+      if (dark && from < 0) from = y;
+      if (!dark && from >= 0) { rows.push((from + y) / 2 / height); from = -1; }
+    }
+    return rows;
+  });
+  assert.ok(printRows.length >= 3, `found the lines of print (${printRows})`);
+  await page.getByRole('button', { name: 'Highlight', exact: true }).click();
+  await stroke([0.02, printRows[1]], [0.3, printRows[1]]);
+  await page.getByRole('button', { name: 'Highlight', exact: true }).click();
+  const functions = page.getByRole('region', { name: '2 Functions' });
+  await functions.getByRole('button', { name: /^“Every complex.*” p\. 3$/ }).waitFor();
+  await functions.getByRole('button', { name: /^Highlight p\. 3$/ }).waitFor();
+  await functions.getByRole('button', { name: /^Your ink, p\. 3/ }).waitFor();
+
+  // A note page: Mark, choose Note, and it opens on a lined Notes board (the tutor explains there,
+  // so it reads no book pages); the paper can be changed and is kept with the board.
+  const markBox = async (from, to) => {
+    const area = await page.getByTestId('page-overlay').boundingBox();
+    await page.mouse.move(area.x + area.width * from[0], area.y + area.height * from[1]);
+    await page.mouse.down();
+    await page.mouse.move(area.x + area.width * to[0], area.y + area.height * to[1], { steps: 5 });
+    await page.mouse.up();
+  };
+  await page.getByRole('button', { name: 'Mark', exact: true }).click();
+  await markBox([0.1, 0.1], [0.8, 0.3]);
+  assert.equal(await page.getByLabel('Name').inputValue(), 'Exercise 1');
+  await page.getByRole('radio', { name: 'Note' }).click();
+  assert.equal(await page.getByLabel('Name').inputValue(), 'Note 1');
+  await page.getByRole('button', { name: 'Save and open' }).click();
+  await page.getByRole('heading', { name: 'Note 1' }).waitFor();
+  await page.locator('.tl-image').waitFor();
+  await page.locator('[data-paper="lined"]').waitFor();
+  assert.equal(await page.getByText('Tutor reads').count(), 0);
+  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Explain this' }).waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Paper: Lined' }).click();
+  await page.getByRole('menuitem', { name: 'Grid' }).click();
+  await page.locator('[data-paper="grid"]').waitFor();
+  await page.waitForTimeout(1200);
+  await page.reload();
+  await page.getByRole('heading', { name: 'Note 1' }).waitFor();
+  await page.locator('[data-paper="grid"]').waitFor();
+  await page.getByRole('button', { name: 'Close board' }).click();
+  await functions.getByRole('button', { name: /^Note 1 p\. 3$/ }).waitFor();
+  assert.equal(await page.getByTestId('page-overlay').locator('.border-dotted').count(), 1, 'the note is marked dotted on the page');
+  // Later marks keep the last kind chosen; the tablet check below marks an exercise.
+  console.log('PASS Your list; a note page opens on a lined Notes board, and its paper can change');
+
   // An upright tablet: an exercise opens on its board, which takes the screen with the exercise
   // put on it; the page button swaps the page in, and Back to board (or its mark) swaps back.
   await page.setViewportSize({ width: 800, height: 1100 });
-  await page.getByRole('button', { name: 'Mark exercise' }).click();
-  const markArea = await page.getByTestId('page-overlay').boundingBox();
-  await page.mouse.move(markArea.x + markArea.width * 0.1, markArea.y + markArea.height * 0.1);
-  await page.mouse.down();
-  await page.mouse.move(markArea.x + markArea.width * 0.7, markArea.y + markArea.height * 0.25, { steps: 5 });
-  await page.mouse.up();
+  await page.getByRole('button', { name: 'Mark', exact: true }).click();
+  await markBox([0.1, 0.1], [0.7, 0.25]);
+  await page.getByRole('radio', { name: 'Exercise' }).click();
   await page.getByRole('button', { name: 'Save and open' }).click();
   await page.locator('.tl-image').waitFor();
   await page.getByTestId('page-overlay').waitFor({ state: 'hidden' });

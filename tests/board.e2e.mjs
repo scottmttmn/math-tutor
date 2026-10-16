@@ -122,6 +122,19 @@ try {
   assert.match(request.messages[0].content, /The answer is theirs to find/);
   assert.match(JSON.stringify(request.messages), /Find a strategy for a quadratic/);
   console.log('PASS a problem board gets hints with its problem and board');
+  // A problem board starts on blank paper; the choice is kept with the board.
+  await page.locator('[data-paper="blank"]').waitFor();
+  await page.getByRole('button', { name: 'Paper: Blank' }).click();
+  await page.getByRole('menuitem', { name: 'Lined' }).click();
+  await page.locator('[data-paper="lined"]').waitFor();
+  await page.waitForTimeout(1200);
+  await page.reload(); await waitProblem();
+  await page.locator('[data-paper="lined"]').waitFor();
+  await page.getByRole('button', { name: 'Paper: Lined' }).click();
+  await page.getByRole('menuitem', { name: 'Blank' }).click();
+  await page.locator('[data-paper="blank"]').waitFor();
+  await page.getByRole('button', { name: 'Tutor', exact: true }).click(); // The reload closed it.
+  console.log('PASS board paper: blank by default, changed and kept');
 
   // One request at a time: a long reply blocks others past five seconds, then a follow-up can go at once.
   await waitForTutorReady();
@@ -282,6 +295,7 @@ try {
 
   // A Notes board explains directly; dictated follow-ups land in the box.
   await newBoard('note');
+  await page.locator('[data-paper="lined"]').waitFor(); // Notes start on lined paper.
   await page.getByPlaceholder("Topic or concept you're studying...").fill('Complex modulus');
   request = await askTutor('Notes explanation.');
   assert.match(request.messages[0].content, /Give clear, direct explanations/);
