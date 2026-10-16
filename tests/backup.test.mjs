@@ -56,21 +56,27 @@ test('a ZIP with a damaged entry is refused, not restored', async () => {
 test('a backup carries every board and Shelf PDF, and restores them as they were', async () => {
   const thumbnail = new Blob([new Uint8Array([137, 80, 78, 71, 0, 255])], { type: 'image/png' });
   const cover = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
-  const { manifest, pdfs } = await backup.buildBackup(
+  const { manifest, boards, pdfs } = await backup.buildBackup(
     [session({ id: 'board-1', canvasImageBlob: thumbnail, customTitle: 'Named' }), session({ id: 'shelf:doc1:ex1' })],
     [shelfDocument({ cover })],
   );
   assert.equal(manifest.app, 'math-tutor');
-  assert.equal(manifest.sessions[0].canvasImage.startsWith('data:image/png;base64,'), true);
-  assert.equal('canvasImageBlob' in manifest.sessions[0], false);
+  assert.equal(manifest.version, 2);
+  assert.equal('sessions' in manifest, false);
+  // Each board is a file of its own, named so any file system takes it (no ':' on Windows).
+  assert.deepEqual(manifest.boards, [{ id: 'board-1', file: 'boards/board-1.json' }, { id: 'shelf:doc1:ex1', file: 'boards/shelf%3Adoc1%3Aex1.json' }]);
+  assert.deepEqual([...boards.keys()], ['boards/board-1.json', 'boards/shelf%3Adoc1%3Aex1.json']);
+  const first = JSON.parse(await boards.get('boards/board-1.json').text());
+  assert.equal(first.canvasImage.startsWith('data:image/png;base64,'), true);
+  assert.equal('canvasImageBlob' in first, false);
   assert.equal('file' in manifest.shelf[0], false);
   assert.deepEqual([...pdfs.keys()], ['pdfs/doc1.pdf']);
 
   // Through JSON and a ZIP, as a download would go.
-  const zip = await writeZip(new Map([['backup.json', new Blob([JSON.stringify(manifest)])], ...pdfs]));
+  const zip = await writeZip(new Map([['backup.json', new Blob([JSON.stringify(manifest)])], ...boards, ...pdfs]));
   written.length = 0;
   const result = await backup.restoreFromFiles([asFile(zip, 'math-tutor-backup-2026-10-14.zip')]);
-  assert.deepEqual(result, { restoredSessions: 2, restoredShelf: 1, restoredProfile: false, restoredInk: 0, skipped: 0, missingPdfs: [] });
+  assert.deepEqual(result, { restoredSessions: 2, restoredShelf: 1, restoredProfile: false, restoredInk: 0, skipped: 0, missingPdfs: [], missingBoards: 0 });
   const [{ sessions, shelf }] = written;
   assert.equal(sessions[0].customTitle, 'Named');
   assert.deepEqual(new Uint8Array(await sessions[0].canvasImageBlob.arrayBuffer()), new Uint8Array(await thumbnail.arrayBuffer()));
@@ -82,21 +88,85 @@ test('a backup carries every board and Shelf PDF, and restores them as they were
   assert.deepEqual(new Uint8Array(await shelf[0].cover.arrayBuffer()), new Uint8Array([1, 2, 3]));
 });
 
-test('a backup folder restores from its files: backup.json over the dated copies, PDFs from pdfs/', async () => {
-  const { manifest } = await backup.buildBackup([session({ id: 'board-1', updatedAt: 2 })], [shelfDocument({})]);
-  const older = { ...manifest, sessions: [] };
-  written.length = 0;
-  const result = await backup.restoreFromFiles([
+test('a backup folder restores from its files: backup.json over the dated copies, boards and PDFs beside it', async () => {
+  const { manifest, boards } = await backup.buildBackup([session({ id: 'shelf:doc1:ex1', updatedAt: 2 })], [shelfDocument({})]);
+  const older = { ...manifest, boards: [] };
+  const folderFiles = [
     asFile(new Blob([JSON.stringify(older)]), 'backup-2026-10-13.json', 'Math Tutor backup/backup-2026-10-13.json'),
     asFile(new Blob([JSON.stringify(manifest)]), 'backup.json', 'Math Tutor backup/backup.json'),
+    asFile(boards.get('boards/shelf%3Adoc1%3Aex1.json'), 'shelf%3Adoc1%3Aex1.json', 'Math Tutor backup/boards/shelf%3Adoc1%3Aex1.json'),
+    // An earlier day's copy of a board is not the board, nor a backup.json.
+    asFile(new Blob(['{"id":"shelf:doc1:ex1","updatedAt":1}']), 'shelf%3Adoc1%3Aex1.json', 'Math Tutor backup/history/2026-10-13/shelf%3Adoc1%3Aex1.json'),
     asFile(new Blob(['%PDF folder']), 'doc1.pdf', 'Math Tutor backup/pdfs/doc1.pdf'),
-  ]);
+  ];
+  written.length = 0;
+  const result = await backup.restoreFromFiles(folderFiles);
   assert.equal(result.restoredSessions, 1);
+  assert.equal(written[0].sessions[0].id, 'shelf:doc1:ex1');
+  assert.equal(written[0].sessions[0].updatedAt, 2);
   assert.equal(await written[0].shelf[0].file.text(), '%PDF folder');
 
-  // backup.json alone: the PDF isn't there, so that Shelf entry can't come back on a new device.
-  const alone = await backup.restoreFromFiles([asFile(new Blob([JSON.stringify(manifest)]), 'backup.json')]);
+  // backup.json alone: the boards aren't there, so it says to pick the folder.
+  await assert.rejects(backup.restoreFromFiles([asFile(new Blob([JSON.stringify(manifest)]), 'backup.json')]), /Pick the whole backup folder/);
+  // A damaged board file is left out and counted; the rest comes back.
+  const two = await backup.buildBackup([session({ id: 'a' }), session({ id: 'b' })], []);
+  written.length = 0;
+  const partial = await backup.restoreFromFiles([
+    asFile(new Blob([JSON.stringify(two.manifest)]), 'backup.json', 'B/backup.json'),
+    asFile(two.boards.get('boards/a.json'), 'a.json', 'B/boards/a.json'),
+    asFile(new Blob(['{not json']), 'b.json', 'B/boards/b.json'),
+  ]);
+  assert.equal(partial.restoredSessions, 1);
+  assert.equal(partial.missingBoards, 1);
+  // Even when the only board's file is damaged, the Shelf and the rest still come back.
+  const one = await backup.buildBackup([session({ id: 'a' })], [shelfDocument({})]);
+  written.length = 0;
+  const damaged = await backup.restoreFromFiles([
+    asFile(new Blob([JSON.stringify(one.manifest)]), 'backup.json', 'B/backup.json'),
+    asFile(new Blob(['{not json']), 'a.json', 'B/boards/a.json'),
+    asFile(new Blob(['%PDF']), 'doc1.pdf', 'B/pdfs/doc1.pdf'),
+  ]);
+  assert.equal(damaged.restoredSessions, 0);
+  assert.equal(damaged.restoredShelf, 1);
+  assert.equal(damaged.missingBoards, 1);
+});
+
+test('a backup folder restores as it was on an earlier day, from its dated copy and history/', async () => {
+  const board = (id, updatedAt) => new Blob([JSON.stringify({ ...session({ id, updatedAt }), canvasImageBlob: undefined, canvasImage: null })]);
+  const now = await backup.buildBackup([session({ id: 'a', updatedAt: 5 })], []);
+  // On the 14th there were two boards; b has since been deleted, a changed again on the 15th and 16th.
+  const then = await backup.buildBackup([session({ id: 'a' }), session({ id: 'b' })], []);
+  const files = [
+    asFile(new Blob([JSON.stringify(now.manifest)]), 'backup.json', 'B/backup.json'),
+    asFile(new Blob([JSON.stringify(then.manifest)]), 'backup-2026-10-14.json', 'B/backup-2026-10-14.json'),
+    asFile(board('a', 5), 'a.json', 'B/boards/a.json'),
+    asFile(board('a', 2), 'a.json', 'B/history/2026-10-13/a.json'),
+    asFile(board('a', 4), 'a.json', 'B/history/2026-10-15/a.json'),
+    asFile(board('b', 1), 'b.json', 'B/history/2026-10-12/b.json'),
+  ];
+  assert.deepEqual(backup.backupDays(files), ['2026-10-14']);
+  written.length = 0;
+  const earlier = await backup.restoreFromFiles(files, '2026-10-14');
+  assert.equal(earlier.restoredSessions, 2);
+  assert.deepEqual(written[0].sessions.map((s) => [s.id, s.updatedAt]), [['a', 2], ['b', 1]]);
+  written.length = 0;
+  await backup.restoreFromFiles(files);
+  assert.deepEqual(written[0].sessions.map((s) => [s.id, s.updatedAt]), [['a', 5]]);
+});
+
+test('a version 1 backup (boards inside backup.json) still restores', async () => {
+  const legacy = {
+    app: 'math-tutor', version: 1, createdAt: 3,
+    sessions: [{ ...session({ id: 'board-1', updatedAt: 2 }), canvasImageBlob: undefined, canvasImage: null }],
+    shelf: [{ ...shelfDocument({}), file: undefined, cover: null }],
+  };
+  written.length = 0;
+  const alone = await backup.restoreFromFiles([asFile(new Blob([JSON.stringify(legacy)]), 'backup-2026-10-13.json')]);
+  assert.equal(alone.restoredSessions, 1);
+  assert.equal(written[0].sessions[0].id, 'board-1');
+  // The PDF isn't there, so that Shelf entry can't come back on a new device.
   assert.deepEqual(alone.missingPdfs, ['Book']);
+  await assert.rejects(backup.restoreFromFiles([asFile(new Blob([JSON.stringify({ ...legacy, version: 3 })]), 'backup.json')]), /newer version/);
 });
 
 test('the tutor memory goes into the backup and comes back; a malformed one is left out', async () => {

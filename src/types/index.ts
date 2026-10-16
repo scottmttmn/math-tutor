@@ -391,12 +391,24 @@ export type BackupSession = Omit<Session, 'canvasImageBlob'> & { canvasImage: st
 /** A Shelf PDF in a backup: the cover as a data URL; the PDF itself is the file `pdfs/<id>.pdf`. */
 export type BackupShelfDocument = Omit<ShelfDocument, 'file' | 'cover'> & { cover: string | null };
 
-/** `backup.json`: everything the app keeps, apart from the Shelf's PDF files. */
+/** One board in a version 2 backup: its file beside backup.json (`boards/<id>.json`, a `BackupSession`). */
+export interface BackupBoardEntry {
+  id: string;
+  file: string;
+}
+
+/**
+ * `backup.json`: everything the app keeps, apart from the Shelf's PDF files and (from version 2)
+ * the boards, which are files of their own so a folder backup rewrites only the boards that changed.
+ */
 export interface BackupManifest {
   app: 'math-tutor';
-  version: 1;
+  version: 1 | 2;
   createdAt: number;
-  sessions: BackupSession[];
+  /** Version 1: every board, inline. */
+  sessions?: BackupSession[];
+  /** Version 2: every board, as a file. */
+  boards?: BackupBoardEntry[];
   shelf: BackupShelfDocument[];
   /** Tutor memory; missing in backups made before it existed. */
   profile?: LearnerProfile;
@@ -415,6 +427,8 @@ export interface RestoreResult {
   skipped: number;
   /** Shelf PDFs listed in the backup whose file wasn't with it (and isn't on this device). */
   missingPdfs: string[];
+  /** Boards listed in the backup whose file wasn't with it (only backup.json was picked, say). */
+  missingBoards: number;
 }
 
 /** Automatic backup to a folder, as the Backup settings and the top bar show it. */
