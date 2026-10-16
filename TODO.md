@@ -36,7 +36,8 @@ Done (reading, step 1 of the [Shelf design](https://claude.ai/artifact/TXw8zCKZb
 - Done: note pages (**Mark** → Exercise or Note; a note opens on a lined Notes board), and **Your list**: the book's exercises, note pages, highlights (quoted) and ink by section, with solved counts. Boards have **Paper**: Blank, Lined or Grid.
 - Not yet: **Open as note** (moving margin ink onto a new note page); the paper choice for new boards is per kind, not a setting.
 - Done: **Search** in the book's list (results by section with a line of context; the words are lit on the page).
-- Next, in this order: Ask about the page (an Ask button, then drag a box like Mark); Shelf cards with kind, progress and where you left off.
+- Done: **Ask about the page** (Ask, drag a box, ask; the tutor explains it directly; Save as note page keeps it).
+- Next: Shelf cards with kind, progress and where you left off.
 - Still to do: no zoom yet; marks can't be moved or renamed after saving.
 
 ### 4. Export and auto-backup
