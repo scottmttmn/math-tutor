@@ -29,7 +29,8 @@ public class DeviceKeysPlugin extends Plugin {
 
     private static final String PREFS = "device_keys";
     private static final String KEY_ALIAS = "math-tutor-device-keys";
-    private static final List<String> NAMES = Arrays.asList("anthropic", "gemini", "openai");
+    // The three API keys, and "chatgpt": the Sign in with ChatGPT connection (src/lib/chatgptDevice.ts).
+    private static final List<String> NAMES = Arrays.asList("anthropic", "gemini", "openai", "chatgpt");
 
     @PluginMethod
     public void get(PluginCall call) {

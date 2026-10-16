@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
+import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { chromium } from 'playwright';
 
 const root = join(import.meta.dirname, '..', 'out');
@@ -53,23 +54,62 @@ try {
   console.log('PASS reloading or opening a page directly shows that page');
 
   // Stand in for the native side: Capacitor sees an Android bridge and the app's plugins' headers.
-  // Files go through Android's Save dialog (SaveFilePlugin), not a blob: download; API keys are
-  // kept by DeviceKeysPlugin.
+  // Files go through Android's Save dialog (SaveFilePlugin), not a blob: download; API keys and
+  // the ChatGPT connection are kept by DeviceKeysPlugin; Sign in with ChatGPT's callback comes to
+  // ChatGPTSignInPlugin's listener, and its requests to auth.openai.com go through CapacitorHttp.
   const app = await browser.newPage({ viewport: { width: 1024, height: 1366 } });
   app.on('pageerror', (error) => errors.push(error.message));
+  const issuer = 'https://auth.openai.com';
+  const { privateKey, publicKey } = await generateKeyPair('RS256');
+  const jwk = { ...(await exportJWK(publicKey)), kid: 'k1', alg: 'RS256', use: 'sig' };
+  const auth = { requests: [], nonce: undefined };
+  await app.exposeFunction('openedForSignIn', (url) => { auth.authorization = new URL(url); auth.nonce = auth.authorization.searchParams.get('nonce'); });
+  await app.exposeFunction('authServer', async ({ url, method, headers, data }) => {
+    auth.requests.push({ url, method, headers, data });
+    const json = (body) => ({ status: 200, headers: { 'Content-Type': 'application/json' }, data: JSON.stringify(body) });
+    if (url === `${issuer}/.well-known/openid-configuration`) {
+      return json({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/oauth/token`, revocation_endpoint: `${issuer}/oauth/revoke`, jwks_uri: `${issuer}/jwks` });
+    }
+    if (url === `${issuer}/jwks`) return json({ keys: [jwk] });
+    if (url === `${issuer}/oauth/token`) {
+      const idToken = await new SignJWT({ email: 'learner@example.com', nonce: auth.nonce }).setProtectedHeader({ alg: 'RS256', kid: 'k1' })
+        .setIssuer(issuer).setAudience('client-123').setSubject('user-1').setIssuedAt().setExpirationTime('1h').sign(privateKey);
+      return json({ access_token: 'chatgpt-access-1', refresh_token: 'chatgpt-refresh-1', token_type: 'Bearer', expires_in: 3600,
+        scope: 'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct', id_token: idToken });
+    }
+    return { status: 404, headers: {}, data: '' };
+  });
   await app.addInitScript(() => {
     window.saves = [];
     window.saveAnswers = [];
     window.deviceKeys = {};
-    // A ChatGPT-plan choice saved by an earlier app, which the tablet app doesn't offer yet.
-    if (!localStorage.getItem('mathTutor_modelConfig')) localStorage.setItem('mathTutor_modelConfig', JSON.stringify({ provider: 'chatgpt', model: 'sol', baseUrl: '' }));
+    // The student picked the ChatGPT plan but hasn't signed in on the tablet yet.
+    if (!localStorage.getItem('mathTutor_modelConfig')) localStorage.setItem('mathTutor_modelConfig', JSON.stringify({ provider: 'chatgpt', model: 'gpt-sol', baseUrl: '' }));
+    let callback;
     window.androidBridge = { postMessage() {} };
     window.Capacitor = {
       PluginHeaders: [
         { name: 'SaveFile', methods: [{ name: 'save', rtype: 'promise' }] },
         { name: 'DeviceKeys', methods: ['get', 'set', 'remove'].map((name) => ({ name, rtype: 'promise' })) },
+        { name: 'ChatGPTSignIn', methods: ['listen', 'waitForCallback', 'close', 'openBrowser'].map((name) => ({ name, rtype: 'promise' })) },
+        { name: 'CapacitorHttp', methods: [{ name: 'request', rtype: 'promise' }] },
       ],
       nativePromise: async (plugin, method, options) => {
+        if (plugin === 'CapacitorHttp') return window.authServer(options);
+        if (plugin === 'ChatGPTSignIn') {
+          if (method === 'listen') {
+            callback = { state: options.state };
+            callback.done = new Promise((resolve) => { callback.resolve = resolve; });
+            return { redirectUri: `http://127.0.0.1:${options.port}/auth/callback` };
+          }
+          if (method === 'waitForCallback') return callback.done;
+          if (method === 'openBrowser') {
+            // The student signs in, and the browser comes back to the listener with the code.
+            await window.openedForSignIn(options.url);
+            callback.resolve({ query: new URLSearchParams({ code: 'code-1', state: callback.state, client_id: 'client-123' }).toString() });
+          }
+          return {};
+        }
         if (plugin === 'DeviceKeys') {
           if (method === 'set') window.deviceKeys[options.name] = options.value;
           if (method === 'remove') delete window.deviceKeys[options.name];
@@ -123,16 +163,51 @@ try {
     await app.getByRole('button', { name: 'Ask tutor', exact: true }).click();
     await app.getByRole('menuitem').first().click();
   };
+  const openaiCalls = [];
+  await app.route('https://api.openai.com/**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { ...cors, 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' } });
+    openaiCalls.push({ url: request.url(), headers: request.headers(), body: request.postDataJSON() });
+    if (request.url().endsWith('/v1/models')) {
+      return route.fulfill({ status: 200, headers: { ...cors, 'Content-Type': 'application/json' }, body: JSON.stringify({ models: [{ slug: 'gpt-sol', display_name: 'Sol', visibility: 'list' }] }) });
+    }
+    await route.fulfill({ status: 200, headers: { ...cors, 'Content-Type': 'text/event-stream' }, body: sseFrames([
+      ['', { type: 'response.output_text.delta', delta: 'What is 2x on its own?' }],
+      ['', { type: 'response.completed', response: { usage: { input_tokens: 120, output_tokens: 9 } } }],
+    ]) });
+  });
   await askTutor();
-  await app.getByText("Sign in with ChatGPT isn't in the tablet app yet. Pick another provider in Settings → Tutor.").waitFor();
+  await app.getByText('Sign in with ChatGPT to continue.').waitFor();
   const openTutorSettings = async () => {
     await app.getByRole('button', { name: 'Settings' }).click();
     await app.getByRole('tab', { name: 'Tutor' }).click();
   };
+  const settings = app.getByRole('dialog', { name: 'Settings' });
   await openTutorSettings();
-  assert.equal(await app.locator('option', { hasText: 'ChatGPT' }).count(), 0);
-  assert.equal(await app.getByRole('dialog', { name: 'Settings' }).getByRole('combobox').first().inputValue(), '0'); // Anthropic
-  await app.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: 'Save', exact: true }).click();
+  await settings.getByRole('button', { name: 'Sign in with ChatGPT' }).click();
+  await settings.getByText('Signed in as learner@example.com.').waitFor();
+  const authorization = auth.authorization.searchParams;
+  assert.equal(authorization.get('redirect_uri'), 'http://127.0.0.1:8791/auth/callback');
+  assert.equal(authorization.get('code_challenge_method'), 'S256');
+  const exchange = new URLSearchParams(auth.requests.find((request) => request.url.endsWith('/oauth/token')).data);
+  assert.equal(exchange.get('code'), 'code-1');
+  assert.equal(exchange.get('client_id'), 'client-123');
+  // The connection is kept by DeviceKeys (encrypted there), never in the page's own storage.
+  assert.match(await app.evaluate(() => window.deviceKeys.chatgpt), /chatgpt-access-1/);
+  assert.ok(!(await app.evaluate(() => JSON.stringify({ ...localStorage }))).includes('chatgpt-access-1'));
+  await settings.getByRole('button', { name: 'Save', exact: true }).click();
+  await askTutor();
+  await app.getByText('What is 2x on its own?').waitFor();
+  const reply = openaiCalls.find((call) => call.url.endsWith('/v1/responses'));
+  assert.equal(reply.headers.authorization, 'Bearer chatgpt-access-1');
+  assert.equal(reply.body.model, 'gpt-sol');
+  assert.match(reply.body.instructions, /The answer is theirs to find/);
+  assert.ok(reply.body.input.at(-1).content.some((part) => part.type === 'input_image'));
+  console.log('PASS in the app, Sign in with ChatGPT comes back to the tablet and the tutor answers on the plan');
+
+  await openTutorSettings();
+  await settings.getByRole('combobox').first().selectOption({ label: 'Anthropic (Claude)' });
+  await settings.getByRole('button', { name: 'Save', exact: true }).click();
   await askTutor();
   await app.getByText('Add your Anthropic API key in Settings → Tutor.').waitFor();
   assert.equal(providerCalls.length, 0);
@@ -140,7 +215,7 @@ try {
   await openTutorSettings();
   await app.getByLabel('Anthropic API key').fill('sk-ant-test-key');
   await app.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: 'Save', exact: true }).click();
-  assert.deepEqual(await app.evaluate(() => window.deviceKeys), { anthropic: 'sk-ant-test-key' });
+  assert.equal(await app.evaluate(() => window.deviceKeys.anthropic), 'sk-ant-test-key');
   assert.ok(!(await app.evaluate(() => JSON.stringify({ ...localStorage }))).includes('sk-ant-test-key'));
   await askTutor();
   await app.getByText('What could you subtract from both sides?').waitFor();
@@ -161,7 +236,7 @@ try {
   await app.getByText('Look at the constant term.').waitFor();
   assert.equal(providerCalls[1].headers.authorization, 'Bearer gemini-test-key');
   assert.match(providerCalls[1].url, /\/v1beta\/openai\/chat\/completions$/);
-  assert.deepEqual(await app.evaluate(() => window.deviceKeys), { anthropic: 'sk-ant-test-key', gemini: 'gemini-test-key' });
+  assert.deepEqual(await app.evaluate(() => Object.keys(window.deviceKeys).sort()), ['anthropic', 'chatgpt', 'gemini']);
   console.log('PASS in the app, the tutor calls the provider directly with the key saved on the device');
   await app.getByRole('button', { name: 'Save board as' }).click();
   await app.getByRole('menuitem', { name: 'PNG picture' }).click();

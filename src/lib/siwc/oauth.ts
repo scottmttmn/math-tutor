@@ -1,12 +1,12 @@
-// From OpenAI's Sign in with ChatGPT DevKit
+// Modified for Math Tutor from OpenAI's Sign in with ChatGPT DevKit
 // (github.com/openai/sign-in-with-chatgpt-devkit @ f723814, packages/local/src).
-// Change: relative imports drop the .js suffix so Next's bundler resolves them.
+// Changes: relative imports drop the .js suffix so Next's bundler resolves them;
+// runs in a browser as well as Node (the Android app signs in from its WebView):
+// random values and the PKCE hash use Web Crypto instead of node:crypto, the
+// loopback listener and the browser opener moved to ./loopback (Node) and come in
+// through ChatGPTConfig, and checking the callback's parameters is callbackResult.
 // Licensed under the Sign-in with ChatGPT DevKit Noncommercial License v1.0; see ./LICENSE.
 
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { createServer, type RequestListener } from "node:http";
-import { spawn } from "node:child_process";
-import { setTimeout as delay } from "node:timers/promises";
 import { createRemoteJWKSet, customFetch, jwtVerify } from "jose";
 import { apiError, ChatGPTError, fetchRemote, isObject, jsonResponse } from "./errors";
 import type { ChatGPTConfig, PendingRefresh, StoredConnection, StoredCredentials } from "./types";
@@ -14,8 +14,15 @@ import type { ChatGPTConfig, PendingRefresh, StoredConnection, StoredCredentials
 const ISSUER = "https://auth.openai.com";
 const RESOURCE = "https://api.openai.com/v1";
 const SCOPES = "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
-const CALLBACK_PATH = "/auth/callback";
-const randomValue = () => randomBytes(32).toString("base64url");
+export const CALLBACK_PATH = "/auth/callback";
+const base64url = (bytes: Uint8Array) => {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+const randomValue = () => base64url(crypto.getRandomValues(new Uint8Array(32)));
+const sha256 = async (text: string) => base64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))));
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 interface Discovery {
   issuer: string;
@@ -151,103 +158,20 @@ function tokenFields(data: Record<string, unknown>, requireRefresh = false) {
   return { scopes, ...(credentials ? { credentials } : {}) };
 }
 
-async function defaultOpenBrowser(url: string): Promise<void> {
-  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "rundll32" : "xdg-open";
-  const args = process.platform === "win32" ? ["url.dll,FileProtocolHandler", url] : [url];
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, { stdio: "ignore", shell: false });
-    child.once("error", () => reject(new ChatGPTError("browser_unavailable", "The browser could not be opened. Check your default browser and try again.")));
-    child.once("exit", (code) => code === 0 ? resolve() : reject(new ChatGPTError("browser_unavailable", "The browser could not be opened. Check your default browser and try again.")));
-  });
-}
-
 interface CallbackResult { code: string; clientId: string }
 
-async function listenForCallback(port: number, state: string, savedClientId: string | undefined, signal: AbortSignal) {
-  let complete!: (value: CallbackResult) => void;
-  let fail!: (error: Error) => void;
-  let settled = false;
-  const result = new Promise<CallbackResult>((resolve, reject) => { complete = resolve; fail = reject; });
-  // The callback can arrive while the browser-opening promise is still pending.
-  void result.catch(() => undefined);
-  let selectedPort = port;
-  const finish = (value: CallbackResult | ChatGPTError) => {
-    if (settled) return;
-    settled = true;
-    if (value instanceof ChatGPTError) fail(value);
-    else complete(value);
-  };
-  const script = 'history.replaceState(null, "", "/auth/complete");';
-  const scriptHash = createHash("sha256").update(script).digest("base64");
-  const handler: RequestListener = (request, response) => {
-    response.setHeader("Cache-Control", "no-store");
-    response.setHeader("Referrer-Policy", "no-referrer");
-    response.setHeader("Content-Security-Policy", `default-src 'none'; script-src 'sha256-${scriptHash}'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'`);
-    let url: URL;
-    try { url = new URL(request.url ?? "/", `http://127.0.0.1:${selectedPort}`); }
-    catch { response.writeHead(400).end("Invalid request"); return; }
-    if (request.method !== "GET" || request.headers.host !== `127.0.0.1:${selectedPort}` || url.origin !== `http://127.0.0.1:${selectedPort}` || url.pathname !== CALLBACK_PATH || settled) {
-      response.writeHead(404).end("Not found");
-      return;
-    }
-    const returnedState = Buffer.from(url.searchParams.get("state") ?? "");
-    const expectedState = Buffer.from(state);
-    if (url.searchParams.getAll("state").length !== 1 || returnedState.length !== expectedState.length || !timingSafeEqual(returnedState, expectedState)) {
-      // Unrelated loopback requests must not consume the pending browser transaction.
-      response.writeHead(400).end("Invalid sign-in state. Return to the browser tab that started sign-in.");
-      return;
-    }
-    response.setHeader("Content-Type", "text/html; charset=utf-8");
-    response.end(`<!doctype html><html lang="en"><meta charset="utf-8"><title>Return to your app</title><style>body{font:17px system-ui;max-width:32rem;margin:18vh auto;padding:24px;color:#202123}h1{font-size:26px}</style><h1>Return to your app</h1><p>The app will finish checking your ChatGPT connection. You can close this tab.</p><script>${script}</script></html>`);
-    if (url.searchParams.has("error")) {
-      finish(apiError({ error: url.searchParams.get("error") }));
-      return;
-    }
-    const code = url.searchParams.get("code");
-    const returnedClientId = url.searchParams.get("client_id");
-    const clientId = returnedClientId ?? savedClientId;
-    if (!code || url.searchParams.getAll("code").length !== 1 || url.searchParams.getAll("client_id").length > 1 ||
-        !clientId || !/^[a-zA-Z0-9_-]{1,200}$/.test(clientId) || clientId === "dynamic_agent_client" ||
-        (savedClientId !== undefined && returnedClientId !== null && savedClientId !== returnedClientId)) {
-      finish(new ChatGPTError("registration_incomplete", "ChatGPT did not complete app registration. Please try signing in again."));
-      return;
-    }
-    finish({ code, clientId });
-  };
-  const server = createServer(handler);
-  server.requestTimeout = 15_000;
-  server.headersTimeout = 10_000;
-  const close = () => {
-    signal.removeEventListener("abort", abort);
-    server.close();
-    server.closeAllConnections();
-  };
-  const abort = () => {
-    finish(new ChatGPTError("cancelled", "Sign-in was cancelled."));
-    close();
-  };
-  try {
-    try {
-      await new Promise<void>((resolve, reject) => {
-        server.once("error", reject);
-        server.listen({ port: selectedPort, host: "127.0.0.1" }, () => {
-          server.removeListener("error", reject);
-          server.on("error", () => finish(new ChatGPTError("callback_failed", "The local sign-in listener stopped. Please try again.")));
-          const address = server.address();
-          if (address && typeof address !== "string") selectedPort = address.port;
-          resolve();
-        });
-      });
-    } catch {
-      throw new ChatGPTError("callback_port_unavailable", "The sign-in port is unavailable. Close another copy of the app or choose a different redirect port.");
-    }
-    signal.addEventListener("abort", abort, { once: true });
-    signal.throwIfAborted();
-    return { result, close, redirectUri: `http://127.0.0.1:${selectedPort}${CALLBACK_PATH}` };
-  } catch (error) {
-    close();
-    throw error;
+/** The authorization result in a callback that carried the expected state (the listener checks that). */
+export function callbackResult(params: URLSearchParams, savedClientId: string | undefined): CallbackResult {
+  if (params.has("error")) throw apiError({ error: params.get("error") });
+  const code = params.get("code");
+  const returnedClientId = params.get("client_id");
+  const clientId = returnedClientId ?? savedClientId;
+  if (!code || params.getAll("code").length !== 1 || params.getAll("client_id").length > 1 ||
+      !clientId || !/^[a-zA-Z0-9_-]{1,200}$/.test(clientId) || clientId === "dynamic_agent_client" ||
+      (savedClientId !== undefined && returnedClientId !== null && savedClientId !== returnedClientId)) {
+    throw new ChatGPTError("registration_incomplete", "ChatGPT did not complete app registration. Please try signing in again.");
   }
+  return { code, clientId };
 }
 
 interface AuthorizationOptions {
@@ -268,7 +192,9 @@ export async function authorize(
   const verifier = randomValue();
   const provider = await discovery();
   signal.throwIfAborted();
-  const listener = await listenForCallback(config.redirectPort, state, previous?.clientId, signal);
+  const listener = await config.listenForCallback(config.redirectPort, state, signal);
+  // The callback can arrive while the browser-opening promise is still pending.
+  void listener.result.catch(() => undefined);
   try {
     const authorization = new URL(provider.authorization_endpoint);
     authorization.search = new URLSearchParams({
@@ -280,7 +206,7 @@ export async function authorize(
       state,
       nonce,
       code_challenge_method: "S256",
-      code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+      code_challenge: await sha256(verifier),
     }).toString();
     if (config.sendHostId) authorization.searchParams.set("ext_agent_host_id", hostId);
     if (!previous?.clientId) authorization.searchParams.set("agent_name_hint", config.appName);
@@ -288,8 +214,8 @@ export async function authorize(
     // process arguments. The verified subject check below binds saved profiles.
     if (previous?.identity?.email) authorization.searchParams.set("login_hint", previous.identity.email);
     if (options.reconsent) authorization.searchParams.set("prompt", "consent");
-    await (config.openBrowser ?? defaultOpenBrowser)(authorization.toString());
-    const callback = await listener.result;
+    await config.openBrowser(authorization.toString());
+    const callback = callbackResult(await listener.result, previous?.clientId);
     // A one-time code can fail or expire after registration succeeds. Retain the
     // issued client ID so a fresh authorization does not register another app.
     await options.onRegistration?.(callback.clientId);

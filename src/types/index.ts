@@ -192,6 +192,9 @@ export interface ChatGPTModelOption {
   displayName: string;
 }
 
+/** What Settings can ask of Sign in with ChatGPT (POST /api/chatgpt, or the tablet's own client). */
+export type ChatGPTAction = 'signIn' | 'cancel' | 'disconnect';
+
 /** What /api/chatgpt reports to the browser. Never carries tokens. */
 export interface ChatGPTStatus {
   status: 'disconnected' | 'connecting' | 'connected' | 'reauth_required';
@@ -390,7 +393,18 @@ export interface SaveFilePlugin {
  * encrypted with a key in the Android Keystore, and left out of Android's backups.
  */
 export interface DeviceKeysPlugin {
-  get(options: { name: DeviceKeyName }): Promise<{ value?: string }>;
-  set(options: { name: DeviceKeyName; value: string }): Promise<void>;
-  remove(options: { name: DeviceKeyName }): Promise<void>;
+  /** An API key, or 'chatgpt': the Sign in with ChatGPT connection (src/lib/chatgptDevice.ts). */
+  get(options: { name: DeviceKeyName | 'chatgpt' }): Promise<{ value?: string }>;
+  set(options: { name: DeviceKeyName | 'chatgpt'; value: string }): Promise<void>;
+  remove(options: { name: DeviceKeyName | 'chatgpt' }): Promise<void>;
+}
+
+/** The Android app's side of Sign in with ChatGPT (android/…/ChatGPTSignInPlugin.java). */
+export interface ChatGPTSignInPlugin {
+  /** Listens on 127.0.0.1:port for the callback carrying `state`. */
+  listen(options: { port: number; state: string }): Promise<{ redirectUri: string }>;
+  /** The matching callback's query string; rejects when the listener closes first. */
+  waitForCallback(): Promise<{ query: string }>;
+  close(): Promise<void>;
+  openBrowser(options: { url: string }): Promise<void>;
 }
