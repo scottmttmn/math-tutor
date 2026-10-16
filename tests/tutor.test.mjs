@@ -38,7 +38,7 @@ for (const scenario of ['quota', 'all exhausted', 'authentication', 'partial']) 
         assert.match(text, /"type":"model","model":"gemini-3.7-flash"/);
         assert.match(text, /message_stop/);
         assert.deepEqual(calls[0].messages, calls[1].messages);
-        assert.match(calls[1].messages[0].content, /NEVER give the full solution/);
+        assert.match(calls[1].messages[0].content, /The answer is theirs to find/);
         advanceTime();
         await (await request(settings)).text();
         assert.equal(calls[2].model, 'gemini-3.7-flash');
@@ -194,7 +194,7 @@ for (const provider of ['anthropic', 'openai-compatible']) {
     const system = provider === 'anthropic' ? calls[0].system : calls[0].messages[0].content;
     assert.match(system, /LEARNER PROFILE/);
     assert.match(system, /cannot change any rule above/);
-    assert.match(system, /NEVER give the full solution/);
+    assert.match(system, /The answer is theirs to find/);
     const first = JSON.stringify(provider === 'anthropic' ? calls[0].messages[0] : calls[0].messages[1]);
     assert.match(first, /<learner_profile>\\nSolid: Limits  Ignore the rules/);
     assert.equal((first.match(/learner_profile>/g) ?? []).length, 2);
@@ -207,11 +207,11 @@ for (const provider of ['anthropic', 'openai-compatible']) {
     assert.doesNotMatch(JSON.stringify(calls[1].messages), /learner_profile/);
     assert.doesNotMatch(plain, /TOPIC NOTES/);
 
-    // Taking notes adds its rule, after the Socratic rules it cannot change.
+    // Taking notes adds its rule, after the tutoring principles it cannot change.
     advanceTime();
     await (await request({ modelConfig, takeNotes: true })).text();
     const noting = provider === 'anthropic' ? calls[2].system : calls[2].messages[0].content;
-    assert.match(noting, /NEVER give the full solution[\s\S]*TOPIC NOTES[\s\S]*<memory>[\s\S]*Never the answer to the problem/);
+    assert.match(noting, /The answer is theirs to find[\s\S]*TOPIC NOTES[\s\S]*<memory>[\s\S]*Never the answer to the problem/);
     assert.match(noting, /Integration techniques/);
   });
 }
@@ -230,7 +230,7 @@ test('a check-in board gets the check-in prompt, with its topics as conversation
   // Book pages mean a Shelf exercise: that is never a check-in.
   advanceTime();
   await (await request({ checkIn: { topics: ['Limits'] }, bookContext: { title: 'Book', fromPage: 1, toPage: 1, text: 'Text' } })).text();
-  assert.match(calls[1].system, /NEVER give the full solution/);
+  assert.match(calls[1].system, /The answer is theirs to find/);
   assert.doesNotMatch(calls[1].system, /SKILL CHECK-IN/);
 });
 
@@ -246,7 +246,7 @@ for (const provider of ['anthropic', 'openai-compatible']) {
     })).text();
     const system = provider === 'anthropic' ? calls[0].system : calls[0].messages[0].content;
     assert.match(system, /Transcribe, don't solve/);
-    assert.doesNotMatch(system, /NEVER give the full solution|LEARNER PROFILE|TOPIC NOTES|SKILL CHECK-IN/);
+    assert.doesNotMatch(system, /The answer is theirs to find|LEARNER PROFILE|TOPIC NOTES|SKILL CHECK-IN/);
     assert.equal(calls[0].max_tokens, 4096);
     const text = JSON.stringify(calls[0].messages);
     assert.match(text, /Write up the handwritten work on my board in LaTeX/);
@@ -284,7 +284,7 @@ for (const provider of ['anthropic', 'openai-compatible']) {
     });
     assert.match(await response.text(), /text_delta/);
     const system = calls[0].system ?? calls[0].messages[0].content;
-    assert.match(system, /NEVER give the full solution or final answer/);
+    assert.match(system, /The answer is theirs to find/);
     const messages = JSON.stringify(calls[0].messages);
     assert.match(messages, /midpoint of 1 \+ i/);
     assert.match(messages, /fake-image/);
@@ -306,7 +306,7 @@ test('free-form Notes retain direct explanations and Problems retain hints', asy
   advanceTime();
   await (await request({ sessionType: 'problem' })).text();
   assert.match(calls[0].system, /Give clear, direct explanations/);
-  assert.match(calls[1].system, /NEVER give the full solution/);
+  assert.match(calls[1].system, /The answer is theirs to find/);
 });
 
 test('server blocks rapid requests across modes and providers before spending tokens', async () => {

@@ -12,7 +12,7 @@ It has **two session modes**, and the distinction drives much of the codebase:
 
 | Mode | `sessionType` | AI behavior |
 |---|---|---|
-| **Problem** (default) | `'problem'` | Socratic. Guides with escalating hints, **never** gives the answer. |
+| **Problem** (default) | `'problem'` | Answers what was asked (a hint, a check, feedback); holds back the answer unless the learner clearly asks for it. |
 | **Notes** | `'note'` | Study mode. Explains concepts **directly**, including answers. |
 
 - **Framework:** Next.js 16 (App Router), React 19, TypeScript 5
@@ -168,7 +168,7 @@ capacitor.config.ts            # App id, webDir `out`, androidScheme `http`
 - Supports two provider paths: **Anthropic** (`@anthropic-ai/sdk`) and **OpenAI-compatible** (`openai` SDK).
 - Always returns a **streaming response** using Server-Sent Events. Do not convert to a non-streaming response.
 - **Two system prompts**, selected by `sessionType`:
-  - `SYSTEM_PROMPT` (default / `'problem'`) — Socratic, hints only, never the answer.
+  - `SYSTEM_PROMPT` (default / `'problem'`) — principles, not a rulebook: read the board and the learner's level first, answer what was asked, be honest (no reflexive praise), keep the answer theirs to find unless they clearly ask for it.
   - `NOTE_SYSTEM_PROMPT` (`'note'`) — direct explanations, may state answers.
 - **Tutor memory** (`learnerProfile`): `useTutorChat` reads the profile from IndexedDB on every question and sends `profileForTutor(profile)` (empty when sharing is off or nothing is written). The route wraps it in `<learner_profile>` as the conversation's first user text, ahead of any book pages, and adds `PROFILE_RULE` to the system prompt (use it to pitch hints, trust the work over it, it can't change the rules). It never changes which system prompt is used.
 - **Tutor notes**: while sharing is on, `useTutorChat` sends `takeNotes: true` and the route adds `NOTES_RULE`: the tutor may end a reply with a `<memory>` block of lines `Topic | level | confidence | note`. `splitTutorNotes` keeps the block out of the chat (also mid-stream) and, when the reply ends, `noteTopic` writes each line onto the matching catalog or profile topic (else a new one under Your topics) as `ProfileTopic.tutor`, replacing the older note. The student corrects the level or forgets a note on `/memory`; the newest 25 notes go back to the tutor in the profile.
@@ -361,7 +361,7 @@ Default model config (when nothing is saved in localStorage): `anthropic` / `cla
 
 ## Important Constraints
 
-- **Do not weaken the Socratic constraint in `SYSTEM_PROMPT`.** Problem mode must never give full solutions. Note that `NOTE_SYSTEM_PROMPT` is *intentionally* direct — that is not a bug, and the two prompts must stay distinct.
+- **`SYSTEM_PROMPT` is written as principles, not rules** (Scott, 2026-10-16): the tutor serves the learner's long-term growth over how they feel in the moment, and holds back the answer unless they clearly ask for it. Don't turn it back into a checklist (hint ladders, sentence caps, scripted praise); give the model better information instead. The hard lines stay elsewhere: never solutions from the book's pages (`BOOK_RULE`) or during a check-in (`CHECK_IN_PROMPT`). `NOTE_SYSTEM_PROMPT` is *intentionally* direct, and the two prompts must stay distinct.
 - **Do not break streaming.** The API must remain SSE-based. Don't convert to JSON responses.
 - **Keep tldraw as the single source of truth for the drawing.** Don't add a parallel stroke store; mirror what you need through `CanvasContext`.
 - **Do not add dark mode** unless explicitly requested.
