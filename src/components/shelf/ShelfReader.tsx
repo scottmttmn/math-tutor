@@ -16,7 +16,8 @@ import { findPage, pageName } from '@/lib/reader';
 import { ensureExerciseBoard, isNote, markExercise, nextLabel, setReadFrom, solvedExercises, unmarkExercise } from '@/lib/shelf';
 import { paperFor } from '@/lib/paper';
 import { MAX_BOOK_PAGES, loadContents, loadSectionStarts, readBookPages, readingRange, type ContentsEntry, type ReadingRange, type SectionStart } from '@/lib/bookContext';
-import type { BookContext, InkStroke, InkTool, PageRect, ShelfDocument, ShelfExercise, ShelfMarkKind } from '@/types';
+import type { BookContext, ChatMessage, InkStroke, InkTool, PageRect, ShelfDocument, ShelfExercise, ShelfMarkKind } from '@/types';
+import { askQuestion } from '@/lib/tutorAsk';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
 import AppBar from '@/components/layout/AppBar';
@@ -28,6 +29,7 @@ import { saveBoardAs } from '@/lib/exportBoard';
 import PdfPage from './PdfPage';
 import BookList from './BookList';
 import BookSearch from './BookSearch';
+import PageAsk from './PageAsk';
 import { useBookSearch } from '@/hooks/useBookSearch';
 
 // Whether the list beside the page is hidden, so the page gets the width.
@@ -73,6 +75,11 @@ export default function ShelfReader() {
   const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
   const [marking, setMarking] = useState(false);
+  // Asking about the page: dragging the box, the box drawn with its question form, then the conversation.
+  const [askBox, setAskBox] = useState(false);
+  const [askDraft, setAskDraft] = useState<{ page: number; rect: PageRect } | null>(null);
+  const [askQuestionText, setAskQuestionText] = useState('');
+  const [pageAsk, setPageAsk] = useState<{ page: number; rect: PageRect; question: string; key: number } | null>(null);
   const [pendingMark, setPendingMark] = useState<PageRect | null>(null);
   const [markLabel, setMarkLabel] = useState('');
   const [markKind, setMarkKind] = useState<ShelfMarkKind>('exercise');
@@ -160,6 +167,9 @@ export default function ShelfReader() {
       setOpenId(exercise.id);
       setPage(exercise.page);
       setMarking(false);
+      setAskBox(false);
+      setAskDraft(null);
+      setPageAsk(null);
       setTutorOpen(false);
       writeUrl(source.document.id, exercise.id);
     } catch {
@@ -421,6 +431,48 @@ export default function ShelfReader() {
 
   // The page and its controls: beside an open board, or beside the list of exercises.
   const smallButton = 'min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40';
+  const stopAskBox = () => { setAskBox(false); setAskDraft(null); };
+  // A box drawn to ask about: send the question (empty asks for an explanation) and open the conversation.
+  const submitAsk = () => {
+    if (!askDraft) return;
+    setPageAsk({ page: askDraft.page, rect: askDraft.rect, question: askQuestionText.trim() || askQuestion('explain', 'note'), key: Date.now() });
+    setAskQuestionText('');
+    stopAskBox();
+    setPanelOpen(false);
+  };
+  const askForm = (
+    <form onSubmit={(event) => { event.preventDefault(); submitAsk(); }}
+      onKeyDown={(event) => { if (event.key === 'Escape') setAskDraft(null); }}
+      className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-white border border-indigo-700 shadow-md w-max max-w-[22rem]">
+      <input autoFocus aria-label="Your question about the box" value={askQuestionText} onChange={(event) => setAskQuestionText(event.target.value)}
+        placeholder="Your question, or leave it to have it explained"
+        className="w-64 min-h-11 px-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
+      <button type="submit" className="min-h-11 px-3 text-sm font-medium text-white bg-indigo-700 rounded-lg hover:bg-indigo-800">Ask</button>
+      <button type="button" onClick={() => setAskDraft(null)} className="min-h-11 px-3 text-sm text-gray-600 border border-gray-300 bg-white rounded-lg hover:bg-gray-50">Cancel</button>
+    </form>
+  );
+  // Keeps the conversation about a box as a note page on it, and opens its board.
+  const saveAskAsNote = async (chat: ChatMessage[]) => {
+    if (!pageAsk) return;
+    const { page: askPage, rect } = pageAsk;
+    try {
+      const { document: next, exercise: note } = await writeDocument(async (current) => {
+        const marked = await markExercise(pdf, current, askPage, rect, nextLabel(current, 'note'), 'note', chat.filter((message) => message.content.trim()));
+        updateDocument(marked.document);
+        return marked;
+      });
+      setPageAsk(null);
+      await openExercise(note, { pdf, document: next });
+    } catch {
+      setError('The note page could not be saved. Try again.');
+    }
+  };
+  const askPanel = pageAsk && (
+    <PageAsk key={pageAsk.key} pdf={pdf} page={pageAsk.page} rect={pageAsk.rect} question={pageAsk.question}
+      where={`${shelfDocument.title}, p. ${pageName(labels, pageAsk.page)}`}
+      onClose={() => setPageAsk(null)} onSave={saveAskAsNote} />
+  );
+
   const pageToolbar = (
     <>
       <button onClick={() => turn(-1)} disabled={page <= 1} aria-label="Previous page" className={smallButton}>‹ Prev</button>
@@ -444,7 +496,7 @@ export default function ShelfReader() {
       <div role="group" aria-label="Write on the page" className="flex items-center gap-1">
         {INK_TOOLS.map(({ tool, label }) => (
           <button key={tool} aria-pressed={inkTool === tool}
-            onClick={() => { setInkTool((current) => (current === tool ? null : tool)); setMarking(false); setPendingMark(null); }}
+            onClick={() => { setInkTool((current) => (current === tool ? null : tool)); setMarking(false); setPendingMark(null); stopAskBox(); }}
             className={`min-h-11 px-3 text-sm rounded-lg border border-gray-900 ${inkTool === tool ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 hover:bg-gray-100'}`}>{label}</button>
         ))}
         {inkTool && <button onClick={undoInk} disabled={!inkUndo[page]?.length} className={smallButton}>Undo</button>}
@@ -454,22 +506,33 @@ export default function ShelfReader() {
       {/* Reading full screen has its way out in the top bar; a board has its own Full screen. */}
       {!exercise && !fullScreen && <button onClick={toggleFullScreen} className={smallButton}>Full screen</button>}
       <button
-        onClick={() => { setMarking((on) => !on); setPendingMark(null); setInkTool(null); }}
+        onClick={() => { setMarking((on) => !on); setPendingMark(null); setInkTool(null); stopAskBox(); }}
         aria-pressed={marking}
         title="Box an exercise to work it, or a passage to take notes on"
         className={`min-h-11 px-3 text-sm font-medium rounded-lg border border-gray-900 ${marking ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 hover:bg-gray-100'}`}
       >
         {marking ? 'Done marking' : 'Mark'}
       </button>
+      {!exercise && (
+        <button
+          onClick={() => { if (askBox) stopAskBox(); else { setAskBox(true); setMarking(false); setPendingMark(null); setInkTool(null); } }}
+          aria-pressed={askBox}
+          title="Drag a box around part of the page to ask the tutor about it"
+          className={`min-h-11 px-3 text-sm font-medium rounded-lg border border-indigo-700 ${askBox ? 'bg-white text-indigo-700' : 'bg-indigo-700 text-white hover:bg-indigo-800'}`}
+        >
+          {askBox ? 'Cancel ask' : 'Ask'}
+        </button>
+      )}
     </>
   );
   const pageView = (
     <div ref={pageArea} className="p-3">
+      {askBox && <p className="mb-2 text-sm font-medium text-gray-900">{askDraft?.page === page ? 'Ask your question, or drag again to redraw the box.' : 'Drag a box around what you want to ask about.'}</p>}
       {marking && <p className="mb-2 text-sm font-medium text-gray-900">{pendingMark ? 'Choose Exercise or Note, name it and save, or drag again to redraw the box.' : 'Drag a box around an exercise, or around a passage to take notes on.'}</p>}
       <PdfPage
-        pdf={pdf} pageNumber={page} marks={marksOnPage} solvedIds={solvedIds} activeId={openId} marking={marking}
-        pending={pendingMark}
-        pendingForm={(
+        pdf={pdf} pageNumber={page} marks={marksOnPage} solvedIds={solvedIds} activeId={openId} marking={marking || askBox}
+        pending={askBox ? (askDraft?.page === page ? askDraft.rect : null) : marking ? pendingMark : pageAsk && pageAsk.page === page ? pageAsk.rect : null}
+        pendingForm={askBox ? askForm : marking && (
           <form onSubmit={(event) => { event.preventDefault(); void saveMark(); }}
             onKeyDown={(event) => { if (event.key === 'Escape') setPendingMark(null); }}
             className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-white border border-gray-900 shadow-md w-max max-w-[22rem]">
@@ -491,7 +554,11 @@ export default function ShelfReader() {
             <button type="button" onClick={() => setPendingMark(null)} className="min-h-11 px-3 text-sm text-gray-600 border border-gray-300 bg-white rounded-lg hover:bg-gray-50">Cancel</button>
           </form>
         )}
-        onMark={(rect) => { if (!pendingMark) setMarkLabel(nextLabel(shelfDocument, markKind)); setPendingMark(rect); }}
+        onMark={(rect) => {
+          if (askBox) { setAskDraft({ page, rect }); return; }
+          if (!pendingMark) setMarkLabel(nextLabel(shelfDocument, markKind));
+          setPendingMark(rect);
+        }}
         onOpenMark={(mark) => void openExercise(mark)}
         crop={crop}
         onTurn={turn}
@@ -645,7 +712,8 @@ export default function ShelfReader() {
           )}
           <div className="flex-1 min-h-0 relative">
             <div className="absolute inset-0 overflow-y-auto">{pageView}</div>
-            {barsShown && panelOpen && (
+            {askPanel && <div className="absolute inset-x-0 bottom-0 z-30 h-[55%] flex flex-col shadow-lg">{askPanel}</div>}
+            {barsShown && panelOpen && !askPanel && (
               <section aria-label="Book" className="absolute inset-y-0 left-0 z-20 w-[min(22rem,85%)] flex flex-col bg-white border-r border-gray-900 shadow-lg">
                 {listPanel}
               </section>
@@ -666,8 +734,8 @@ export default function ShelfReader() {
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto">{pageView}</div>
           </section>
-          <section className={`${pageOnly ? 'hidden' : 'flex'} flex-1 lg:flex-none lg:w-1/2 min-h-0 flex-col lg:border-l border-gray-200 bg-white`}>
-            {listPanel}
+          <section className={`${pageOnly && !askPanel ? 'hidden' : 'flex'} flex-1 lg:flex-none lg:w-1/2 min-h-0 flex-col lg:border-l border-gray-200 bg-white`}>
+            {askPanel || listPanel}
           </section>
         </div>
       )}

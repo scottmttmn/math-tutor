@@ -273,6 +273,43 @@ try {
   await at('p. 3 (5 of 5)');
   console.log('PASS search finds words by section and lights them on the page');
 
+  // Ask about the page: Ask, drag a box, ask; the tutor gets the box and explains it as on a note page.
+  // Closing drops the conversation; Save as note page keeps it on a new note page.
+  const asked = [];
+  const reply = (text) => [{ type: 'text_delta', content: text }, { type: 'message_stop' }].map((event) => `data: ${JSON.stringify(event)}\n\n`).join('');
+  await page.route('**/api/tutor', (route) => {
+    asked.push(route.request().postDataJSON());
+    return route.fulfill({ contentType: 'text/event-stream', body: reply(`Reply ${asked.length} about the box.`) });
+  });
+  const askAbout = async (question) => {
+    await page.getByRole('button', { name: 'Ask', exact: true }).click();
+    await markBox([0.1, 0.35], [0.8, 0.5]);
+    if (question) await page.getByLabel('Your question about the box').fill(question);
+    await page.getByRole('button', { name: 'Ask', exact: true }).last().click();
+  };
+  const askPanel = page.getByRole('region', { name: 'Tutor' });
+  await askAbout('Why do the angles add?');
+  await askPanel.getByText('Reply 1 about the box.').waitFor();
+  assert.equal(asked[0].sessionType, 'note');
+  assert.equal(asked[0].userQuestion, 'Why do the angles add?');
+  assert.ok(asked[0].problemImage?.length > 100, 'the box goes as the figure');
+  assert.equal(asked[0].canvasImage, '');
+  assert.equal(asked[0].bookContext, undefined);
+  await askPanel.getByRole('button', { name: 'Close tutor' }).click();
+  await page.getByRole('tab', { name: 'Your list' }).waitFor();
+  await askAbout('');
+  await askPanel.getByText('Reply 2 about the box.').waitFor({ timeout: 15000 });
+  assert.equal(asked[1].userQuestion, 'Can you explain this?');
+  await askPanel.getByRole('button', { name: 'Save as note page' }).click();
+  await page.getByRole('heading', { name: 'Note 2' }).waitFor();
+  await page.getByRole('button', { name: 'Tutor', exact: true }).click();
+  await page.getByText('Reply 2 about the box.').waitFor();
+  assert.equal(await page.getByText('Reply 1 about the box.').count(), 0, 'a closed question is not kept');
+  await page.getByRole('button', { name: 'Close board' }).click();
+  await functions.getByRole('button', { name: /^Note 2 p\. 3$/ }).waitFor();
+  await page.unroute('**/api/tutor');
+  console.log('PASS asking about a box on the page, closed or saved as a note page');
+
   // An upright tablet: an exercise opens on its board, which takes the screen with the exercise
   // put on it; the page button swaps the page in, and Back to board (or its mark) swaps back.
   await page.setViewportSize({ width: 800, height: 1100 });

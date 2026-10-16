@@ -4,7 +4,7 @@ import { deleteSession, deleteShelfDocument, loadSession, saveSession, saveShelf
 import { cropPage, imageFileToPng, openPdf, pageImage, renderCover } from '@/lib/pdf';
 import { discardRecoveryCopy } from '@/lib/sessionRecovery';
 import { setBoardToOpen } from '@/lib/currentBoard';
-import type { PageRect, Session, ShelfDocument, ShelfExercise, ShelfMarkKind } from '@/types';
+import type { ChatMessage, PageRect, Session, ShelfDocument, ShelfExercise, ShelfMarkKind } from '@/types';
 
 
 const isPdf = (file: File) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
@@ -53,25 +53,28 @@ export const exerciseStatement = (document: ShelfDocument, exercise: ShelfExerci
   `${exercise.label} · ${document.title}, p. ${exercise.page}`;
 
 /** Makes sure an exercise or note page has its board, creating it with a picture of the marked region if needed. */
-export async function ensureExerciseBoard(pdf: PDFDocumentProxy, document: ShelfDocument, exercise: ShelfExercise) {
+export async function ensureExerciseBoard(pdf: PDFDocumentProxy, document: ShelfDocument, exercise: ShelfExercise, chatHistory: ChatMessage[] = []) {
   const id = shelfSessionId(document.id, exercise.id);
   if (await loadSession(id)) return id;
   const now = Date.now();
   const problemStatement = exerciseStatement(document, exercise);
   await saveSession({
     id, title: problemStatement.slice(0, 50), problemStatement, problemImage: await cropPage(pdf, exercise.page, exercise.rect),
-    canvasStrokes: [], canvasDocument: null, canvasImageBlob: null, chatHistory: [], createdAt: now, updatedAt: now,
+    canvasStrokes: [], canvasDocument: null, canvasImageBlob: null, chatHistory, createdAt: now, updatedAt: now,
     isSolved: false, sessionType: isNote(exercise) ? 'note' : 'problem',
   });
   return id;
 }
 
-/** Marks a region of a page as an exercise or a note page, with its own board. Returns the updated document. */
-export async function markExercise(pdf: PDFDocumentProxy, document: ShelfDocument, page: number, rect: PageRect, label: string, kind: ShelfMarkKind = 'exercise'): Promise<{ document: ShelfDocument; exercise: ShelfExercise }> {
+/**
+ * Marks a region of a page as an exercise or a note page, with its own board (starting with
+ * `chatHistory`, as when a question about the page is saved as a note page). Returns the updated document.
+ */
+export async function markExercise(pdf: PDFDocumentProxy, document: ShelfDocument, page: number, rect: PageRect, label: string, kind: ShelfMarkKind = 'exercise', chatHistory: ChatMessage[] = []): Promise<{ document: ShelfDocument; exercise: ShelfExercise }> {
   const exercise: ShelfExercise = {
     id: uuidv4(), ...(kind === 'note' ? { kind } : {}), label: label.trim() || nextLabel(document, kind), page, rect, createdAt: Date.now(),
   };
-  await ensureExerciseBoard(pdf, document, exercise);
+  await ensureExerciseBoard(pdf, document, exercise, chatHistory);
   const updated = { ...document, exercises: [...document.exercises, exercise], updatedAt: Date.now() };
   await saveShelfDocument(updated);
   return { document: updated, exercise };
