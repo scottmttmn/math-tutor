@@ -29,7 +29,7 @@ It has **two session modes**, and the distinction drives much of the codebase:
 ```
 src/
 ├── app/
-│   ├── api/tutor/route.ts     # Streaming API endpoint (Anthropic + OpenAI-compat + ChatGPT plan)
+│   ├── api/tutor/route.ts     # Streaming API endpoint: server keys, request gate, ChatGPT plan (prompts and providers are in lib)
 │   ├── api/chatgpt/route.ts   # Sign in with ChatGPT: status, sign-in, sign-out
 │   ├── api/transcribe/route.ts# One image read by the ChatGPT plan (used by the handwriting test)
 │   ├── page.tsx               # Home: Continue, every problem and note, what's on the Shelf
@@ -105,8 +105,16 @@ src/
 │   ├── texWriteUp.ts          # TeX write-up: the .tex document, cleaning the reply, blocks/inline for the preview
 │   ├── modelConfig.ts         # localStorage get/set for ModelConfig
 │   ├── chatgpt.ts             # Server-only Sign in with ChatGPT client + OS-keychain token encryption
+│   ├── chatgptPlan.ts         # ChatGPT plan for server and tablet: Settings' status/actions, the tutor's reply stream
+│   ├── chatgptDevice.ts       # Android app: the Sign in with ChatGPT client on the tablet (loopback plugin, DeviceKeys, CapacitorHttp)
+│   ├── chatgptConnection.ts   # Settings' ChatGPT calls: /api/chatgpt, or in the Android build chatgptDevice.ts
 │   ├── siwc/                  # Vendored OpenAI Sign in with ChatGPT SDK (noncommercial license, see below)
 │   ├── constants.ts           # App-wide constants (ChatGPT usage URL, default plan model, RATE_LIMIT_MS)
+│   ├── tutorPrompt.ts         # The tutor's prompts and planTutorRequest (system prompt, preface, latest turn), shared by the route and the Android app
+│   ├── tutorProviders.ts      # Anthropic and OpenAI-compatible streams as the tutor's SSE events (server or, in the Android app, the WebView)
+│   ├── tutorRequest.ts        # requestTutor: POST /api/tutor, or in the Android build tutorDirect.ts
+│   ├── tutorDirect.ts         # Android app: calls the provider from the tablet with the key saved on it
+│   ├── deviceKeys.ts          # Android app: API keys kept by the native DeviceKeys plugin
 │   ├── tutorRequestGate.ts    # Server-side five-second / one-at-a-time tutor request gate
 │   ├── geminiFallback.ts      # Gemini Flash quota fallback chain
 │   ├── tutorContent.ts        # Splits tutor replies into text and LaTeX for KaTeX rendering
@@ -175,7 +183,7 @@ capacitor.config.ts            # App id, webDir `out`, androidScheme `http`
 - PDF.js is the **legacy** build: the modern one uses JavaScript (e.g. `Map.prototype.getOrInsertComputed`) that current Chromium and tablet web views lack. Its worker, fonts, cmaps and decoders are copied into `public/pdfjs` (gitignored) by `postinstall`, so nothing loads from a CDN.
 
 ### API Route (`/api/tutor`)
-- Supports two provider paths: **Anthropic** (`@anthropic-ai/sdk`) and **OpenAI-compatible** (`openai` SDK).
+- Supports two provider paths: **Anthropic** (`@anthropic-ai/sdk`) and **OpenAI-compatible** (`openai` SDK). The prompts and request assembly live in `src/lib/tutorPrompt.ts` (`planTutorRequest`) and the two provider streams in `src/lib/tutorProviders.ts`, so the Android app sends exactly what the route sends; change prompts there, not in the route.
 - Always returns a **streaming response** using Server-Sent Events. Do not convert to a non-streaming response.
 - **Two system prompts**, selected by `sessionType`:
   - `SYSTEM_PROMPT` (default / `'problem'`) — principles, not a rulebook: read the board and the learner's level first, answer what was asked, be honest (no reflexive praise), keep the answer theirs to find unless they clearly ask for it.
@@ -192,12 +200,13 @@ capacitor.config.ts            # App id, webDir `out`, androidScheme `http`
 - A third path, `provider: 'chatgpt'`, uses Sign in with ChatGPT: the Responses API with the student's OAuth token, billed to their ChatGPT plan instead of an API key. Images go as `input_image` parts.
 
 ### Sign in with ChatGPT
-- The SDK is **not on npm**; `src/lib/siwc/` is a copy of `packages/local/src` from `openai/sign-in-with-chatgpt-devkit`. Each file's header says what changed from upstream (keep doing that, the license requires it). Keep edits there minimal; app logic goes in `src/lib/chatgpt.ts`.
+- The SDK is **not on npm**; `src/lib/siwc/` is a copy of `packages/local/src` from `openai/sign-in-with-chatgpt-devkit`. Each file's header says what changed from upstream (keep doing that, the license requires it). Keep edits there minimal; app logic goes in `src/lib/chatgpt.ts` (server), `chatgptDevice.ts` (tablet) and `chatgptPlan.ts` (both). The SDK runs in Node and in the WebView: it uses Web Crypto, takes its `store`, `listenForCallback` and `openBrowser` from the config (Node's are `siwc/storage.ts` and `siwc/loopback.ts`), and `setRemoteFetch` swaps its fetch.
 - **License:** the SDK is under OpenAI's *Sign-in with ChatGPT DevKit Noncommercial License v1.0* (`src/lib/siwc/LICENSE`). Commercial use needs a separate agreement with OpenAI.
 - OAuth runs in the Next server process (which is on the student's machine) and opens their browser; the callback listens on `127.0.0.1:${CHATGPT_REDIRECT_PORT ?? 8791}`. The port is registered on first sign-in, so don't change it casually.
 - Tokens are saved under `~/.config/math-tutor/`, encrypted with a key kept in the OS keychain via `@napi-rs/keyring`. With no keychain (e.g. Linux without Secret Service, CI containers), sign-in reports that secure storage is unavailable; there is deliberately no plaintext fallback.
 - Tokens never reach the browser: `/api/chatgpt` returns only `ChatGPTStatus` (status, email, models).
 - There is no API for remaining plan quota. The ChatGPT path streams a `usage` SSE event (input/output tokens from `response.completed`) that is stored on the assistant `ChatMessage` and shown under it with a **Manage usage** link to `CHATGPT_USAGE_URL` (`chatgpt.com/settings/usage`, where students see per-app usage and set a weekly cap).
+- **On the tablet** (`chatgptDevice.ts`): the same flow runs in the WebView. `ChatGPTSignInPlugin.java` listens on `127.0.0.1:8791` (Host and path checked, one callback, then closed) and opens the browser; its done page links back with `com.scottmttmn.mathtutor://signed-in`. Requests to auth.openai.com go through `CapacitorHttp` (native, no CORS); api.openai.com stays in the WebView so replies stream. The connection is one value under `chatgpt` in DeviceKeys (Keystore-encrypted, out of every backup). Not yet tried against real OpenAI on a device.
 - Only for a locally run app. A hosted deployment would need OpenAI's waitlist approval and a different (non-loopback) flow.
 
 ### Session Persistence
@@ -262,11 +271,13 @@ npm run handwriting  # Handwriting test: transcribe tests/handwriting/wacom/<pag
 - The `android` job in the same workflow runs `npm run build:android`, `npm run test:android:e2e` (the bundle served the way the app serves it) and `./gradlew assembleDebug`, and attaches the APK to the run as `math-tutor-android`. The container used for cloud sessions can't download the Android SDK, so the APK is only built there.
 
 ### Android app
-- **Step 1 of the standalone tablet app** (agreed 2026-10-15: no Mac needed). Later steps: tutor calls from the device with keys stored on it, Sign in with ChatGPT on the device (127.0.0.1 loopback + Android Keystore; personal local use needs no OpenAI waitlist), then BOOX's pen SDK.
+- **The standalone tablet app** (agreed 2026-10-15: no Mac needed). Done: the bundle (step 1), tutor calls from the device (step 2) and Sign in with ChatGPT on the device (step 3; personal local use needs no OpenAI waitlist). Next: BOOX's pen SDK.
 - `BUILD_TARGET=android` makes `next.config.ts` export statically and only treat `.tsx` (and `.mdx`) files as pages, which leaves the API routes out. A one-entry `pageExtensions` (`['tsx']`) breaks the webpack build on Next 16.1.6.
 - Capacitor answers every extensionless path with `index.html` (Home). So in the Android build the root layout adds a script that sends a full load of `/board` to `/board.html` and puts `/board` back in the address before the app starts. Soft navigation is unaffected.
 - `androidScheme: 'http'`: `http://localhost` is still a secure context, and tldraw treats http origins as development (no license key).
-- With no server, `/api/tutor` answers with Home's HTML; `useTutorChat` and `useWriteUp` turn a non-SSE reply into `TUTOR_UNAVAILABLE`.
+- **Tutor on the device:** the Android build sets `NEXT_PUBLIC_TUTOR_DIRECT=1` (`next.config.ts`), so `requestTutor` runs `tutorDirect.ts` instead of POSTing to `/api/tutor`: `planTutorRequest` plus the provider stream from `tutorProviders.ts` with `dangerouslyAllowBrowser`, answered as the same SSE `Response`. Providers must accept browser requests from `http://localhost` (Anthropic, OpenAI and Gemini do; an Ollama server needs `OLLAMA_ORIGINS`; the manifest allows cleartext traffic so an `http://` Ollama on the local network is reachable). There is no server gate; the browser's `useRateLimit` spaces requests. The ChatGPT plan works there too, through `chatgptDevice.ts` (see Sign in with ChatGPT).
+- **API keys on the device:** Settings → Tutor shows a key field for the chosen provider (Anthropic, Gemini, or one for OpenAI/Groq/custom, as on the server). The native `DeviceKeys` plugin (`DeviceKeysPlugin.java`) encrypts each with an AES-GCM key in the Android Keystore and keeps it in `device_keys.xml`, which `res/xml/backup_rules.xml` and `data_extraction_rules.xml` leave out of Android's backups; the app's own backups never include keys. Settings shows only whether a key is saved.
+- The hooks still turn a non-SSE reply into `TUTOR_UNAVAILABLE`, and cancel the reply's reader when a request is abandoned (in the app that aborts the provider call).
 - The WebView can't save `blob:` downloads, so `downloadBlob` (`src/lib/backup.ts`) sends files to the app's own `SaveFile` plugin (`android/app/src/main/java/com/scottmttmn/mathtutor/SaveFilePlugin.java`, registered in `MainActivity`), which opens Android's Save dialog. It resolves `false` when the dialog is cancelled, and then the backup isn't recorded.
 
 ### Linting

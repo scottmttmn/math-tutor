@@ -1,6 +1,10 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { AsyncEntry } from '@napi-rs/keyring';
 import { createChatGPT } from '@/lib/siwc';
+import { listenForCallback, openBrowser } from '@/lib/siwc/loopback';
+import { ConnectionStore } from '@/lib/siwc/storage';
 import type { ChatGPTClient, CredentialEncryption } from '@/lib/siwc';
 
 const APP_NAME = 'Math Tutor';
@@ -70,7 +74,9 @@ export function getChatGPT(): ChatGPTClient {
     appName: APP_NAME,
     appId: APP_ID,
     redirectPort: REDIRECT_PORT,
-    credentialEncryption: createKeyringEncryption(),
+    store: new ConnectionStore(join(homedir(), '.config', APP_ID), createKeyringEncryption()),
+    listenForCallback,
+    openBrowser,
   });
   return globalForChatGPT.mathTutorChatGPT;
 }

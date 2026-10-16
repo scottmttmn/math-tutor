@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 and newer: back up and transfer the app's data except the encrypted API keys (DeviceKeysPlugin). -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="device_keys.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="device_keys.xml" />
+    </device-transfer>
+</data-extraction-rules>

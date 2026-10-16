@@ -1,6 +1,8 @@
-// From OpenAI's Sign in with ChatGPT DevKit
+// Modified for Math Tutor from OpenAI's Sign in with ChatGPT DevKit
 // (github.com/openai/sign-in-with-chatgpt-devkit @ f723814, packages/local/src).
-// Change: relative imports drop the .js suffix so Next's bundler resolves them.
+// Changes: relative imports drop the .js suffix so Next's bundler resolves them;
+// fetchRemote uses the fetch set with setRemoteFetch (global fetch by default), so the
+// Android app can send sign-in requests natively.
 // Licensed under the Sign-in with ChatGPT DevKit Noncommercial License v1.0; see ./LICENSE.
 
 import type { SessionError } from "./types";
@@ -167,11 +169,18 @@ export function requiresReauthentication(error: ChatGPTError): boolean {
   return ["invalid_grant", "invalid_refresh_token", "token_expired", "refresh_token_expired", "refresh_token_invalidated", "refresh_token_reused"].includes(error.code);
 }
 
+let remoteFetch: typeof fetch = (input, init) => fetch(input, init);
+
+/** Replaces the fetch every request to ChatGPT goes through. */
+export function setRemoteFetch(implementation: typeof fetch): void {
+  remoteFetch = implementation;
+}
+
 export async function fetchRemote(url: string, init: RequestInit = {}, timeoutMs = 30_000): Promise<Response> {
   const timeout = AbortSignal.timeout(timeoutMs);
   const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
   try {
-    return await fetch(url, { ...init, signal, redirect: "error" });
+    return await remoteFetch(url, { ...init, signal, redirect: "error" });
   } catch {
     if (init.signal?.aborted) throw new ChatGPTError("cancelled", "The request was cancelled.");
     throw new ChatGPTError("network_error", "Could not reach ChatGPT. Check your connection and try again.", true);

@@ -7,6 +7,7 @@ import { getModelConfig } from '@/lib/modelConfig';
 import { recordTutorUsage, tryStartTutorRequest, useRateLimit } from '@/hooks/useRateLimit';
 import { RATE_LIMIT_MS, TUTOR_UNAVAILABLE } from '@/lib/constants';
 import { loadProfile, saveProfile } from '@/lib/db';
+import { requestTutor } from '@/lib/tutorRequest';
 import { emptyProfile, noteTopic, profileForTutor, splitTutorNotes, type TopicObservation } from '@/lib/learnerProfile';
 import type { BookContext, ChatMessage, TutorStreamEvent } from '@/types';
 
@@ -59,16 +60,12 @@ export function useTutorChat(getBookContext?: () => Promise<BookContext | null>)
       const profile = await loadProfile().then((saved) => saved ?? emptyProfile()).catch(() => undefined);
       const learnerProfile = profileForTutor(profile) || undefined;
       const takeNotes = profile?.shareWithTutor === true;
-      const response = await fetch('/api/tutor', {
-        method: 'POST', signal: abort.signal,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          problemStatement, chatHistory: chatHistory.filter((message) => message.content.trim()),
-          canvasImage, modelConfig: getModelConfig(), userQuestion: userContent,
-          problemImage: problemImage ?? undefined, sessionType, bookContext, learnerProfile, takeNotes,
-          checkIn: checkIn ?? undefined,
-        }),
-      });
+      const response = await requestTutor({
+        problemStatement, chatHistory: chatHistory.filter((message) => message.content.trim()),
+        canvasImage, modelConfig: getModelConfig(), userQuestion: userContent,
+        problemImage: problemImage ?? undefined, sessionType, bookContext, learnerProfile, takeNotes,
+        checkIn: checkIn ?? undefined,
+      }, abort.signal);
       if (!response.ok) {
         if (response.status === 429) recordTutorUsage();
         throw new Error(await response.text() || response.statusText);
@@ -76,6 +73,8 @@ export function useTutorChat(getBookContext?: () => Promise<BookContext | null>)
       if (!response.headers.get('Content-Type')?.includes('text/event-stream')) throw new Error(TUTOR_UNAVAILABLE);
       const reader = response.body?.getReader();
       if (!reader) throw new Error('No response stream');
+      // Leaving the board stops the reply (in the Android app the stream is the provider call itself).
+      abort.signal.addEventListener('abort', () => { void reader.cancel().catch(() => undefined); });
       const decoder = new TextDecoder();
       let buffer = '';
       let hadError = false;
