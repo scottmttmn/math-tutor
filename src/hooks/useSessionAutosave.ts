@@ -55,7 +55,8 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
     // Read the editor directly: the context mirror lags a just-finished stroke.
     const document = canvasHandle.current?.getDocument() ?? s.canvasDocument;
     const hasDrawing = s.hasContent || Object.keys(document?.store ?? {}).some((key) => key.startsWith('shape:'));
-    if (!s.currentSessionId && !s.problemStatement.trim() && !s.problemImage && s.chatHistory.length === 0 && !hasDrawing) return null;
+    // A paper chosen on a new board counts as a change, so the choice isn't lost.
+    if (!s.currentSessionId && !s.problemStatement.trim() && !s.problemImage && s.chatHistory.length === 0 && !hasDrawing && !s.paper) return null;
     if (!s.currentSessionId && !draftId.current) draftId.current = uuidv4();
     if (!createdAt.current) createdAt.current = Date.now();
     return {
@@ -184,7 +185,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
   useEffect(() => {
     const timer = setTimeout(() => { void persist(); }, SAVE_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [state.problemStatement, state.problemImage, state.chatHistory, state.isSolved, state.sessionType, canvasDocument, persist]);
+  }, [state.problemStatement, state.problemImage, state.chatHistory, state.isSolved, state.sessionType, state.paper, canvasDocument, persist]);
 
   // A reload or closed tab can't wait for IndexedDB; keep a synchronous copy for the next load.
   const flush = useCallback(() => {

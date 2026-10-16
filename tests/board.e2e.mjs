@@ -172,19 +172,20 @@ try {
   await draw(260);
   const box = await board().boundingBox();
   await page.locator('[data-testid="tools.select"]').first().click();
-  // Drag from empty board toward the top-left: starting the drag there could land on tldraw's
-  // undo/redo panel (its size varies by machine) and select nothing. Delete turns on once it holds a shape.
-  await page.mouse.move(box.x + 220, box.y + 200); await page.mouse.down();
-  await page.mouse.move(box.x + 20, box.y + 60, { steps: 5 }); await page.mouse.up();
+  // Click the new stroke's middle (it runs straight from 300,80 to 440,160): a hit on the line
+  // selects it wherever tldraw's panels sit, which a drag box didn't. Delete turns on once it holds a shape.
+  await page.mouse.click(box.x + 370, box.y + 120);
   await page.waitForFunction(() => document.querySelector('[data-testid="quick-actions.delete"]')?.disabled === false);
   request = await askTutor('Problem hint.');
+  // Whether the stroke is still selected after asking, for the message if the size check fails.
+  const stillSelected = await page.evaluate(() => document.querySelector('[data-testid="quick-actions.delete"]')?.disabled === false);
   const image = imageOf(request);
   assert.ok(image?.startsWith('data:image/png;base64,'));
   const [width, height] = await page.evaluate(async (src) => {
     const image = new Image(); image.src = src; await image.decode(); return [image.naturalWidth, image.naturalHeight];
   }, image);
   // One ~140x80 stroke at 2x with padding, not both strokes and not the whole board.
-  assert.ok(width > 200 && width < 450 && height > 120 && height < 330, `unexpected image size ${width}x${height}`);
+  assert.ok(width > 200 && width < 450 && height > 120 && height < 330, `unexpected image size ${width}x${height} (still selected after asking: ${stillSelected})`);
   // The shared five-second limit: no countdown, and direct API bursts never reach the provider.
   assert.ok(await page.getByRole('button', { name: 'Ask tutor', exact: true }).isDisabled());
   assert.equal(await page.getByRole('button', { name: /^Wait / }).count(), 0);
