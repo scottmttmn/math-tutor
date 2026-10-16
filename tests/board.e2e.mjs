@@ -109,9 +109,26 @@ async function askTutor(reply) {
   await page.getByText(reply, { exact: true }).last().waitFor();
   return requests.at(-1);
 }
+const PROBLEM_PLACEHOLDER = "Type the math problem you're working on...";
+const TOPIC_PLACEHOLDER = "Topic or concept you're studying...";
+// The new board loads only once the open one is saved, and the editor's load wipes anything written
+// before it (in CI a stroke drawn right after New vanished). So wait until the box and Clear show the
+// empty board (which needs the open board to have something on it, or nothing tells them apart) and
+// the canvas has applied the load (`data-loading` gone).
 async function newBoard(type) {
+  const showing = () => page.evaluate(([problem, topic]) => ({
+    text: document.querySelector(`[placeholder="${problem}"], [placeholder="${topic}"]`)?.value ?? '',
+    drawn: [...document.querySelectorAll('button')].some((button) => button.textContent === 'Clear' && !button.disabled),
+  }), [PROBLEM_PLACEHOLDER, TOPIC_PLACEHOLDER]);
+  const before = await showing();
+  assert.ok(before.text || before.drawn, 'newBoard is called with something on the open board');
   await page.getByRole('button', { name: 'New', exact: true }).click();
   await page.getByRole('button', { name: type === 'note' ? /New Notes/ : 'New Problem' }).click();
+  await page.waitForFunction(([placeholder]) => {
+    const box = document.querySelector(`[placeholder="${placeholder}"]`);
+    const clear = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Clear');
+    return box?.value === '' && clear?.disabled === true && !document.querySelector('[data-loading]');
+  }, [type === 'note' ? TOPIC_PLACEHOLDER : PROBLEM_PLACEHOLDER]);
 }
 try {
   await openBrowser(); await waitProblem();
