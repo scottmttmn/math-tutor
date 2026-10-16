@@ -221,15 +221,18 @@ export default function ShelfReader() {
   useEffect(() => {
     const current = documentRef.current;
     if (!current || current.lastPage === page) return;
+    // Where that is, for the Shelf card: the printed page number and the last bookmark at or before it.
+    const lastPageLabel = pageName(labels, page);
+    const section = contents.reduce<ContentsEntry | undefined>((found, entry) => (entry.page <= page && (!found || entry.page >= found.page) ? entry : found), undefined);
     const timer = setTimeout(() => {
       void writeDocument(async (latest) => {
-        const next = { ...latest, lastPage: page, updatedAt: Date.now() };
+        const next = { ...latest, lastPage: page, lastPageLabel, lastSection: section?.title, updatedAt: Date.now() };
         await saveShelfDocument(next);
         documentRef.current = next;
       }).catch(() => { /* Only the reading position is lost. */ });
     }, PAGE_SAVE_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [page, writeDocument]);
+  }, [page, labels, contents, writeDocument]);
 
   // Keep the marks' ✓ in step with the open board's Mark Solved.
   useEffect(() => {

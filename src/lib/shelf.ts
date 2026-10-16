@@ -1,14 +1,27 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { deleteSession, deleteShelfDocument, loadSession, saveSession, saveShelfDocument, shelfSessionId } from '@/lib/db';
+import { deleteSession, deleteShelfDocument, loadSession, loadShelfDocument, saveSession, saveShelfDocument, shelfSessionId } from '@/lib/db';
 import { cropPage, imageFileToPng, openPdf, pageImage, renderCover } from '@/lib/pdf';
 import { discardRecoveryCopy } from '@/lib/sessionRecovery';
 import { setBoardToOpen } from '@/lib/currentBoard';
-import type { ChatMessage, PageRect, Session, ShelfDocument, ShelfExercise, ShelfMarkKind } from '@/types';
+import type { ChatMessage, PageRect, Session, ShelfDocument, ShelfExercise, ShelfKind, ShelfMarkKind } from '@/types';
 
 
 const isPdf = (file: File) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
 const baseName = (name: string) => name.replace(/\.[^.]+$/, '').trim() || 'Untitled';
+
+/** The kinds a Shelf PDF can be, as the card names them. */
+export const SHELF_KINDS: { kind: ShelfKind; label: string }[] = [
+  { kind: 'textbook', label: 'Textbook' }, { kind: 'problem-set', label: 'Problem set' }, { kind: 'handout', label: 'Handout' },
+];
+
+/** Sets what a Shelf PDF is, on the stored record (the reader may have moved on since it was listed). */
+export async function setShelfKind(document: ShelfDocument, kind: ShelfKind): Promise<ShelfDocument> {
+  const latest = (await loadShelfDocument(document.id)) ?? document;
+  const updated = { ...latest, kind, updatedAt: Date.now() };
+  await saveShelfDocument(updated);
+  return updated;
+}
 
 /** Puts a PDF on the Shelf. Throws when the file can't be read as a PDF. */
 export async function addToShelf(file: File): Promise<ShelfDocument> {

@@ -37,7 +37,7 @@ Done (reading, step 1 of the [Shelf design](https://claude.ai/artifact/TXw8zCKZb
 - Not yet: **Open as note** (moving margin ink onto a new note page); the paper choice for new boards is per kind, not a setting.
 - Done: **Search** in the book's list (results by section with a line of context; the words are lit on the page).
 - Done: **Ask about the page** (Ask, drag a box, ask; the tutor explains it directly; Save as note page keeps it).
-- Next: Shelf cards with kind, progress and where you left off.
+- Done: **Shelf cards** with kind, solved progress and where you left off. The Shelf reading design is built; still open: Open as note, saving a PDF with your markup.
 - Still to do: no zoom yet; marks can't be moved or renamed after saving.
 
 ### 4. Export and auto-backup
