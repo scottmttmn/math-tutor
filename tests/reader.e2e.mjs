@@ -247,6 +247,32 @@ try {
   // Later marks keep the last kind chosen; the tablet check below marks an exercise.
   console.log('PASS Your list; a note page opens on a lined Notes board, and its paper can change');
 
+  // Search: every place the words are, by section, with the line around them; a result opens its
+  // page with the words lit, and Clear puts them out.
+  await page.getByRole('tab', { name: 'Search' }).click();
+  await page.getByLabel('Search this book').fill('ADDS their   angles');
+  await at('5 matches on 5 pages.');
+  const polar = page.getByRole('region', { name: '1.1 Polar form' });
+  const result = polar.getByRole('button', { name: /their lengths and adds their angles\. p\. 2$/ });
+  assert.equal(await result.locator('mark').innerText(), 'adds their angles');
+  await result.click();
+  await at('p. 2 (4 of 5)');
+  const hit = page.getByTestId('search-hit');
+  await hit.waitFor();
+  assert.equal(await hit.count(), 1);
+  const hitBox = await hit.boundingBox();
+  const pageBox = await page.getByTestId('page-overlay').boundingBox();
+  assert.ok(hitBox.width > 40 && hitBox.x > pageBox.x + pageBox.width * 0.3 && hitBox.y < pageBox.y + pageBox.height * 0.5,
+    `the words are lit where they are printed (${JSON.stringify(hitBox)} on ${JSON.stringify(pageBox)})`);
+  await page.getByLabel('Search this book').fill('quaternion');
+  await at('Not found in this book.');
+  await page.getByRole('button', { name: 'Clear', exact: true }).click();
+  assert.equal(await hit.count(), 0);
+  await page.getByRole('tab', { name: 'Your list' }).click();
+  await page.getByRole('button', { name: 'Next page' }).click();
+  await at('p. 3 (5 of 5)');
+  console.log('PASS search finds words by section and lights them on the page');
+
   // An upright tablet: an exercise opens on its board, which takes the screen with the exercise
   // put on it; the page button swaps the page in, and Back to board (or its mark) swaps back.
   await page.setViewportSize({ width: 800, height: 1100 });

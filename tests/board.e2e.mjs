@@ -80,7 +80,10 @@ async function draw(offset = 0) {
   await board().waitFor();
   const box = await board().boundingBox();
   await page.locator('[data-testid="tools.draw"]').first().click();
-  await page.mouse.move(box.x + 40 + offset, box.y + 80);
+  // Arrive at the start in steps, so tldraw has the pointer there before it goes down (in CI a
+  // stroke once began from where the pointer had been).
+  await page.mouse.move(box.x + 40 + offset, box.y + 80, { steps: 4 });
+  await page.waitForTimeout(50);
   await page.mouse.down();
   await page.mouse.move(box.x + 180 + offset, box.y + 160, { steps: 12 });
   await page.mouse.up();
@@ -179,9 +182,9 @@ try {
   const drawn = (await shapesShown()).filter((shape) => !earlier.has(shape.id));
   assert.equal(drawn.length, 1, `one new stroke (${JSON.stringify(await shapesShown())}, board ${JSON.stringify(await board().boundingBox())})`);
   await page.locator('[data-testid="tools.select"]').first().click();
-  // Click the middle of the new stroke where it is on screen (a straight diagonal line passes
-  // through the middle of its box), so the selection doesn't depend on the board's camera or panels.
-  await page.mouse.click(drawn[0].x + drawn[0].width / 2, drawn[0].y + drawn[0].height / 2);
+  // Click the new stroke where it is on screen, so the selection doesn't depend on the board's camera
+  // or panels: just short of where it ends, the box's lower right corner (it runs down and right).
+  await page.mouse.click(drawn[0].x + drawn[0].width - 4, drawn[0].y + drawn[0].height - 2.5);
   await page.waitForFunction(() => document.querySelector('[data-testid="quick-actions.delete"]')?.disabled === false, null, { timeout: 5000 })
     .catch(async () => assert.fail(`the stroke wasn't selected (${JSON.stringify(drawn[0])}; shapes ${JSON.stringify(await shapesShown())})`));
   request = await askTutor('Problem hint.');

@@ -13,16 +13,36 @@ export type BookListRow =
   | { kind: 'ink'; pages: number[] };
 
 /** A section of the book (a bookmark, or a run of pages) and what the student made in it. */
-export interface BookListSection {
+export interface BookListSection extends BookSection {
+  /** Exercises marked in it, and how many of those are solved (note pages aren't counted). */
+  exercises: number;
+  solved: number;
+  rows: BookListRow[];
+}
+
+/** Where a page sits in the book: the section it belongs to, as Your list and search group it. */
+export interface BookSection {
   key: string;
   /** The bookmark's title; null for a run of pages without one (shown as "Pages from–to"). */
   title: string | null;
   from: number;
   to: number;
-  /** Exercises marked in it, and how many of those are solved (note pages aren't counted). */
-  exercises: number;
-  solved: number;
-  rows: BookListRow[];
+}
+
+/**
+ * The section a page belongs to: the last bookmark at or before it (pages ahead of the first
+ * bookmark make one untitled section); without bookmarks, its run of PAGES_PER_GROUP pages.
+ */
+export function sectionAt(contents: ContentsEntry[], page: number, pageCount: number): BookSection {
+  if (!contents.length) {
+    const from = Math.floor((page - 1) / PAGES_PER_GROUP) * PAGES_PER_GROUP + 1;
+    return { key: `pages-${from}`, title: null, from, to: Math.min(pageCount, from + PAGES_PER_GROUP - 1) };
+  }
+  let found = -1;
+  contents.forEach((entry, index) => { if (entry.page <= page && (found < 0 || entry.page >= contents[found].page)) found = index; });
+  if (found < 0) return { key: 'before', title: null, from: 1, to: Math.max(1, contents[0].page - 1) };
+  const next = contents.find((entry) => entry.page > contents[found].page);
+  return { key: `section-${found}`, title: contents[found].title, from: contents[found].page, to: next ? Math.max(contents[found].page, next.page - 1) : pageCount };
 }
 
 // The top of a stroke, so a highlight sorts among the marks by where it is on the page.
@@ -33,23 +53,12 @@ const strokeTop = (stroke: InkStroke) => {
 };
 
 /**
- * Everything made in a book, by section, in page order: marks and highlights each get a row, and a
- * section's pen ink gets one row listing its pages. Only sections with something in them are listed.
- * Sections are the bookmarks (an item belongs to the last one at or before its page); without
- * bookmarks, runs of PAGES_PER_GROUP pages.
+ * Everything made in a book, by section (`sectionAt`), in page order: marks and highlights each get a
+ * row, and a section's pen ink gets one row listing its pages. Only sections with something in them
+ * are listed.
  */
 export function bookList(marks: ShelfExercise[], solvedIds: string[], ink: Record<number, InkStroke[]>, contents: ContentsEntry[], pageCount: number): BookListSection[] {
-  const sectionOf = (page: number): Omit<BookListSection, 'exercises' | 'solved' | 'rows'> => {
-    if (!contents.length) {
-      const from = Math.floor((page - 1) / PAGES_PER_GROUP) * PAGES_PER_GROUP + 1;
-      return { key: `pages-${from}`, title: null, from, to: Math.min(pageCount, from + PAGES_PER_GROUP - 1) };
-    }
-    let found = -1;
-    contents.forEach((entry, index) => { if (entry.page <= page && (found < 0 || entry.page >= contents[found].page)) found = index; });
-    if (found < 0) return { key: 'before', title: null, from: 1, to: Math.max(1, contents[0].page - 1) };
-    const next = contents.find((entry) => entry.page > contents[found].page);
-    return { key: `section-${found}`, title: contents[found].title, from: contents[found].page, to: next ? Math.max(contents[found].page, next.page - 1) : pageCount };
-  };
+  const sectionOf = (page: number) => sectionAt(contents, page, pageCount);
 
   type Placed = { page: number; y: number; row: BookListRow };
   const sections = new Map<string, BookListSection & { placed: Placed[]; inkPages: number[] }>();
