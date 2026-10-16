@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import load from './load-typescript.mjs';
 
-const { toHistoryItem, queryHistory } = load('src/lib/history.ts');
+const { toHistoryItem, queryHistory, libraryView } = load('src/lib/history.ts');
 
 const session = (overrides) => ({
   id: 'a', title: 'Untitled', problemStatement: '', problemImage: null, canvasStrokes: [], canvasDocument: null,
@@ -62,4 +62,29 @@ test('favorites: a starred board shows as one, and a starred Shelf exercise show
   assert.equal(toHistoryItem(session({ id: 'shelf:doc1:ex1' }), ids).favorite, true);
   const items = [toHistoryItem(session({ id: 'board-1' }), ids), toHistoryItem(session({ id: 'board-2' }), ids)];
   assert.deepEqual(queryHistory(items, { search: '', show: 'favorites', sort: 'updated' }).map((item) => item.id), ['board-1']);
+});
+
+test('a Shelf entry knows its book and mark; a book lists one only when untouched ones are asked for', () => {
+  const item = toHistoryItem(session({ id: 'shelf:doc1:ex1' }), new Set(), { untouched: true });
+  assert.equal(item.bookId, 'doc1');
+  assert.equal(item.exerciseId, 'ex1');
+  assert.equal(toHistoryItem(session({ id: 'board-1' })).bookId, null);
+});
+
+test('Home browses books and free boards; a search or filter reaches into books', () => {
+  const book = (id, title, createdAt, updatedAt) => ({ id, title, createdAt, updatedAt, exercises: [] });
+  const books = [book('doc1', 'Calculus', 1, 1), book('doc2', 'Linear algebra', 2, 2)];
+  const items = [
+    session({ id: 'board-1', title: 'Expand (x + 1)^2', updatedAt: 3 }),
+    session({ id: 'shelf:doc1:ex1', title: 'Exercise 1 · Calculus, p. 4', isSolved: true, updatedAt: 9 }),
+  ].map((entry) => toHistoryItem(entry));
+  const view = (query) => {
+    const { books: shown, boards } = libraryView(items, books, { search: '', show: 'all', sort: 'updated', ...query });
+    return { books: shown.map((entry) => entry.id), boards: boards.map((entry) => entry.id) };
+  };
+  // Calculus was last worked on through its exercise.
+  assert.deepEqual(view({}), { books: ['doc1', 'doc2'], boards: ['board-1'] });
+  assert.deepEqual(view({ sort: 'created' }).books, ['doc2', 'doc1']);
+  assert.deepEqual(view({ search: 'calculus' }), { books: ['doc1'], boards: ['shelf:doc1:ex1'] });
+  assert.deepEqual(view({ show: 'solved' }), { books: [], boards: ['shelf:doc1:ex1'] });
 });

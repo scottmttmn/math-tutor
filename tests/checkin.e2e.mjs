@@ -95,7 +95,7 @@ try {
 
   // Home lists the check-in board.
   await page.getByRole('link', { name: 'Home' }).click();
-  await page.getByRole('heading', { name: 'Problems and notes' }).waitFor();
+  await page.getByRole('heading', { name: 'Library', exact: true }).waitFor();
   await page.getByText('Skill check-in: Limits, Integrals').first().waitFor();
 
   await page.goto(`${origin}/memory`);

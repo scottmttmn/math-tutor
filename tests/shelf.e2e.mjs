@@ -48,18 +48,24 @@ const exerciseHeading = (name) => page.getByRole('heading', { name, exact: true 
 try {
   await page.goto(`${origin}/`);
   await page.evaluate((config) => localStorage.setItem('mathTutor_modelConfig', JSON.stringify(config)), model);
-  // The app opens on Home; the Shelf is in the bar, empty until a PDF is added.
-  await page.getByRole('heading', { name: 'Problems and notes' }).waitFor();
-  await page.getByText('Nothing on your Shelf yet.', { exact: false }).waitFor();
-  await page.getByRole('link', { name: 'Shelf', exact: true }).click();
-  await page.getByText('No PDFs yet.').waitFor();
+  // The app opens on Home, the library, empty until something is added; there is no Shelf tab.
+  await page.getByRole('heading', { name: 'Library', exact: true }).waitFor();
+  await page.getByText('Nothing here yet.', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('link', { name: 'Shelf', exact: true }).count(), 0);
+  // An old link to the Shelf lands on Home.
+  await page.goto(`${origin}/shelf`);
+  await page.waitForURL(`${origin}/`);
+  await page.getByRole('heading', { name: 'Library', exact: true }).waitFor();
 
-  // Add a PDF; it lands on the Shelf with its page count.
-  await page.locator('input[aria-label="Add PDF"]').setInputFiles(pdfPath);
-  const card = page.getByRole('link', { name: 'Open Algebra drills' });
-  await card.waitFor();
-  assert.match(await page.locator('li', { has: card }).innerText(), /2 pages/);
-  await card.click();
+  // + New → Add a PDF opens the new book's page, with its page count; Start reading opens the reader.
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByRole('button', { name: 'Add a PDF…' }).waitFor();
+  await page.locator('input[aria-label="Add a PDF"]').setInputFiles(pdfPath);
+  await page.getByRole('heading', { name: 'Algebra drills', exact: true }).waitFor();
+  assert.match(new URL(page.url()).pathname, /^\/book$/);
+  await page.getByText(/2 pages/).waitFor();
+  await page.getByText(/^None yet\./).waitFor();
+  await page.getByRole('link', { name: 'Start reading' }).click();
   await page.getByText('Page 1 of 2').waitFor();
 
   // Mark an exercise: drag a box on the page, keep the suggested name, and its board opens.
@@ -200,7 +206,8 @@ try {
   console.log('PASS the problem goes on the board; full screen board');
 
 
-  // History lists the exercise with work in it (not the empty one) and opens it beside its page.
+  // The book's page lists both of its boards; Home lists the book, and a search there finds the
+  // exercise with work in it (not the empty one), opening it beside its page.
   await page.getByRole('button', { name: 'Close board' }).click();
   await page.getByRole('tab', { name: 'Your list', exact: true }).waitFor();
   // The list beside the page can be hidden, so the page gets the width; it stays hidden after a reload.
@@ -212,11 +219,20 @@ try {
   await page.reload();
   await page.getByRole('button', { name: 'Your list', exact: true }).click();
   await page.getByRole('tab', { name: 'Your list', exact: true }).waitFor();
+  await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Algebra drills' }).waitFor();
+  await page.getByRole('link', { name: 'Algebra drills', exact: true }).click();
+  const bookBoards = page.locator('[aria-labelledby="book-boards-heading"]');
+  await bookBoards.getByRole('button', { name: /^Open Exercise 1/ }).waitFor();
+  await bookBoards.getByRole('button', { name: /^Open Problem 3/ }).waitFor();
+  await page.getByText(/1 of 2 solved/).waitFor();
   await page.getByRole('link', { name: 'Home', exact: true }).click();
+  await page.locator('[aria-labelledby="books-heading"]').getByRole('link', { name: 'Open Algebra drills' }).waitFor();
+  assert.equal(await page.locator('[aria-labelledby="boards-heading"]').count(), 0, 'a book’s boards are on its page');
+  await page.getByRole('searchbox', { name: 'Search books, problems and notes' }).fill('exercise');
   const history = page.locator('[aria-labelledby="boards-heading"]');
   await history.getByRole('button', { name: /^Open Exercise 1/ }).waitFor();
   assert.equal(await history.getByRole('button', { name: /^Open Problem 3/ }).count(), 0);
-  assert.match(await history.locator('li').first().innerText(), /Shelf/);
+  assert.match(await history.locator('li').first().innerText(), /Algebra drills/);
   await history.getByRole('button', { name: /^Open Exercise 1/ }).click();
   await exerciseHeading('Exercise 1').waitFor();
   await page.getByText('Page 1 of 2').waitFor();
@@ -227,14 +243,16 @@ try {
   await page.getByRole('tab', { name: 'Your list', exact: true }).waitFor();
   // The board closes before the mark's removal is written, so wait for the mark to go.
   await page.getByRole('button', { name: 'Open Exercise 1' }).waitFor({ state: 'detached' });
-  console.log('PASS History opens Shelf exercises; removing a mark removes its board');
+  console.log('PASS a book’s page lists its boards; a search on Home finds them; removing a mark removes its board');
 
-  // A single problem goes straight onto a new board as its problem image.
-  await page.goto(`${origin}/shelf`);
-  // Any picture will do as the problem; take one of the Shelf header.
+  // A new problem takes a picture of itself as its figure.
+  await page.goto(`${origin}/`);
+  // Any picture will do as the problem; take one of the page's top.
   await writeFile(imagePath, await page.screenshot({ clip: { x: 0, y: 0, width: 240, height: 80 } }));
-  await page.locator('input[aria-label="Single problem"]').setInputFiles(imagePath);
-  await page.waitForURL(`${origin}/board`, { waitUntil: 'commit' });
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByRole('button', { name: 'New Problem' }).click();
+  await page.waitForURL(`${origin}/board`);
+  await page.locator('input[aria-label="Problem picture"]').setInputFiles(imagePath);
   await page.getByAltText(/problem/i).first().waitFor();
   // Its picture can go on the board, and the board can take the whole screen.
   await page.locator('.tl-canvas').waitFor();
@@ -245,11 +263,11 @@ try {
   assert.equal(await page.getByAltText(/problem/i).count(), 0, 'the problem header is hidden');
   await page.getByRole('button', { name: 'Exit full screen' }).click();
   await page.getByRole('link', { name: 'Home' }).waitFor();
-  console.log('PASS a single problem opens on a new board; it goes on the board; full screen main board');
+  console.log('PASS a new problem takes a picture; it goes on the board; full screen main board');
 
-  // The Shelf card: asks what the PDF is until told, then shows it, with solved progress and where
-  // you left off; the kind can be changed from the menu.
-  await page.goto(`${origin}/shelf`);
+  // The book's card on Home: asks what the PDF is until told, then shows it, with solved progress and
+  // where you left off; the kind can be changed from the menu.
+  await page.goto(`${origin}/`);
   const kinds = page.getByRole('group', { name: 'What Algebra drills is' });
   await kinds.getByRole('button', { name: 'Problem set' }).click();
   await kinds.waitFor({ state: 'hidden' });
@@ -262,13 +280,13 @@ try {
   await page.getByRole('menuitem', { name: 'Change kind' }).click();
   await kinds.getByRole('button', { name: 'Textbook' }).click();
   await page.getByText('Textbook', { exact: true }).waitFor();
-  console.log('PASS the Shelf card shows its kind, solved progress and where you left off');
+  console.log('PASS the book card shows its kind, solved progress and where you left off');
 
   // Removing the PDF takes its remaining boards with it.
   await page.getByRole('button', { name: 'More for Algebra drills' }).click();
   await page.getByRole('menuitem', { name: 'Remove' }).click();
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
-  await page.getByText('No PDFs yet.').waitFor();
+  await page.getByRole('link', { name: 'Open Algebra drills' }).waitFor({ state: 'detached' });
   const shelfSessions = await page.evaluate(() => new Promise((resolve) => {
     const open = indexedDB.open('math-tutor');
     open.onsuccess = () => {

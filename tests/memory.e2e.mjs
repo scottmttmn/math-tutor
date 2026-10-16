@@ -171,7 +171,7 @@ try {
 
   // Home no longer offers it once something is written.
   await page.goto(`${origin}/`);
-  await page.getByRole('heading', { name: 'Problems and notes' }).waitFor();
+  await page.getByRole('heading', { name: 'Library', exact: true }).waitFor();
   assert.equal(await page.getByRole('link', { name: /Tell the tutor what you know/ }).count(), 0);
   console.log('PASS sharing off sends nothing; Home stops offering it');
 

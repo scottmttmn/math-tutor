@@ -5,15 +5,16 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { deleteSession, listSessions, listShelf, loadProfile, renameSession } from '@/lib/db';
 import { isProfileEmpty } from '@/lib/learnerProfile';
-import { queryHistory, toHistoryItem } from '@/lib/history';
+import { libraryView, queryHistory, toHistoryItem } from '@/lib/history';
+import { removeFromShelf, setShelfKind } from '@/lib/shelf';
+import { useAddPdfs } from '@/hooks/useAddPdfs';
 import { discardRecoveryCopy } from '@/lib/sessionRecovery';
 import { boardToOpen, setBoardToOpen } from '@/lib/currentBoard';
 import AppBar from '@/components/layout/AppBar';
-import BlobImage from '@/components/common/BlobImage';
-import MoreMenu from '@/components/common/MoreMenu';
-import { FavoriteStar, KindIcon, ShelfIcon, SolvedCheck, TutorIcon } from '@/components/common/Icons';
-import { ShelfCover } from '@/components/shelf/Shelf';
-import type { HistoryItem, HistoryShow, HistorySort, ShelfDocument } from '@/types';
+import { TutorIcon } from '@/components/common/Icons';
+import BoardCard, { KindLine, Thumbnail } from '@/components/home/BoardCard';
+import { BookCard } from '@/components/shelf/BookCard';
+import type { HistoryItem, HistoryShow, HistorySort, ShelfDocument, ShelfKind } from '@/types';
 
 const SHOW_OPTIONS: { value: HistoryShow; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -24,9 +25,6 @@ const SHOW_OPTIONS: { value: HistoryShow; label: string }[] = [
   { value: 'favorites', label: 'Favorites' },
 ];
 
-// The Shelf row on Home shows the most recently added PDFs; the Shelf has the rest.
-const SHELF_PREVIEW = 3;
-
 const loadItems = async () => {
   // Favorites live in the tutor memory; without it, nothing shows as starred.
   const [sessions, profile] = await Promise.all([listSessions(), loadProfile().catch(() => undefined)]);
@@ -35,36 +33,38 @@ const loadItems = async () => {
 };
 
 /**
- * The page the app opens on: the board last worked on, every problem and note (free boards,
- * Shelf exercises) as a searchable grid, and what's on the Shelf.
+ * The page the app opens on, the library: the board last worked on, then the books (Shelf PDFs) and
+ * free-form boards, searchable. A book's own boards are on its page, and a search reaches them here.
  */
 export default function Home() {
   const router = useRouter();
   const [items, setItems] = useState<HistoryItem[] | null>(null);
-  const [shelf, setShelf] = useState<ShelfDocument[]>([]);
+  const [books, setBooks] = useState<ShelfDocument[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [search, setSearch] = useState('');
   const [show, setShow] = useState<HistoryShow>('all');
   const [sort, setSort] = useState<HistorySort>('updated');
+  const [dragging, setDragging] = useState(false);
+  const [bookError, setBookError] = useState('');
+  const pdfs = useAddPdfs();
   // Until the student tells the tutor about themselves, Home offers it once, quietly.
   const [memoryEmpty, setMemoryEmpty] = useState(false);
 
   useEffect(() => {
     let active = true;
-    loadItems()
-      .then((loaded) => { if (active) setItems(loaded); })
+    Promise.all([loadItems(), listShelf()])
+      .then(([loaded, shelf]) => { if (active) { setItems(loaded); setBooks(shelf); } })
       .catch(() => { if (active) setFailed(true); });
-    listShelf()
-      .then((documents) => { if (active) setShelf(documents.sort((a, b) => b.createdAt - a.createdAt)); })
-      .catch(() => { /* The Shelf page reports its own errors. */ });
     loadProfile()
       .then((profile) => { if (active) setMemoryEmpty(!profile || isProfileEmpty(profile)); })
       .catch(() => { /* Not worth an error here. */ });
     return () => { active = false; };
   }, []);
 
-  const shown = useMemo(() => queryHistory(items ?? [], { search, show, sort }), [items, search, show, sort]);
+  const view = useMemo(() => libraryView(items ?? [], books ?? [], { search, show, sort }), [items, books, search, show, sort]);
   const latest = useMemo(() => queryHistory(items ?? [], { search: '', show: 'all', sort: 'updated' })[0], [items]);
+  const bookTitles = useMemo(() => new Map((books ?? []).map((book) => [book.id, book.title])), [books]);
+  const browsing = !search.trim() && show === 'all';
 
   const open = (item: HistoryItem) => {
     if (item.href) { router.push(item.href); return; }
@@ -85,12 +85,42 @@ export default function Home() {
     setItems((current) => current?.filter((entry) => entry.id !== item.id) ?? null);
   };
 
+  const addBooks = async (files: File[]) => {
+    const added = await pdfs.add(files.filter((file) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name)));
+    if (added.length) setBooks((current) => [...added, ...(current ?? [])]);
+  };
+
+  const removeBook = async (book: ShelfDocument) => {
+    await removeFromShelf(book);
+    setBooks((current) => current?.filter((entry) => entry.id !== book.id) ?? null);
+    setItems((current) => current?.filter((entry) => entry.bookId !== book.id) ?? null);
+  };
+
+  const changeKind = async (book: ShelfDocument, kind: ShelfKind) => {
+    try {
+      const updated = await setShelfKind(book, kind);
+      setBooks((current) => current?.map((entry) => (entry.id === updated.id ? updated : entry)) ?? null);
+    } catch { setBookError('That could not be saved. Try again.'); }
+  };
+
+  const empty = items !== null && books !== null && items.length === 0 && books.length === 0;
+  const status = pdfs.error || bookError || pdfs.busy;
+
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <div
+      className="min-h-screen flex flex-col bg-gray-50"
+      onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); setDragging(true); } }}
+      onDragLeave={(event) => { if (event.currentTarget === event.target) setDragging(false); }}
+      onDrop={(event) => {
+        event.preventDefault();
+        setDragging(false);
+        void addBooks([...event.dataTransfer.files]);
+      }}
+    >
       <AppBar place="home" />
 
-      <main className="flex-1 w-full max-w-7xl mx-auto p-4 flex flex-col gap-6">
-        {latest && <ContinueCard item={latest} onOpen={() => open(latest)} />}
+      <main className={`flex-1 w-full max-w-7xl mx-auto p-4 flex flex-col gap-6 ${dragging ? 'outline-2 outline-dashed outline-gray-900 -outline-offset-8 bg-gray-100' : ''}`}>
+        {latest && <ContinueCard item={latest} bookTitle={latest.bookId ? bookTitles.get(latest.bookId) : undefined} onOpen={() => open(latest)} />}
         {memoryEmpty && (
           <Link href="/memory" className="flex items-center gap-3 min-h-11 px-4 py-3 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-50">
             <span className="text-indigo-700"><TutorIcon /></span>
@@ -101,15 +131,15 @@ export default function Home() {
           </Link>
         )}
 
-        <section aria-labelledby="boards-heading" className="flex flex-col gap-3">
+        <section aria-labelledby="library-heading" className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 id="boards-heading" className="mr-auto text-lg font-semibold text-gray-900">Problems and notes</h1>
+            <h1 id="library-heading" className="mr-auto text-lg font-semibold text-gray-900">Library</h1>
             <input
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search problems and notes"
-              aria-label="Search problems and notes"
+              placeholder="Search books, problems and notes"
+              aria-label="Search books, problems and notes"
               className="flex-1 min-w-[12rem] max-w-md min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900"
             />
             {/* Two rows of three on a phone, where six don't fit in one. */}
@@ -137,42 +167,50 @@ export default function Home() {
             </select>
           </div>
 
+          {status && (
+            <p role={pdfs.error || bookError ? 'alert' : 'status'} className={`text-sm ${pdfs.error || bookError ? 'text-red-700' : 'text-gray-600'}`}>{status}</p>
+          )}
+
           {failed ? (
-            <p className="text-center text-sm text-red-600 py-12">Your problems and notes could not be loaded. Reload the page to try again.</p>
-          ) : items === null ? null : items.length === 0 ? (
-            <p className="text-center text-sm text-gray-500 py-12">
-              Nothing here yet. Start with <strong>+ New</strong>, or open something on the Shelf. Everything you work on is saved here automatically.
-            </p>
-          ) : shown.length === 0 ? (
+            <p className="text-center text-sm text-red-600 py-12">Your library could not be loaded. Reload the page to try again.</p>
+          ) : items === null || books === null ? null : empty ? (
+            <div className="max-w-md mx-auto text-center text-sm text-gray-500 py-12 space-y-2">
+              <p className="text-base text-gray-700">Nothing here yet.</p>
+              <p>Start with <strong>+ New</strong>: a problem, notes, or a PDF to work from (a textbook, a problem set, a handout). You can also drop a PDF here.</p>
+              <p>Everything you work on is saved here automatically.</p>
+            </div>
+          ) : view.books.length === 0 && view.boards.length === 0 ? (
             <p className="text-center text-sm text-gray-500 py-12">Nothing matches.</p>
           ) : (
-            <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {shown.map((item) => (
-                <HistoryCard
-                  key={item.id}
-                  item={item}
-                  onOpen={() => open(item)}
-                  onRename={(name) => rename(item, name)}
-                  onDelete={() => remove(item)}
-                />
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section aria-labelledby="shelf-heading" className="flex flex-col gap-3">
-          <div className="flex items-baseline gap-3">
-            <h2 id="shelf-heading" className="text-lg font-semibold text-gray-900">On your Shelf</h2>
-            <Link href="/shelf" className="text-sm text-gray-600 underline hover:text-gray-900">Open the Shelf</Link>
-          </div>
-          {shelf.length === 0 ? (
-            <p className="text-sm text-gray-500">Nothing on your Shelf yet. Add a textbook, a problem set or a handout there as a PDF.</p>
-          ) : (
-            <ul className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {shelf.slice(0, SHELF_PREVIEW).map((document) => (
-                <li key={document.id} className="border border-gray-200 rounded-xl overflow-hidden"><ShelfCover document={document} /></li>
-              ))}
-            </ul>
+            <>
+              {view.books.length > 0 && (
+                <section aria-labelledby="books-heading" className="flex flex-col gap-3">
+                  <h2 id="books-heading" className="text-base font-semibold text-gray-900">Books</h2>
+                  <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                    {view.books.map((book) => (
+                      <BookCard key={book.id} document={book} onRemove={() => removeBook(book)} onKind={(kind) => changeKind(book, kind)} />
+                    ))}
+                  </ul>
+                </section>
+              )}
+              {view.boards.length > 0 && (
+                <section aria-labelledby="boards-heading" className="flex flex-col gap-3">
+                  <h2 id="boards-heading" className="text-base font-semibold text-gray-900">{browsing ? 'Problems and notes' : 'Boards'}</h2>
+                  <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {view.boards.map((item) => (
+                      <BoardCard
+                        key={item.id}
+                        item={item}
+                        bookTitle={item.bookId ? bookTitles.get(item.bookId) : undefined}
+                        onOpen={() => open(item)}
+                        onRename={(name) => rename(item, name)}
+                        onDelete={() => remove(item)}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </>
           )}
         </section>
       </main>
@@ -180,7 +218,7 @@ export default function Home() {
   );
 }
 
-function ContinueCard({ item, onOpen }: { item: HistoryItem; onOpen: () => void }) {
+function ContinueCard({ item, bookTitle, onOpen }: { item: HistoryItem; bookTitle?: string; onOpen: () => void }) {
   return (
     <section aria-label="Continue" className="flex flex-col sm:flex-row gap-4 p-3 bg-white border border-gray-200 rounded-xl">
       <button onClick={onOpen} aria-label={`Continue ${item.title}`} className="sm:w-72 shrink-0 rounded-lg border border-gray-200 overflow-hidden hover:border-gray-400">
@@ -189,7 +227,7 @@ function ContinueCard({ item, onOpen }: { item: HistoryItem; onOpen: () => void 
       <div className="flex flex-col justify-center gap-2 min-w-0">
         <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Continue</span>
         <p className="text-lg font-semibold text-gray-900 line-clamp-2">{item.title}</p>
-        <KindLine item={item} />
+        <KindLine item={item} bookTitle={bookTitle} />
         <div>
           <button onClick={onOpen} className="min-h-11 px-4 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">
             Open
@@ -200,96 +238,3 @@ function ContinueCard({ item, onOpen }: { item: HistoryItem; onOpen: () => void 
   );
 }
 
-/** What a board is (problem or notes), where it came from, and whether it's solved or a favorite. */
-function KindLine({ item }: { item: HistoryItem }) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-700">
-      <span className="flex items-center gap-1"><KindIcon type={item.sessionType} />{item.sessionType === 'note' ? 'Notes' : 'Problem'}</span>
-      {item.source === 'shelf' && <span className="flex items-center gap-1"><ShelfIcon />Shelf</span>}
-      {item.isSolved && <span className="flex items-center gap-1 font-semibold text-gray-900"><SolvedCheck size={14} />Solved</span>}
-      {item.favorite && <span className="flex items-center gap-1 font-semibold text-gray-900"><FavoriteStar filled size={14} />Favorite</span>}
-    </div>
-  );
-}
-
-interface CardProps {
-  item: HistoryItem;
-  onOpen: () => void;
-  onRename: (name: string) => Promise<void>;
-  onDelete: () => Promise<void>;
-}
-
-function HistoryCard({ item, onOpen, onRename, onDelete }: CardProps) {
-  const [renaming, setRenaming] = useState(false);
-  const [name, setName] = useState('');
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const updated = new Date(item.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-
-  const finishRename = async () => {
-    setRenaming(false);
-    if (name.trim() !== item.title) await onRename(name);
-  };
-
-  return (
-    // No overflow-hidden on the card: it would clip the "⋯" menu. The open button rounds its own corners.
-    <li className="flex flex-col bg-white border border-gray-200 rounded-xl">
-      <button onClick={onOpen} className="text-left rounded-t-xl overflow-hidden hover:bg-gray-50" aria-label={`Open ${item.title}`}>
-        <Thumbnail blob={item.thumbnail} />
-        <div className="px-3 pt-2">
-          <KindLine item={item} />
-          {!renaming && <p className="mt-1 text-sm font-medium text-gray-900 line-clamp-2">{item.title}</p>}
-          {/* The problem itself, when the name doesn't already show it (renamed, or a Shelf exercise). */}
-          {item.problemStatement && !item.problemStatement.startsWith(item.title) && !renaming && (
-            <p className="text-xs text-gray-500 line-clamp-1">{item.problemStatement}</p>
-          )}
-        </div>
-      </button>
-      {renaming && (
-        <input
-          autoFocus
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          onBlur={() => void finishRename()}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') event.currentTarget.blur();
-            if (event.key === 'Escape') { setName(item.title); setRenaming(false); }
-          }}
-          aria-label="Name"
-          className="mx-3 mt-1 px-2 py-1.5 text-sm border border-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
-        />
-      )}
-      <div className="mt-auto flex items-center justify-between gap-2 px-3 py-2">
-        <span className="text-xs text-gray-500">
-          {updated}{item.messageCount > 0 ? ` · ${item.messageCount} ${item.messageCount === 1 ? 'message' : 'messages'}` : ''}
-        </span>
-        {confirmingDelete ? (
-          <span className="flex items-center gap-1.5">
-            <span className="text-xs text-gray-700">Delete it?</span>
-            <button onClick={() => void onDelete()} className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">
-              Delete
-            </button>
-            <button onClick={() => setConfirmingDelete(false)} className="min-h-11 px-3 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">
-              Keep
-            </button>
-          </span>
-        ) : (
-          <MoreMenu
-            label={`More for ${item.title}`}
-            items={[
-              { label: 'Rename', onSelect: () => { setName(item.title); setRenaming(true); } },
-              { label: 'Delete', onSelect: () => setConfirmingDelete(true) },
-            ]}
-          />
-        )}
-      </div>
-    </li>
-  );
-}
-
-function Thumbnail({ blob }: { blob: Blob | null }) {
-  return (
-    <div className="aspect-[4/3] bg-white border-b border-gray-100 flex items-center justify-center overflow-hidden">
-      {blob ? <BlobImage blob={blob} className="max-w-full max-h-full object-contain p-2" /> : <span className="text-xs text-gray-300">Empty board</span>}
-    </div>
-  );
-}

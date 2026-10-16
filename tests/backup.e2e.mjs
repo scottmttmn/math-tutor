@@ -52,10 +52,10 @@ const lastModified = (page, path) => page.evaluate(async (parts) => {
 
 const { context, page } = await openPage();
 try {
-  // Some work: a PDF on the Shelf and a board with a problem and a stroke.
-  await page.goto(`${origin}/shelf`);
-  await page.locator('input[aria-label="Add PDF"]').setInputFiles(pdfPath);
-  await page.getByRole('link', { name: 'Open Geometry' }).waitFor();
+  // Some work: a PDF in the library and a board with a problem and a stroke.
+  await page.goto(`${origin}/`);
+  await page.locator('input[aria-label="Add a PDF"]').setInputFiles(pdfPath);
+  await page.getByRole('heading', { name: 'Geometry', exact: true }).waitFor();
 
   await page.goto(`${origin}/board`);
   await page.getByPlaceholder("Type the math problem you're working on...").fill('Find x when 2x + 3 = 7');
@@ -153,7 +153,7 @@ try {
     await fresh.page.getByRole('button', { name: 'Settings' }).click();
     await fresh.page.getByRole('tab', { name: 'Backup' }).click();
     await fresh.page.getByTestId('restore-file').setInputFiles(zip.path);
-    await fresh.page.getByText('Restored 1 board and 1 Shelf PDF.').waitFor();
+    await fresh.page.getByText('Restored 1 board and 1 PDF.').waitFor();
     await fresh.page.getByTestId('restore-file').setInputFiles(zip.path);
     await fresh.page.getByText('Nothing to restore: this device already has everything in the backup.').waitFor();
 
@@ -174,20 +174,20 @@ try {
     await fresh.page.getByRole('button', { name: 'Done' }).click();
     await fresh.page.reload();
     await fresh.page.getByText('Find x when 2x + 3 = 7 (check it)').first().waitFor();
-    await fresh.page.goto(`${origin}/shelf`);
+    await fresh.page.goto(`${origin}/`);
     await fresh.page.getByRole('link', { name: 'Open Geometry' }).click();
+    await fresh.page.getByRole('link', { name: 'Start reading' }).click();
     await fresh.page.getByText('Page 1 of 1').waitFor();
 
-    // The saved board PDF is a real PDF: it goes on the Shelf like any other.
-    await fresh.page.goto(`${origin}/shelf`);
-    await fresh.page.locator('input[aria-label="Add PDF"]').setInputFiles(pdf.path);
-    const card = fresh.page.getByRole('link', { name: 'Open Find x when 2x + 3 = 7' });
-    await card.waitFor();
-    assert.match(await fresh.page.locator('li', { has: card }).innerText(), /1 page/);
+    // The saved board PDF is a real PDF: it goes in the library like any other.
+    await fresh.page.goto(`${origin}/`);
+    await fresh.page.locator('input[aria-label="Add a PDF"]').setInputFiles(pdf.path);
+    await fresh.page.getByRole('heading', { name: 'Find x when 2x + 3 = 7', exact: true }).waitFor();
+    await fresh.page.getByText(/1 page$/).waitFor();
   } finally {
     await fresh.context.close();
   }
-  console.log('PASS restoring the ZIP on an empty browser brings back the board and the Shelf PDF; a backup folder asks which day');
+  console.log('PASS restoring the ZIP on an empty browser brings back the board and the PDF; a backup folder asks which day');
 
   assert.deepEqual(browserErrors, []);
   console.log('PASS no browser exceptions');

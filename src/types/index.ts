@@ -101,6 +101,9 @@ export interface HistoryItem {
   source: 'board' | 'shelf';
   /** Where a Shelf entry opens; free-form boards open in place. */
   href: string | null;
+  /** A Shelf entry's PDF and mark (ShelfDocument and ShelfExercise ids); null for free-form boards. */
+  bookId: string | null;
+  exerciseId: string | null;
 }
 
 /** History's filter: everything, problems, notes, problems not yet solved, solved problems, or favorites. */

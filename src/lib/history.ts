@@ -1,4 +1,4 @@
-import type { HistoryItem, HistoryShow, HistorySort, Session } from '@/types';
+import type { HistoryItem, HistoryShow, HistorySort, Session, ShelfDocument } from '@/types';
 
 const SHELF_ENTRY = /^shelf:([^:]+):([^:]+)$/;
 
@@ -9,22 +9,25 @@ function hasDrawing(session: Session) {
 }
 
 /**
- * A saved session as History shows it, or null for Shelf exercises that were only opened
- * and for boards of the built-in workbook, which the app no longer has. `favoriteIds`: the
- * sessions the student starred.
+ * A saved session as Home shows it, or null for boards of the built-in workbook, which the app no
+ * longer has, and (unless `untouched`, as a book's page lists them) for Shelf exercises that were only
+ * opened. `favoriteIds`: the sessions the student starred.
  */
-export function toHistoryItem(session: Session, favoriteIds: ReadonlySet<string> = new Set()): HistoryItem | null {
+export function toHistoryItem(session: Session, favoriteIds: ReadonlySet<string> = new Set(), { untouched = false } = {}): HistoryItem | null {
   const favorite = favoriteIds.has(session.id);
   let href: string | null = null;
   let source: HistoryItem['source'] = 'board';
+  let bookId: string | null = null;
+  let exerciseId: string | null = null;
   if (session.id.startsWith('workbook:')) return null;
   if (session.id.startsWith('shelf:')) {
-    // The reader saves every exercise it opens; only ones with work in them belong in History.
-    if (session.chatHistory.length === 0 && !hasDrawing(session) && !session.isSolved && !favorite) return null;
+    // The reader saves every exercise it opens; only ones with work in them belong in the list.
+    if (!untouched && session.chatHistory.length === 0 && !hasDrawing(session) && !session.isSolved && !favorite) return null;
     const shelf = SHELF_ENTRY.exec(session.id);
     if (!shelf) return null;
     source = 'shelf';
-    href = `/shelf/read?doc=${encodeURIComponent(shelf[1])}&open=${encodeURIComponent(shelf[2])}`;
+    [, bookId, exerciseId] = shelf;
+    href = `/shelf/read?doc=${encodeURIComponent(bookId)}&open=${encodeURIComponent(exerciseId)}`;
   }
   const sessionType = session.sessionType ?? 'problem';
   return {
@@ -41,6 +44,8 @@ export function toHistoryItem(session: Session, favoriteIds: ReadonlySet<string>
     thumbnail: session.canvasImageBlob ?? null,
     source,
     href,
+    bookId,
+    exerciseId,
   };
 }
 
@@ -69,4 +74,27 @@ export function queryHistory(items: HistoryItem[], { search, show, sort }: { sea
       return words.every((word) => text.includes(word));
     })
     .sort(ORDER[sort]);
+}
+
+const matches = (text: string, words: string[]) => words.every((word) => text.toLowerCase().includes(word));
+
+/**
+ * What Home lists. Browsing (no search, showing all): every book (Shelf PDF) and the free-form boards,
+ * since a book's boards are listed on its own page. Searching or filtering: matching boards from
+ * everywhere, book exercises included, and, showing all, the books whose title matches.
+ */
+export function libraryView(items: HistoryItem[], books: ShelfDocument[], query: { search: string; show: HistoryShow; sort: HistorySort }) {
+  const words = query.search.toLowerCase().split(/\s+/).filter(Boolean);
+  const browsing = words.length === 0 && query.show === 'all';
+  // A book was last worked on when it or one of its boards last changed.
+  const lastWorked = (book: ShelfDocument) => Math.max(book.updatedAt, ...items.filter((item) => item.bookId === book.id).map((item) => item.updatedAt));
+  const bookOrder: Record<HistorySort, (a: ShelfDocument, b: ShelfDocument) => number> = {
+    updated: (a, b) => lastWorked(b) - lastWorked(a),
+    created: (a, b) => b.createdAt - a.createdAt,
+    title: (a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base', numeric: true }),
+  };
+  return {
+    books: query.show === 'all' ? books.filter((book) => matches(book.title, words)).sort(bookOrder[query.sort]) : [],
+    boards: queryHistory(browsing ? items.filter((item) => item.source === 'board') : items, query),
+  };
 }

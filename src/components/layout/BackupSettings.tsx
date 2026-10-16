@@ -24,7 +24,7 @@ function describeRestore(result: RestoreResult) {
   const pdfs = result.restoredShelf;
   const restored = [
     boards && `${boards} board${boards === 1 ? '' : 's'}`,
-    pdfs && `${pdfs} Shelf PDF${pdfs === 1 ? '' : 's'}`,
+    pdfs && `${pdfs} PDF${pdfs === 1 ? '' : 's'}`,
     result.restoredProfile && 'your tutor memory',
     result.restoredInk && `ink on ${result.restoredInk} page${result.restoredInk === 1 ? '' : 's'}`,
   ].filter(Boolean);
@@ -144,7 +144,7 @@ export default function BackupSettings({ onClose, saveOpenBoard, restoredMessage
       <section aria-label="Download and restore" className="mb-5">
         <h3 className="font-semibold text-gray-900 mb-1">Download or restore</h3>
         <p className="mb-2">
-          One file with every board, note and Shelf PDF, and your tutor memory.
+          One file with every board, note and PDF, and your tutor memory.
           {status.lastDownloadAt ? ` Last downloaded ${timeAgo(status.lastDownloadAt)}.` : ''}
         </p>
         <div className="flex flex-wrap gap-2">

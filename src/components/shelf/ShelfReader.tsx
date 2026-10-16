@@ -33,6 +33,7 @@ import PageAsk from './PageAsk';
 import { useBookSearch } from '@/hooks/useBookSearch';
 import { useFavorite } from '@/hooks/useFavorite';
 import FavoriteButton from '@/components/layout/FavoriteButton';
+import { bookHref } from '@/components/shelf/BookCard';
 
 // Whether the list beside the page is hidden, so the page gets the width.
 const LIST_HIDDEN_KEY = 'math-tutor:shelfListHidden';
@@ -186,7 +187,7 @@ export default function ShelfReader() {
     async function load() {
       const { documentId, exerciseId } = readUrl();
       const stored = documentId ? await loadShelfDocument(documentId) : undefined;
-      if (!stored) { if (active) setLoadError('This PDF is not on your Shelf.'); return; }
+      if (!stored) { if (active) setLoadError('This PDF isn’t in your library.'); return; }
       opened = await openPdf(stored.file);
       // Left before it finished opening: the cleanup has already run, so free it here.
       if (!active) { void opened.loadingTask.destroy(); return; }
@@ -431,7 +432,7 @@ export default function ShelfReader() {
       <div className="min-h-screen grid place-items-center bg-gray-50 text-center p-6">
         <div className="space-y-3">
           <p className="text-gray-700">{loadError}</p>
-          <Link href="/shelf" className="text-gray-900 underline">Back to the Shelf</Link>
+          <Link href="/" className="text-gray-900 underline">Back to Home</Link>
         </div>
       </div>
     );
@@ -644,12 +645,13 @@ export default function ShelfReader() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      {!fullScreen && <AppBar place="shelf" locked={isStreaming} beforeLeave={saveNow} />}
+      {!fullScreen && <AppBar place="book" locked={isStreaming} beforeLeave={saveNow} />}
       <header className={`${fullScreen ? 'hidden' : 'flex'} flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-white`}>
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-xs text-gray-500">
-            <Link href="/shelf" className="text-gray-900 underline">Shelf</Link>
-          </div>
+          <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-xs text-gray-500 min-w-0">
+            {/* The book's page lists every board made from it; Home is in the bar. */}
+            <Link href={bookHref(shelfDocument.id)} className="text-gray-900 underline truncate">{shelfDocument.title}</Link>
+          </nav>
           <h1 className="font-semibold text-gray-900 truncate">{shelfDocument.title}</h1>
         </div>
         {exercise && (
