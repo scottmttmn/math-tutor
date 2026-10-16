@@ -32,19 +32,36 @@ const distanceToSegment = (px: number, py: number, ax: number, ay: number, bx: n
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 };
 
+type Point = { x: number; y: number };
+
+// Which side of the line a→b the point c is on.
+const side = (a: Point, b: Point, c: Point) => Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+
+/** The closest two segments (a–b, c–d) come: zero when they cross. */
+function segmentsDistance(a: Point, b: Point, c: Point, d: Point) {
+  if (side(a, b, c) * side(a, b, d) < 0 && side(c, d, a) * side(c, d, b) < 0) return 0;
+  return Math.min(
+    distanceToSegment(a.x, a.y, c.x, c.y, d.x, d.y), distanceToSegment(b.x, b.y, c.x, c.y, d.x, d.y),
+    distanceToSegment(c.x, c.y, a.x, a.y, b.x, b.y), distanceToSegment(d.x, d.y, a.x, a.y, b.x, b.y),
+  );
+}
+
 /**
- * The strokes left after the eraser passes `at` (page fractions): a stroke any part of which lies
- * within `radius` CSS px (plus its own half width) is removed whole. The same array when nothing is.
+ * The strokes left after the eraser moves from `from` to `at` (page fractions): a stroke any part
+ * of which comes within `radius` CSS px (plus its own half width) of that path is removed whole,
+ * so a fast sweep between two samples still rubs out what it crossed. The same array when nothing is.
  */
-export function eraseAt(strokes: InkStroke[], at: { x: number; y: number }, radius: number, scale: PageScale): InkStroke[] {
-  const px = at.x * scale.x;
-  const py = at.y * scale.y;
+export function eraseAt(strokes: InkStroke[], at: Point, radius: number, scale: PageScale, from: Point = at): InkStroke[] {
+  const a = { x: from.x * scale.x, y: from.y * scale.y };
+  const b = { x: at.x * scale.x, y: at.y * scale.y };
   const kept = strokes.filter((stroke) => {
     const reach = radius + ((stroke.tool === 'pen' ? PEN_WIDTH : HIGHLIGHTER_WIDTH) * scale.x) / 2;
     const { points } = stroke;
     for (let i = 0; i < points.length; i += 3) {
       const j = Math.max(0, i - 3);
-      if (distanceToSegment(px, py, points[j] * scale.x, points[j + 1] * scale.y, points[i] * scale.x, points[i + 1] * scale.y) <= reach) return false;
+      const c = { x: points[j] * scale.x, y: points[j + 1] * scale.y };
+      const d = { x: points[i] * scale.x, y: points[i + 1] * scale.y };
+      if (segmentsDistance(a, b, c, d) <= reach) return false;
     }
     return true;
   });

@@ -27,3 +27,13 @@ test('the eraser removes whole strokes it touches, including between samples', (
   // A one-point stroke (a dot) can be rubbed out too.
   assert.deepEqual(eraseAt(strokes, { x: 0.805, y: 0.8 }, 12, scale), [line]);
 });
+
+test('a fast eraser sweep rubs out what it crossed between two samples', () => {
+  const scale = { x: 1000, y: 1000 };
+  // A vertical line at x = 500 px; the eraser jumps from x = 300 to x = 700 px across it.
+  const line = { tool: 'pen', points: [0.5, 0.2, 0.5, 0.5, 0.6, 0.5] };
+  assert.deepEqual(eraseAt([line], { x: 0.7, y: 0.4 }, 12, scale), [line]);
+  assert.deepEqual(eraseAt([line], { x: 0.7, y: 0.4 }, 12, scale, { x: 0.3, y: 0.4 }), []);
+  // A sweep that passes beside it, not across, leaves it.
+  assert.deepEqual(eraseAt([line], { x: 0.45, y: 0.9 }, 12, scale, { x: 0.3, y: 0.9 }), [line]);
+});

@@ -75,7 +75,7 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
   const liveCanvas = useRef<HTMLCanvasElement>(null);
   const [shownSize, setShownSize] = useState<{ width: number; height: number } | null>(null);
   // The stroke being written, or the strokes left so far by the eraser.
-  const writing = useRef<{ id: number; tool: InkTool; points: number[]; strokes: InkStroke[] } | null>(null);
+  const writing = useRef<{ id: number; tool: InkTool; points: number[]; strokes: InkStroke[]; last?: { x: number; y: number } } | null>(null);
 
   // The page may be scrolled: bring the form into view and put the cursor in its name field.
   useEffect(() => {
@@ -180,7 +180,9 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
     for (const sample of samples.length ? samples : [native]) {
       const onPage = toPage({ x: (sample.clientX - bounds.left) / bounds.width, y: (sample.clientY - bounds.top) / bounds.height }, crop);
       if (current.tool === 'eraser') {
-        const left = eraseAt(current.strokes, onPage, ERASER_RADIUS, size);
+        // From where the eraser was at the last sample, so a fast sweep misses nothing in between.
+        const left = eraseAt(current.strokes, onPage, ERASER_RADIUS, size, current.last);
+        current.last = onPage;
         if (left !== current.strokes) { current.strokes = left; redraw(left); }
         continue;
       }
