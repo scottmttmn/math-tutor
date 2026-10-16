@@ -6,9 +6,12 @@ import type { ModelConfig, Provider } from '@/types';
 import { DEFAULT_ANTHROPIC_MODEL, DEFAULT_GEMINI_MODEL, GEMINI_BASE_URL, getModelConfig, isGeminiEndpoint, saveModelConfig } from '@/lib/modelConfig';
 import { useChatGPTConnection } from '@/hooks/useChatGPTConnection';
 import { CHATGPT_DEFAULT_MODEL_PATTERN, CHATGPT_USAGE_URL } from '@/lib/constants';
+import { TUTOR_DIRECT } from '@/lib/tutorRequest';
+import { DEVICE_KEY_LABELS, deviceKeyName } from '@/lib/deviceKeys';
+import { useDeviceKey } from '@/hooks/useDeviceKey';
 import BackupSettings from './BackupSettings';
 
-const PRESETS: { label: string; provider: Provider; model: string; baseUrl: string }[] = [
+const ALL_PRESETS: { label: string; provider: Provider; model: string; baseUrl: string }[] = [
   { label: 'Anthropic (Claude)', provider: 'anthropic', model: DEFAULT_ANTHROPIC_MODEL, baseUrl: '' },
   { label: 'ChatGPT plan (Sign in with ChatGPT)', provider: 'chatgpt', model: '', baseUrl: '' },
   { label: 'Google Gemini', provider: 'openai-compatible', model: DEFAULT_GEMINI_MODEL, baseUrl: GEMINI_BASE_URL },
@@ -17,6 +20,8 @@ const PRESETS: { label: string; provider: Provider; model: string; baseUrl: stri
   { label: 'Ollama', provider: 'openai-compatible', model: 'llama3.2-vision', baseUrl: process.env.NEXT_PUBLIC_OLLAMA_BASE_URL ?? 'http://localhost:11434/v1' },
   { label: 'Custom', provider: 'openai-compatible', model: '', baseUrl: '' },
 ];
+// Sign in with ChatGPT runs in the Mac's server; the Android app doesn't have it yet.
+const PRESETS = TUTOR_DIRECT ? ALL_PRESETS.filter((preset) => preset.provider !== 'chatgpt') : ALL_PRESETS;
 
 function findPresetIndex(config: ModelConfig): number {
   const idx = PRESETS.findIndex(
@@ -74,6 +79,10 @@ function SettingsForm({ onClose, saveOpenBoard }: { onClose: () => void; saveOpe
   const [config, setConfig] = useState<ModelConfig>(getModelConfig);
   const [presetIdx, setPresetIdx] = useState(() => findPresetIndex(getModelConfig()));
   const isChatGPT = PRESETS[presetIdx]?.provider === 'chatgpt';
+  const keyName = TUTOR_DIRECT ? deviceKeyName(config) : null;
+  const deviceKey = useDeviceKey(keyName);
+  const [keyDraft, setKeyDraft] = useState('');
+  const [saveError, setSaveError] = useState<string | null>(null);
   const chatgpt = useChatGPTConnection(isChatGPT);
   const chatgptModels = chatgpt.status.models;
   // A saved plan model stays; otherwise use the default (see CHATGPT_DEFAULT_MODEL_PATTERN).
@@ -92,7 +101,15 @@ function SettingsForm({ onClose, saveOpenBoard }: { onClose: () => void; saveOpe
     });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (keyName && keyDraft.trim()) {
+      try {
+        await deviceKey.save(keyDraft.trim());
+      } catch {
+        setSaveError('Could not save the key on this tablet.');
+        return;
+      }
+    }
     saveModelConfig(isChatGPT ? { ...config, model: chatgptModel } : config);
     onClose();
   };
@@ -210,15 +227,41 @@ function SettingsForm({ onClose, saveOpenBoard }: { onClose: () => void; saveOpe
         </>
       )}
 
-      <p className="text-xs text-gray-500 mb-4">
-        {config.provider === 'anthropic'
-          ? 'API key read from .env.local (ANTHROPIC_API_KEY)'
-          : config.provider === 'chatgpt'
-            ? 'No API key needed. Requests count against your ChatGPT plan limits.'
-            : isGeminiEndpoint(config.baseUrl)
-              ? 'Gemini API key read from .env.local (GEMINI_API_KEY or GOOGLE_API_KEY)'
-              : 'API key read from .env.local (OPENAI_API_KEY). Ollama does not need one.'}
-      </p>
+      {keyName ? (
+        <div className="mb-4">
+          <label htmlFor="device-api-key" className="block text-sm font-medium text-gray-700 mb-1">{DEVICE_KEY_LABELS[keyName]}</label>
+          <input
+            id="device-api-key"
+            type="password"
+            autoComplete="off"
+            value={keyDraft}
+            onChange={(e) => { setKeyDraft(e.target.value); setSaveError(null); }}
+            placeholder={deviceKey.saved ? 'Saved. Paste a new key to replace it' : 'Paste your key'}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+          />
+          <div className="flex items-start justify-between gap-2 mt-1">
+            <p className="text-xs text-gray-500">
+              Kept on this tablet, encrypted, and never in backups.{keyName === 'openai' ? ' Ollama needs none.' : ''}
+            </p>
+            {deviceKey.saved && (
+              <button onClick={() => void deviceKey.remove()} className="min-h-11 px-2 text-xs text-gray-700 underline shrink-0">
+                Remove key
+              </button>
+            )}
+          </div>
+          {(saveError || deviceKey.error) && <p className="mt-1 text-xs text-red-600">{saveError || deviceKey.error}</p>}
+        </div>
+      ) : (
+        <p className="text-xs text-gray-500 mb-4">
+          {config.provider === 'anthropic'
+            ? 'API key read from .env.local (ANTHROPIC_API_KEY)'
+            : config.provider === 'chatgpt'
+              ? 'No API key needed. Requests count against your ChatGPT plan limits.'
+              : isGeminiEndpoint(config.baseUrl)
+                ? 'Gemini API key read from .env.local (GEMINI_API_KEY or GOOGLE_API_KEY)'
+                : 'API key read from .env.local (OPENAI_API_KEY). Ollama does not need one.'}
+        </p>
+      )}
       {config.provider !== 'chatgpt' && isGeminiEndpoint(config.baseUrl) && <p className="text-xs text-gray-500 mb-4">
         Flash models automatically fall back through older Flash models, then Flash-Lite, when a quota is exhausted. Replies identify any fallback used.
       </p>}
@@ -231,7 +274,7 @@ function SettingsForm({ onClose, saveOpenBoard }: { onClose: () => void; saveOpe
           Cancel
         </button>
         <button
-          onClick={handleSave}
+          onClick={() => void handleSave()}
           className="min-h-11 px-4 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700"
         >
           Save
