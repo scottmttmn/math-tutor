@@ -159,9 +159,11 @@ try {
   await draw(260);
   const box = await board().boundingBox();
   await page.locator('[data-testid="tools.select"]').first().click();
-  // Start below tldraw's undo/redo panel in the top-left corner.
-  await page.mouse.move(box.x + 20, box.y + 60); await page.mouse.down();
-  await page.mouse.move(box.x + 220, box.y + 200, { steps: 5 }); await page.mouse.up();
+  // Drag from empty board toward the top-left: starting the drag there could land on tldraw's
+  // undo/redo panel (its size varies by machine) and select nothing. Delete turns on once it holds a shape.
+  await page.mouse.move(box.x + 220, box.y + 200); await page.mouse.down();
+  await page.mouse.move(box.x + 20, box.y + 60, { steps: 5 }); await page.mouse.up();
+  await page.waitForFunction(() => document.querySelector('[data-testid="quick-actions.delete"]')?.disabled === false);
   request = await askTutor('Problem hint.');
   const image = imageOf(request);
   assert.ok(image?.startsWith('data:image/png;base64,'));
