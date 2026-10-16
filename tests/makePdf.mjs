@@ -1,6 +1,8 @@
 // Builds a small text-only PDF (Helvetica, US Letter) for the Shelf browser test, one page per
-// array of lines, so the test needs no binary fixture.
-export function makePdf(pages) {
+// array of lines, so the test needs no binary fixture. Optionally with bookmarks (`outline`: title,
+// 1-based page, children) and printed page numbers (`pageLabels`: from a 0-based page index, a
+// style, `r` roman or `D` decimal, and the number it starts at).
+export function makePdf(pages, { outline = [], pageLabels = [] } = {}) {
   const objects = [];
   const add = (body) => { objects.push(body); return objects.length; };
   const catalog = add(null);
@@ -12,7 +14,27 @@ export function makePdf(pages) {
     const content = add(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
     return add(`<< /Type /Page /Parent ${pageTree} 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${font} 0 R >> >> /Contents ${content} 0 R >>`);
   });
-  objects[catalog - 1] = `<< /Type /Catalog /Pages ${pageTree} 0 R >>`;
+  const addOutline = (items, parent) => {
+    const ids = items.map(() => add(null));
+    items.forEach((item, index) => {
+      const children = item.children?.length ? addOutline(item.children, ids[index]) : null;
+      objects[ids[index] - 1] = `<< /Title (${escape(item.title)}) /Parent ${parent} 0 R /Dest [${kids[item.page - 1]} 0 R /Fit]`
+        + (index > 0 ? ` /Prev ${ids[index - 1]} 0 R` : '') + (index < ids.length - 1 ? ` /Next ${ids[index + 1]} 0 R` : '')
+        + (children ? ` /First ${children[0]} 0 R /Last ${children.at(-1)} 0 R /Count ${children.length}` : '') + ' >>';
+    });
+    return ids;
+  };
+  let extra = '';
+  if (outline.length) {
+    const root = add(null);
+    const top = addOutline(outline, root);
+    objects[root - 1] = `<< /Type /Outlines /First ${top[0]} 0 R /Last ${top.at(-1)} 0 R /Count ${top.length} >>`;
+    extra += ` /Outlines ${root} 0 R`;
+  }
+  if (pageLabels.length) {
+    extra += ` /PageLabels << /Nums [${pageLabels.map(({ from, style, start = 1 }) => `${from} << /S /${style} /St ${start} >>`).join(' ')}] >>`;
+  }
+  objects[catalog - 1] = `<< /Type /Catalog /Pages ${pageTree} 0 R${extra} >>`;
   objects[pageTree - 1] = `<< /Type /Pages /Kids [${kids.map((kid) => `${kid} 0 R`).join(' ')}] /Count ${kids.length} >>`;
   let pdf = '%PDF-1.4\n';
   const offsets = objects.map((body, index) => {

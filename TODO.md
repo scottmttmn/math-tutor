@@ -29,8 +29,10 @@ Done: one look across the app: ink on paper, with only the tutor in color (**Ask
 
 Every board has the same layout: what it works from beside it (the problem or topic, the PDF page), which can be hidden, and the tutor as a drawer that opens when you ask. Every board has **Full screen** (in its toolbar), and a problem picture can be **put on the board**. **Hide tools** collapses the drawing tools, and the Shelf's Exercises list can be hidden so the page gets the full width.
 
-- Next: **notes on Shelf pages**, listed beside the page with the exercises and hidden with that list.
-- Still to do: a PDF's pages scroll one at a time (no continuous scroll or zoom yet); marks can't be moved or renamed after saving.
+Done (reading, step 1 of the [Shelf design](https://claude.ai/artifact/TXw8zCKZbwQ9ohM2Fk9nC8)): tap a page's edge, swipe sideways or use the arrow keys to turn it; tap the page number to go to a page by its printed number ("47", "xii"); **Contents** beside the page from the PDF's bookmarks; blank margins trimmed so the print is bigger (**Trim margins**, kept per book); **Full screen** for reading, where a tap in the middle hides and brings back the bars and **Book** opens the lists over the page.
+
+- Next, in this order: ink on the page (pen, highlighter, eraser); exercises put on the board when opened, swapping with the page on the tablet; note pages and one list per book with solved counts; search; circle part of a page to ask the tutor (after the "how you call the tutor in" work); Shelf cards with kind, progress and where you left off.
+- Still to do: no zoom yet; marks can't be moved or renamed after saving.
 
 ### 4. Export and auto-backup
 
