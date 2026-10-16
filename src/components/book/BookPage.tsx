@@ -25,8 +25,8 @@ async function loadBoards(book: ShelfDocument): Promise<HistoryItem[]> {
     .filter((item): item is HistoryItem => item !== null);
 }
 
-/** A book's page: the book (read it where you left off) and every board made from it. */
-export default function BookPage() {
+/** A book's page: the book (read it where you left off) and every board made from it. Keyed by `doc` where used. */
+export default function BookPage({ doc }: { doc: string }) {
   const router = useRouter();
   const [book, setBook] = useState<ShelfDocument | null>(null);
   const [boards, setBoards] = useState<HistoryItem[] | null>(null);
@@ -37,8 +37,7 @@ export default function BookPage() {
 
   useEffect(() => {
     let active = true;
-    const id = new URLSearchParams(window.location.search).get('doc') ?? '';
-    loadShelfDocument(id)
+    loadShelfDocument(doc)
       .then(async (loaded) => {
         if (!active) return;
         if (!loaded) { setMissing(true); return; }
@@ -48,7 +47,7 @@ export default function BookPage() {
       })
       .catch(() => { if (active) setError('This book could not be loaded. Reload the page to try again.'); });
     return () => { active = false; };
-  }, []);
+  }, [doc]);
 
   const counts = useMemo(() => {
     const marks = book?.exercises ?? [];

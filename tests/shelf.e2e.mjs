@@ -18,6 +18,8 @@ await writeFile(pdfPath, makePdf([
   ['3. Compute (1+i)^8.', '', '4. Describe the set |z - 1| < 2.'],
 ]));
 const imagePath = join(folder, 'one problem.png');
+const secondPdfPath = join(folder, 'Geometry notes.pdf');
+await writeFile(secondPdfPath, makePdf([['Angles in a triangle sum to 180 degrees.']]));
 
 const provider = createServer(async (req, res) => {
   let raw = '';
@@ -65,6 +67,11 @@ try {
   assert.match(new URL(page.url()).pathname, /^\/book$/);
   await page.getByText(/2 pages/).waitFor();
   await page.getByText(/^None yet\./).waitFor();
+  // Adding another PDF from a book's page shows the new book; Back shows the first again.
+  await page.locator('input[aria-label="Add a PDF"]').setInputFiles(secondPdfPath);
+  await page.getByRole('heading', { name: 'Geometry notes', exact: true }).waitFor();
+  await page.goBack();
+  await page.getByRole('heading', { name: 'Algebra drills', exact: true }).waitFor();
   await page.getByRole('link', { name: 'Start reading' }).click();
   await page.getByText('Page 1 of 2').waitFor();
 
@@ -268,18 +275,20 @@ try {
   // The book's card on Home: asks what the PDF is until told, then shows it, with solved progress and
   // where you left off; the kind can be changed from the menu.
   await page.goto(`${origin}/`);
+  // Geometry notes, added too, still asks what it is, so look inside Algebra drills' card.
+  const bookCard = page.locator('li', { has: page.getByRole('link', { name: 'Open Algebra drills' }) });
   const kinds = page.getByRole('group', { name: 'What Algebra drills is' });
   await kinds.getByRole('button', { name: 'Problem set' }).click();
   await kinds.waitFor({ state: 'hidden' });
-  await page.getByText('Problem set', { exact: true }).waitFor();
-  await page.getByText(/^\d+ of \d+ solved/).waitFor();
-  await page.getByText(/^p\. \d+/).waitFor();
+  await bookCard.getByText('Problem set', { exact: true }).waitFor();
+  await bookCard.getByText(/^\d+ of \d+ solved/).waitFor();
+  await bookCard.getByText(/^p\. \d+/).waitFor();
   await page.reload();
-  await page.getByText('Problem set', { exact: true }).waitFor();
+  await bookCard.getByText('Problem set', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'More for Algebra drills' }).click();
   await page.getByRole('menuitem', { name: 'Change kind' }).click();
   await kinds.getByRole('button', { name: 'Textbook' }).click();
-  await page.getByText('Textbook', { exact: true }).waitFor();
+  await bookCard.getByText('Textbook', { exact: true }).waitFor();
   console.log('PASS the book card shows its kind, solved progress and where you left off');
 
   // Removing the PDF takes its remaining boards with it.
