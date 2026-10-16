@@ -27,6 +27,16 @@ test('a match across two runs of text gets a rect in each', () => {
   assert.equal(matches[0].rects[1].y, 0.13);
 });
 
+test('runs of text with no gap between them are one word; a gap or a new line is a space', () => {
+  // "cal" and "culus" side by side (as a font change splits them), then "notes" after a gap.
+  const boxes = [line('cal', 0.1, 0.1, 0.03), line('culus', 0.1, 0.13, 0.05), line('notes', 0.1, 0.2, 0.05)];
+  const [match] = findOnPage(boxes, 'calculus');
+  assert.equal(match.match, 'calculus');
+  assert.equal(match.rects.length, 2);
+  assert.equal(findOnPage(boxes, 'calculus notes').length, 1);
+  assert.equal(findOnPage(boxes, 'culusnotes').length, 0);
+});
+
 test('every match on a page is found; nothing for an empty query', () => {
   assert.equal(findOnPage([line('a root, a root, a root', 0.1)], 'root').length, 3);
   assert.deepEqual(findOnPage([line('anything', 0.1)], '   '), []);

@@ -39,10 +39,10 @@ export function useBookSearch(pdf: PDFDocumentProxy | null): BookSearchState {
       let count = 0;
       let anyText = false;
       for (let page = 1; page <= pdf.numPages && active; page += 1) {
-        const { boxes } = await pageTextBoxes(pdf, page);
+        const { boxes, aspect } = await pageTextBoxes(pdf, page);
         if (!active) return;
         if (boxes.length) anyText = true;
-        const matches = findOnPage(boxes, term).slice(0, MAX_MATCHES - count);
+        const matches = findOnPage(boxes, term, aspect).slice(0, MAX_MATCHES - count);
         if (matches.length) { results.push({ page, matches }); count += matches.length; }
         const capped = count >= MAX_MATCHES;
         const done = capped || page === pdf.numPages;

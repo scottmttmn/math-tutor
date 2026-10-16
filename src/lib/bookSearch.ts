@@ -23,17 +23,31 @@ const fold = (ch: string) => {
   return lower.length === 1 ? lower : ch;
 };
 
+// A US Letter page's height over its width, for callers that don't know the page's.
+const LETTER_ASPECT = 11 / 8.5;
+// A gap between runs of text wider than this (in line heights) is a space.
+const WORD_GAP = 0.15;
+
+// Whether two runs of text in a row are separate words: on different lines, or with a gap between
+// them. PDFs often split one word into runs (a change of font, or a glyph at a time), with no gap.
+const apart = (before: TextBox, box: TextBox, aspect: number) => {
+  if (Math.abs(box.y + box.height - before.y - before.height) > Math.min(box.height, before.height) / 2) return true;
+  const gap = box.x - (before.x + before.width);
+  return gap * aspect > WORD_GAP * box.height || gap * aspect < -box.height;
+};
+
 /** The query as it is matched: lower case, runs of spaces as one, trimmed. '' matches nothing. */
 export function searchTerm(query: string): string {
   return Array.from(query.trim(), (ch) => (ch.length === 1 ? fold(ch) : ch)).join('').replace(/ +/g, ' ');
 }
 
 /**
- * Every match of `query` on a page, from its text boxes (`pageTextBoxes`). The boxes are read as one
- * text, a space between them, so words split across runs of text (or lines) are still found; case
- * and spacing are ignored. A match's rects are cut from its boxes in proportion, as `textUnder` reads them.
+ * Every match of `query` on a page, from its text boxes (`pageTextBoxes`; `aspect` is the page's
+ * height over its width). The boxes are read as one text, with a space only where they are apart, so
+ * words split into runs of text, and phrases across lines, are still found; case and spacing are
+ * ignored. A match's rects are cut from its boxes in proportion, as `textUnder` reads them.
  */
-export function findOnPage(boxes: TextBox[], query: string): PageMatch[] {
+export function findOnPage(boxes: TextBox[], query: string, aspect = LETTER_ASPECT): PageMatch[] {
   const term = searchTerm(query);
   if (!term) return [];
   // The page's text, folded, and where each character came from (null: a space put between boxes).
@@ -41,7 +55,7 @@ export function findOnPage(boxes: TextBox[], query: string): PageMatch[] {
   let shown = '';
   const from: ({ box: number; at: number } | null)[] = [];
   boxes.forEach((box, index) => {
-    if (text && !text.endsWith(' ')) { text += ' '; shown += ' '; from.push(null); }
+    if (text && !text.endsWith(' ') && apart(boxes[index - 1], box, aspect)) { text += ' '; shown += ' '; from.push(null); }
     // By UTF-16 unit, as indexOf counts (math letters such as 𝑥 are two).
     for (let at = 0; at < box.text.length; at += 1) {
       const ch = box.text[at];
