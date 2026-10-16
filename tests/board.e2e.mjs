@@ -111,9 +111,10 @@ async function askTutor(reply) {
 }
 const PROBLEM_PLACEHOLDER = "Type the math problem you're working on...";
 const TOPIC_PLACEHOLDER = "Topic or concept you're studying...";
-// The new board loads only once the open one is saved, and the load wipes anything written before
-// it (in CI a stroke drawn right after New vanished). So wait until the empty board is showing:
-// that needs the open board to have something on it, or there is nothing to tell them apart.
+// The new board loads only once the open one is saved, and the editor's load wipes anything written
+// before it (in CI a stroke drawn right after New vanished). So wait until the box and Clear show the
+// empty board (which needs the open board to have something on it, or nothing tells them apart) and
+// the canvas has applied the load (`data-loading` gone).
 async function newBoard(type) {
   const showing = () => page.evaluate(([problem, topic]) => ({
     text: document.querySelector(`[placeholder="${problem}"], [placeholder="${topic}"]`)?.value ?? '',
@@ -126,7 +127,7 @@ async function newBoard(type) {
   await page.waitForFunction(([placeholder]) => {
     const box = document.querySelector(`[placeholder="${placeholder}"]`);
     const clear = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Clear');
-    return box?.value === '' && clear?.disabled === true;
+    return box?.value === '' && clear?.disabled === true && !document.querySelector('[data-loading]');
   }, [type === 'note' ? TOPIC_PLACEHOLDER : PROBLEM_PLACEHOLDER]);
 }
 try {

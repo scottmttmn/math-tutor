@@ -2,6 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import type { RefObject } from 'react';
+import { useCanvasState } from '@/context/CanvasContext';
 import type { CanvasDocument, Paper } from '@/types';
 
 export interface DrawingCanvasHandle {
@@ -29,9 +30,11 @@ const TldrawCanvas = dynamic(() => import('./TldrawCanvas'), {
 
 /** Fills its nearest positioned ancestor; give that element a size. */
 export default function DrawingCanvas({ handleRef, toolsHidden = false, paper = 'blank' }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden?: boolean; paper?: Paper }) {
+  // data-loading: the editor still shows the previous board (the browser tests wait for it to go).
+  const { pendingLoad } = useCanvasState();
   return (
     // isolate: tldraw's toolbars use z-indexes up to 10000; keep them below the app's dialogs.
-    <div className="absolute inset-0 isolate">
+    <div className="absolute inset-0 isolate" data-loading={pendingLoad ? 'true' : undefined}>
       <TldrawCanvas handleRef={handleRef} toolsHidden={toolsHidden} paper={paper} />
     </div>
   );
