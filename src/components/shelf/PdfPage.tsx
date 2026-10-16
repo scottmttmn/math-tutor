@@ -33,6 +33,8 @@ interface Props {
   tool: InkTool | null;
   /** The page's ink after a stroke is written or rubbed out. */
   onInk: (strokes: InkStroke[]) => void;
+  /** Words found by a search, lit on the page (fractions of the whole page). */
+  lit?: PageRect[];
 }
 
 // A box smaller than this (as a fraction of the page) is a stray tap, not a mark.
@@ -61,7 +63,7 @@ const TAP_SLOP = 10;
 const percent = (rect: PageRect) => ({ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%` });
 
 /** One PDF page (or its printed part), fit to its container's width, with marked exercises drawn over it. */
-export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, marking, pending, pendingForm, onMark, onOpenMark, crop, onTurn, onTapMiddle, ink, tool, onInk }: Props) {
+export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, marking, pending, pendingForm, onMark, onOpenMark, crop, onTurn, onTapMiddle, ink, tool, onInk, lit = [] }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [width, setWidth] = useState(0);
@@ -252,6 +254,11 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
         {/* Ink sits over the print and under the marks; the overlay above takes the pointer. */}
         <canvas ref={inkCanvas} data-testid="page-ink" className="absolute inset-0 w-full h-full pointer-events-none" />
         <canvas ref={liveCanvas} className="absolute inset-0 w-full h-full pointer-events-none" />
+        {/* Search matches: a gray wash with an ink underline, which reads on e-ink. */}
+        {lit.map((rect, index) => (
+          <div key={index} data-testid="search-hit" style={percent(toShown(rect, crop))}
+            className="absolute pointer-events-none bg-gray-900/20 border-b-2 border-gray-900" />
+        ))}
         {failed && <p className="absolute inset-0 grid place-items-center text-sm text-red-600">This page could not be shown.</p>}
         <div
           // Up-and-down drags still scroll the page and pinches still zoom; sideways ones are swipes.

@@ -27,13 +27,15 @@ import BoardFrame from '@/components/layout/BoardFrame';
 import { saveBoardAs } from '@/lib/exportBoard';
 import PdfPage from './PdfPage';
 import BookList from './BookList';
+import BookSearch from './BookSearch';
+import { useBookSearch } from '@/hooks/useBookSearch';
 
 // Whether the list beside the page is hidden, so the page gets the width.
 const LIST_HIDDEN_KEY = 'math-tutor:shelfListHidden';
 
-// Which list is beside the page: what the student made in the book, or the PDF's contents.
-type ListTab = 'list' | 'contents';
-const LIST_TABS: { tab: ListTab; label: string }[] = [{ tab: 'list', label: 'Your list' }, { tab: 'contents', label: 'Contents' }];
+// Which list is beside the page: what the student made in the book, the PDF's contents, or a search.
+type ListTab = 'list' | 'contents' | 'search';
+const LIST_TABS: { tab: ListTab; label: string }[] = [{ tab: 'list', label: 'Your list' }, { tab: 'contents', label: 'Contents' }, { tab: 'search', label: 'Search' }];
 // What a box being marked will be.
 const MARK_KINDS: { kind: ShelfMarkKind; label: string }[] = [{ kind: 'exercise', label: 'Exercise' }, { kind: 'note', label: 'Note' }];
 
@@ -45,6 +47,7 @@ const INK_TOOLS: { tool: InkTool; label: string }[] = [
 ];
 // A page with no ink: one array, so the page isn't redrawn on every render.
 const NO_INK: InkStroke[] = [];
+const NO_LIT: PageRect[] = [];
 // Undo steps kept for each page while the PDF is open.
 const MAX_UNDO = 50;
 
@@ -235,6 +238,7 @@ export default function ShelfReader() {
   }, [page]);
 
   const pageCount = pdf?.numPages ?? 1;
+  const search = useBookSearch(pdf);
   const turn = useCallback((direction: -1 | 1) => {
     setPage((current) => Math.min(pageCount, Math.max(1, current + direction)));
   }, [pageCount]);
@@ -407,6 +411,8 @@ export default function ShelfReader() {
   // An open board always shows; with none open, the list can make way for the page.
   const pageOnly = listHidden && !exercise;
   const marksOnPage = shelfDocument.exercises.filter((item) => item.page === page);
+  // The search's matches on this page are lit until it is cleared.
+  const litOnPage = search.results.find((result) => result.page === page)?.matches.flatMap((match) => match.rects) ?? NO_LIT;
   const name = pageName(labels, page);
   const pageText = name === String(page) ? `Page ${page} of ${pageCount}` : `p. ${name} (${page} of ${pageCount})`;
   const readingFullScreen = fullScreen && !exercise;
@@ -493,6 +499,7 @@ export default function ShelfReader() {
         ink={ink[page] ?? NO_INK}
         tool={inkTool}
         onInk={(strokes) => changeInk(page, strokes)}
+        lit={litOnPage}
       />
     </div>
   );
@@ -533,6 +540,8 @@ export default function ShelfReader() {
               ))}
             </ul>
           )
+        ) : listTab === 'search' ? (
+          <BookSearch search={search} pageCount={pageCount} contents={contents} labels={labels} onGoTo={goToEntry} />
         ) : (
           <BookList pdf={pdf} marks={shelfDocument.exercises} solvedIds={solvedIds} ink={ink} contents={contents} labels={labels}
             onOpen={(mark) => { setPanelOpen(false); void openExercise(mark); }} onGoTo={goToEntry} disabled={isStreaming} />
