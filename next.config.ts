@@ -12,6 +12,8 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
   },
+  // With no server, the Android app calls the tutor's providers itself (src/lib/tutorRequest.ts).
+  env: { NEXT_PUBLIC_TUTOR_DIRECT: android ? '1' : '' },
   ...(android ? { output: 'export', pageExtensions: ['tsx', 'mdx'], images: { unoptimized: true } } : {}),
 };
 

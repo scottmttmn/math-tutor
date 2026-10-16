@@ -9,5 +9,5 @@ export const CHATGPT_DEFAULT_MODEL_PATTERN = /sol/i;
 // Minimum interval between tutor requests, measured from their start.
 export const RATE_LIMIT_MS = 5 * 1000;
 
-/** Shown when /api/tutor answers with something other than a reply stream: the Android app has no server yet. */
-export const TUTOR_UNAVAILABLE = "The tutor isn't connected in the tablet app yet.";
+/** Shown when /api/tutor answers with something other than a reply stream (e.g. a page from a proxy). */
+export const TUTOR_UNAVAILABLE = "The tutor didn't answer. Please try again.";

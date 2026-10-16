@@ -6,6 +6,7 @@ import { getModelConfig } from '@/lib/modelConfig';
 import { TUTOR_UNAVAILABLE } from '@/lib/constants';
 import { getTutorWaitMs, recordTutorUsage, tryStartTutorRequest } from '@/hooks/useRateLimit';
 import { cleanTexReply } from '@/lib/texWriteUp';
+import { requestTutor } from '@/lib/tutorRequest';
 import type { TutorStreamEvent } from '@/types';
 
 /**
@@ -39,14 +40,10 @@ export function useWriteUp() {
       if (wait > 0) await pause(wait + 50);
       if (abort.signal.aborted) return false;
       if (!tryStartTutorRequest()) throw new Error('The tutor is busy. Try again in a moment.');
-      const send = () => fetch('/api/tutor', {
-        method: 'POST', signal: abort.signal,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          writeUp: true, problemStatement, problemImage: problemImage ?? undefined,
-          chatHistory: [], canvasImage, modelConfig: getModelConfig(),
-        }),
-      });
+      const send = () => requestTutor({
+        writeUp: true, problemStatement, problemImage: problemImage ?? undefined,
+        chatHistory: [], canvasImage, modelConfig: getModelConfig(),
+      }, abort.signal);
       let response = await send();
       // The server's gate counts requests from every tab; when it asks to wait, wait once and retry.
       if (response.status === 429) {
@@ -63,6 +60,7 @@ export function useWriteUp() {
       if (!response.headers.get('Content-Type')?.includes('text/event-stream')) throw new Error(TUTOR_UNAVAILABLE);
       const reader = response.body?.getReader();
       if (!reader) throw new Error('No response stream');
+      abort.signal.addEventListener('abort', () => { void reader.cancel().catch(() => undefined); });
       const decoder = new TextDecoder();
       let buffer = '';
       let text = '';

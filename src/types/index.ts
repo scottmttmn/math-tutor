@@ -237,13 +237,31 @@ export interface TutorRequest {
   bookContext?: BookContext;
   /** The student's tutor memory as text (see profileForTutor); absent when empty or not shared. */
   learnerProfile?: string;
-  /** The tutor may end its reply with notes on topics for the tutor memory (see NOTES_RULE in the route). */
+  /** The tutor may end its reply with notes on topics for the tutor memory (see NOTES_RULE in tutorPrompt.ts). */
   takeNotes?: boolean;
-  /** On a check-in board: the topics it covers (see CHECK_IN_PROMPT in the route). */
+  /** On a check-in board: the topics it covers (see CHECK_IN_PROMPT in tutorPrompt.ts). */
   checkIn?: CheckIn;
   /** Turn the board's handwriting into a LaTeX write-up (WRITE_UP_PROMPT) instead of tutoring. */
   writeUp?: boolean;
 }
+
+/** One request as the model gets it (planTutorRequest in src/lib/tutorPrompt.ts), for any provider. */
+export interface TutorPlan {
+  systemPrompt: string;
+  /** The conversation's first user text (learner profile, book pages, check-in topics), or ''. */
+  preface: string;
+  history: Pick<ChatMessage, 'role' | 'content'>[];
+  /** The latest user turn: labelled images and the question. */
+  latest: UserPart[];
+  maxTokens: number;
+  isWriteUp: boolean;
+}
+
+/** Where a provider's API key comes from, for its error messages: the server's .env.local or the tablet's Settings. */
+export type ApiKeySource = 'server' | 'device';
+
+/** Which saved API key a provider uses in the Android app (see DeviceKeysPlugin). */
+export type DeviceKeyName = 'anthropic' | 'gemini' | 'openai';
 
 /** Text of the Shelf pages leading up to an exercise (never past its page), for the tutor to read. */
 export interface BookContext {
@@ -365,4 +383,14 @@ export interface BackupStatus {
 /** The Android app's native Save dialog (android/…/SaveFilePlugin.java); data is base64. */
 export interface SaveFilePlugin {
   save(options: { name: string; mimeType: string; data: string }): Promise<{ saved: boolean }>;
+}
+
+/**
+ * The Android app's API keys (android/…/DeviceKeysPlugin.java): kept in the app's private storage,
+ * encrypted with a key in the Android Keystore, and left out of Android's backups.
+ */
+export interface DeviceKeysPlugin {
+  get(options: { name: DeviceKeyName }): Promise<{ value?: string }>;
+  set(options: { name: DeviceKeyName; value: string }): Promise<void>;
+  remove(options: { name: DeviceKeyName }): Promise<void>;
 }
