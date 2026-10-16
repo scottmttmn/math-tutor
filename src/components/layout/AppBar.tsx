@@ -8,10 +8,12 @@ import SettingsModal, { type SettingsTab } from './SettingsModal';
 import { RESTORE_RESULT_KEY } from './BackupSettings';
 import { useBackupStatus } from '@/hooks/useBackupStatus';
 import { backupDue, resumeBackup } from '@/lib/autoBackup';
+import { useAddPdfs } from '@/hooks/useAddPdfs';
 import { GearIcon, HomeIcon, NotesIcon, ProblemIcon, ShelfIcon } from '@/components/common/Icons';
+import { bookHref } from '@/components/shelf/BookCard';
 
-// 'memory' has no tab of its own; it opens from Settings and Home.
-export type AppPlace = 'home' | 'shelf' | 'board' | 'memory';
+// Only Home has a tab: a book (its page, the reader) opens from Home, and 'memory' from Settings and Home.
+export type AppPlace = 'home' | 'book' | 'board' | 'memory';
 
 interface Props {
   /** Where the page sits; its tab is shown as current. */
@@ -20,7 +22,7 @@ interface Props {
   onNew?: (type: SessionType) => void;
   /** Blocks leaving the page, e.g. while a tutor reply streams in. */
   locked?: boolean;
-  /** Runs before Home or Shelf opens, e.g. saving the board so Home lists the latest work. */
+  /** Runs before another page opens, e.g. saving the board so Home lists the latest work. */
   beforeLeave?: () => Promise<unknown>;
   /** Page-specific controls, shown before New. */
   children?: ReactNode;
@@ -28,7 +30,6 @@ interface Props {
 
 const PLACES: { place: AppPlace; href: string; label: string; icon: ReactNode }[] = [
   { place: 'home', href: '/', label: 'Home', icon: <HomeIcon /> },
-  { place: 'shelf', href: '/shelf', label: 'Shelf', icon: <ShelfIcon /> },
 ];
 
 function takeRestoreResult(): { tab: SettingsTab; restored: string } | null {
@@ -40,7 +41,7 @@ function takeRestoreResult(): { tab: SettingsTab; restored: string } | null {
   } catch { return null; }
 }
 
-/** The bar on every page: Home and Shelf, New, and Settings. Full screen hides it. */
+/** The bar on every page: Home, New (a problem, notes, or a PDF to work from), and Settings. Full screen hides it. */
 export default function AppBar({ place, onNew, locked = false, beforeLeave, children }: Props) {
   const router = useRouter();
   const [newOpen, setNewOpen] = useState(false);
@@ -55,6 +56,8 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, chil
     return () => clearTimeout(timer);
   }, []);
   const newRef = useRef<HTMLDivElement>(null);
+  const pdfInput = useRef<HTMLInputElement>(null);
+  const pdfs = useAddPdfs();
 
   useEffect(() => {
     if (!newOpen) return;
@@ -69,6 +72,14 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, chil
     setNewOpen(false);
     if (onNew) onNew(type);
     else void (beforeLeave?.() ?? Promise.resolve()).catch(() => undefined).then(() => router.push(`/board?new=${type}`));
+  };
+
+  // A new PDF opens on its book page, where it is read and its boards are listed.
+  const addPdfs = async (files: File[]) => {
+    if (!files.length) return;
+    await (beforeLeave?.() ?? Promise.resolve()).catch(() => undefined);
+    const added = await pdfs.add(files);
+    if (added.length) router.push(bookHref(added[0].id));
   };
 
   return (
@@ -122,21 +133,32 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, chil
       <div ref={newRef} className="relative">
         <button
           onClick={() => setNewOpen((open) => !open)}
-          disabled={locked}
+          disabled={locked || Boolean(pdfs.busy)}
           aria-expanded={newOpen}
           className="flex items-center gap-1 min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700 disabled:opacity-50"
         >
           <span aria-hidden="true">+</span> New
         </button>
         {newOpen && (
-          <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+          <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
             <button onClick={() => startNew('problem')} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
               <ProblemIcon />New Problem
             </button>
             <button onClick={() => startNew('note')} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
               <NotesIcon />New Notes
             </button>
+            <button onClick={() => { setNewOpen(false); pdfInput.current?.click(); }} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 border-t border-gray-100 hover:bg-gray-100">
+              <ShelfIcon />Add a PDF…
+            </button>
           </div>
+        )}
+        <input ref={pdfInput} type="file" accept="application/pdf,.pdf" multiple hidden aria-label="Add a PDF"
+          onChange={(event) => { void addPdfs([...(event.target.files ?? [])]); event.target.value = ''; }} />
+        {(pdfs.busy || pdfs.error) && (
+          <p role={pdfs.error ? 'alert' : 'status'} className={`absolute right-0 top-full mt-1 w-64 px-3 py-2 text-sm bg-white border rounded-lg shadow-lg z-50 ${pdfs.error ? 'text-red-700 border-red-200' : 'text-gray-700 border-gray-200'}`}>
+            {pdfs.error || pdfs.busy}
+            {pdfs.error && <button onClick={pdfs.clearError} className="ml-2 underline">OK</button>}
+          </p>
         )}
       </div>
 

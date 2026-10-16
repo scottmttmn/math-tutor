@@ -35,22 +35,26 @@ try {
   page.on('pageerror', (error) => errors.push(error.message));
 
   await page.goto(`${origin}/`);
-  await page.getByRole('heading', { name: 'Problems and notes' }).waitFor();
-  await page.getByRole('link', { name: 'Shelf' }).first().click();
-  await page.getByRole('heading', { name: 'Shelf', exact: true }).waitFor();
-  assert.equal(new URL(page.url()).pathname, '/shelf');
+  await page.getByRole('heading', { name: 'Library', exact: true }).waitFor();
+  await page.getByRole('link', { name: /Tell the tutor what you know/ }).click();
+  await page.getByRole('heading', { name: 'Tutor memory', exact: true }).waitFor();
+  assert.equal(new URL(page.url()).pathname, '/memory');
   console.log('PASS Home opens and links work inside the bundle');
 
   // A full load of a page other than Home (a reload) shows that page, under its own address.
   await page.reload();
-  await page.getByRole('heading', { name: 'Shelf', exact: true }).waitFor();
-  assert.equal(new URL(page.url()).pathname, '/shelf');
+  await page.getByRole('heading', { name: 'Tutor memory', exact: true }).waitFor();
+  assert.equal(new URL(page.url()).pathname, '/memory');
   await page.goto(`${origin}/board?new=note`);
   await page.locator('.tl-canvas').waitFor();
   assert.equal(new URL(page.url()).pathname, '/board');
   await page.goto(`${origin}/pen-test`);
   await page.getByTestId('pen-test-canvas').waitFor();
   assert.equal(new URL(page.url()).pathname, '/pen-test');
+  // A book's page keeps its query through the redirect to book.html.
+  await page.goto(`${origin}/book?doc=missing`);
+  await page.getByText('This book isn’t in your library.', { exact: false }).waitFor();
+  assert.equal(new URL(page.url()).pathname + new URL(page.url()).search, '/book?doc=missing');
   console.log('PASS reloading or opening a page directly shows that page');
 
   // Stand in for the native side: Capacitor sees an Android bridge and the app's plugins' headers.

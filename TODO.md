@@ -19,7 +19,8 @@ Done: the handwriting test, autosave on the main page, the 5-second request limi
 
 Done: **Home** is the page the app opens on: a Continue card for the last board, then a grid of every free-form board and Shelf exercise that has work in it, with thumbnails, search, rename, sort, and filters (All / Problems / Notes / In progress / Solved). Every page has the same bar: Home, Shelf, + New, Settings.
 
-- Later: more ways to organize problems and notes, probably folders.
+- Done (library step 2): Home and the Shelf are one page. Home lists **Books** (every PDF) and free boards; a search or filter also finds the boards made in books. Each book has its own page with its boards; **+ New → Add a PDF…** adds one; a new problem takes a picture (**Add picture**), which replaces Single problem. The Shelf tab is gone.
+- Next (library step 3): nested folders, with a book coming in a folder of its own ([design](https://claude.ai/artifact/HwasY4HpAiE6Y5qNts1X6k), option B). Then step 4: several exercises on one board.
 
 ### 3. PDF Shelf
 

@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSessionState, useSessionDispatch } from '@/context/SessionContext';
 import { useCanvasState } from '@/context/CanvasContext';
+import { problemImageFromFile } from '@/lib/shelf';
 
 interface Props {
   onCaptureProblemImage: () => Promise<void> | void;
@@ -13,9 +14,28 @@ interface Props {
 export default function ProblemStatement({ onCaptureProblemImage, onPutOnBoard }: Props) {
   const { problemStatement, problemImage } = useSessionState();
   const dispatch = useSessionDispatch();
-  const { hasContent } = useCanvasState();
-  // A problem brought in from a file (Shelf → Single problem) needs to be readable, not just a thumbnail.
+  const { hasContent, pendingLoad } = useCanvasState();
+  // A problem brought in from a picture needs to be readable, not just a thumbnail.
   const [enlarged, setEnlarged] = useState(false);
+  const pictureInput = useRef<HTMLInputElement>(null);
+  const [pictureError, setPictureError] = useState('');
+  // Counts pictures picked and boards switched to, so a slow conversion lands only on the board, and
+  // as the picture, it was picked for.
+  const picture = useRef(0);
+  useEffect(() => { if (pendingLoad) picture.current += 1; }, [pendingLoad]);
+
+  // A photo or screenshot of the problem, or a PDF's first page, becomes its figure.
+  const addPicture = async (file: File | undefined) => {
+    if (!file) return;
+    const request = ++picture.current;
+    setPictureError('');
+    try {
+      const image = await problemImageFromFile(file);
+      if (request === picture.current) dispatch({ type: 'SET_PROBLEM_IMAGE', image });
+    } catch {
+      if (request === picture.current) setPictureError(`${file.name} could not be opened. Use a picture or a PDF.`);
+    }
+  };
 
   return (
     <div className="px-3 py-2">
@@ -56,16 +76,28 @@ export default function ProblemStatement({ onCaptureProblemImage, onPutOnBoard }
             </button>
           </>
         ) : (
-          <button
-            onClick={() => void onCaptureProblemImage()}
-            disabled={!hasContent}
-            className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg text-gray-800 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-            title={!hasContent ? 'Draw on the canvas first' : 'Capture current canvas as the problem figure'}
-          >
-            Capture as Problem
-          </button>
+          <>
+            <button
+              onClick={() => pictureInput.current?.click()}
+              className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg text-gray-800 hover:bg-gray-50"
+              title="Use a photo, a screenshot or a PDF of the problem as its figure"
+            >
+              Add picture
+            </button>
+            <input ref={pictureInput} type="file" accept="image/*,application/pdf,.pdf" hidden aria-label="Problem picture"
+              onChange={(event) => { void addPicture(event.target.files?.[0]); event.target.value = ''; }} />
+            <button
+              onClick={() => void onCaptureProblemImage()}
+              disabled={!hasContent}
+              className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg text-gray-800 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              title={!hasContent ? 'Draw on the canvas first' : 'Capture current canvas as the problem figure'}
+            >
+              Capture as Problem
+            </button>
+          </>
         )}
       </div>
+      {pictureError && <p role="alert" className="mt-1 text-xs text-red-700">{pictureError}</p>}
     </div>
   );
 }

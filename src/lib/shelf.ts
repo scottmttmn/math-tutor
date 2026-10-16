@@ -3,8 +3,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { deleteSession, deleteShelfDocument, loadSession, loadShelfDocument, saveSession, saveShelfDocument, shelfSessionId } from '@/lib/db';
 import { cropPage, imageFileToPng, openPdf, pageImage, renderCover } from '@/lib/pdf';
 import { discardRecoveryCopy } from '@/lib/sessionRecovery';
-import { setBoardToOpen } from '@/lib/currentBoard';
-import type { ChatMessage, PageRect, Session, ShelfDocument, ShelfExercise, ShelfKind, ShelfMarkKind } from '@/types';
+import type { ChatMessage, PageRect, ShelfDocument, ShelfExercise, ShelfKind, ShelfMarkKind } from '@/types';
 
 
 const isPdf = (file: File) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
@@ -38,24 +37,11 @@ export async function addToShelf(file: File): Promise<ShelfDocument> {
   } finally { void pdf.loadingTask.destroy(); }
 }
 
-/**
- * Starts a free-form problem with a picture of the file (an image, or a PDF's first page) as its
- * problem image, and makes it the session /board opens next.
- */
-export async function startProblemFromFile(file: File): Promise<string> {
-  let image: string;
-  if (isPdf(file)) {
-    const pdf = await openPdf(file);
-    try { image = await pageImage(pdf); } finally { void pdf.loadingTask.destroy(); }
-  } else image = await imageFileToPng(file);
-  const now = Date.now();
-  const session: Session = {
-    id: uuidv4(), title: 'Untitled', problemStatement: '', problemImage: image, canvasStrokes: [], canvasDocument: null,
-    canvasImageBlob: null, chatHistory: [], createdAt: now, updatedAt: now, isSolved: false, sessionType: 'problem',
-  };
-  await saveSession(session);
-  setBoardToOpen(session.id);
-  return session.id;
+/** A picture of a file for a problem board's figure: an image, or a PDF's first page (PNG, base64). */
+export async function problemImageFromFile(file: File): Promise<string> {
+  if (!isPdf(file)) return imageFileToPng(file);
+  const pdf = await openPdf(file);
+  try { return await pageImage(pdf); } finally { void pdf.loadingTask.destroy(); }
 }
 
 /** Whether a mark is a note page (a Notes board) rather than an exercise. */

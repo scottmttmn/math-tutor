@@ -91,7 +91,7 @@ export async function cropPage(pdf: PDFDocumentProxy, pageNumber: number, rect: 
   return toBase64(crop);
 }
 
-/** A whole page as a PNG (base64), for a single problem dropped straight onto a board. */
+/** A whole page as a PNG (base64), for a problem figure taken from a PDF. */
 export async function pageImage(pdf: PDFDocumentProxy, pageNumber = 1): Promise<string> {
   return toBase64(await drawPage(await pdf.getPage(pageNumber), CROP_PAGE_WIDTH));
 }

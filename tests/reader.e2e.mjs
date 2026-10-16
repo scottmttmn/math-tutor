@@ -34,9 +34,9 @@ const tapPage = async (x, y) => {
 };
 
 try {
-  await page.goto(`${origin}/shelf`);
-  await page.locator('input[aria-label="Add PDF"]').setInputFiles(pdfPath);
-  await page.getByRole('link', { name: 'Open Complex numbers' }).click();
+  await page.goto(`${origin}/`);
+  await page.locator('input[aria-label="Add a PDF"]').setInputFiles(pdfPath);
+  await page.getByRole('link', { name: 'Start reading' }).click();
 
   // Printed page numbers: roman for the front matter, then 1, 2, 3.
   await at('p. i (1 of 5)');

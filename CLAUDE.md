@@ -32,9 +32,10 @@ src/
 │   ├── api/tutor/route.ts     # Streaming API endpoint: server keys, request gate, ChatGPT plan (prompts and providers are in lib)
 │   ├── api/chatgpt/route.ts   # Sign in with ChatGPT: status, sign-in, sign-out
 │   ├── api/transcribe/route.ts# One image read by the ChatGPT plan (used by the handwriting test)
-│   ├── page.tsx               # Home: Continue, every problem and note, what's on the Shelf
+│   ├── page.tsx               # Home, the library: Continue, the books (Shelf PDFs) and free boards
 │   ├── board/page.tsx         # A free board (renders AppShell; ?new=problem|note starts one)
-│   ├── shelf/page.tsx         # The Shelf: what you work from (PDFs of any kind)
+│   ├── book/page.tsx          # One book's page: the book (read where you left off) and its boards (?doc=<id>)
+│   ├── shelf/page.tsx         # Old Shelf address: sends to Home
 │   ├── shelf/read/page.tsx    # One Shelf PDF beside the open exercise's board (?doc=<id>&open=<exercise id>)
 │   ├── memory/page.tsx        # Tutor memory: About you, topic self-ratings and the tutor's notes, sent with every question
 │   ├── pen-test/page.tsx      # Bare canvas (no tldraw) for judging pen latency on a device, e.g. the BOOX
@@ -42,7 +43,7 @@ src/
 │   └── globals.css            # Global Tailwind styles
 ├── components/
 │   ├── layout/
-│   │   ├── AppBar.tsx         # The bar on every page: Home, Shelf, + New, Settings, and Back up / Backup paused when needed
+│   │   ├── AppBar.tsx         # The bar on every page: Home, + New (problem, notes, Add a PDF), Settings, and Back up / Backup paused when needed
 │   │   ├── AppShell.tsx       # The free board page; wires contexts + UI
 │   │   ├── TopBar.tsx         # AppBar on a free board, plus save status
 │   │   ├── BoardFrame.tsx     # The layout every board shares: source, board with header and toolbar, tutor drawer
@@ -53,7 +54,7 @@ src/
 │   ├── workspace/
 │   │   ├── DrawingCanvas.tsx  # Client-only wrapper around TldrawCanvas; defines DrawingCanvasHandle
 │   │   ├── TldrawCanvas.tsx   # tldraw editor: loads documents, mirrors them to CanvasContext, exports images
-│   │   ├── ProblemStatement.tsx   # Textarea + problem-image capture (problem mode)
+│   │   ├── ProblemStatement.tsx   # Textarea + problem figure: Add picture (image or PDF) or Capture as Problem (problem mode)
 │   │   ├── NoteHeader.tsx     # Topic input (notes mode) — replaces ProblemStatement
 │   ├── WriteUpPanel.tsx   # TeX write-up dialog: write up the board, LaTeX editor, KaTeX preview, Download .tex
 │   │   └── CheckInHeader.tsx  # A check-in board's source: its topics and how it works
@@ -64,11 +65,14 @@ src/
 │   ├── memory/
 │   │   └── TutorMemory.tsx    # /memory: About you, topic ratings by area, own topics, the tutor's notebook, favorites, "What the tutor reads"
 │   ├── home/
-│   │   └── Home.tsx           # Home page: Continue card, every board and Shelf exercise (thumbnails, search, filter, sort, rename), Shelf row
+│   │   ├── Home.tsx           # Home, the library: Continue card, Books, free boards; search/filter reach a book's boards; drop a PDF to add it
+│   │   └── BoardCard.tsx      # A board in a list (thumbnail, kind, book, solved, favorite; Rename and Delete)
+│   ├── book/
+│   │   └── BookPage.tsx       # /book: the book (Read at p. N, kind, Remove) and every board marked in it, in page order
 │   ├── pentest/
 │   │   └── PenTest.tsx        # /pen-test: draws straight to a canvas, reports samples/s, event delay, longest gap
 │   ├── shelf/
-│   │   ├── Shelf.tsx          # Shelf grid: add PDFs, Single problem (image/PDF straight onto a new board), remove
+│   │   ├── BookCard.tsx       # A book's card (BookCover: cover, kind, solved, where you left off; asks what it is; Remove), bookHref/readerHref
 │   │   ├── ShelfReader.tsx    # Page viewer (turns, go to page, Contents, trim, full screen) + mark exercises and note pages + the open one's board and tutor
 │   │   ├── PageAsk.tsx        # Ask about the page: the tutor on a boxed region, kept only if saved as a note page
 │   │   ├── BookSearch.tsx     # Search: matches by section and page, with a line around each
@@ -90,10 +94,11 @@ src/
 │   ├── useLearnerProfile.ts   # Loads the tutor memory and saves it shortly after each change
 │   ├── useFavorite.ts         # The open board's Favorite star, kept in the tutor memory
 │   ├── useBackupStatus.ts     # Shared folder-backup state (starts the backup on first use)
+│   ├── useAddPdfs.ts          # Adds PDFs to the library (AppBar's Add a PDF, a drop on Home)
 │   └── useChatGPTConnection.ts# Sign in with ChatGPT state for SettingsModal
 ├── lib/
 │   ├── db.ts                  # IndexedDB CRUD for sessions via `idb`
-│   ├── history.ts             # Turns saved sessions into Home's entries; search, filter and sort
+│   ├── history.ts             # Turns saved sessions into Home's entries; search, filter and sort; libraryView (books + boards)
 │   ├── currentBoard.ts        # Which free board /board opens (`math-tutor:currentSession`)
 │   ├── pdf.ts                 # PDF.js loading (offline, from public/pdfjs), page render, crops, covers, the book's printed area
 │   ├── reader.ts              # Pure reader helpers: margin trim box, page fractions ↔ shown part, printed page numbers
@@ -101,7 +106,7 @@ src/
 │   ├── bookSearch.ts          # Search a page's text boxes: matches, their rects, a line of context
 │   ├── bookList.ts            # Your list's sections (sectionAt) and rows; the words under a highlight (textUnder, pageTextBoxes)
 │   ├── paper.ts               # Board paper (blank, lined, grid): the default per kind and where the lines fall
-│   ├── shelf.ts               # Shelf actions: add PDF, mark/unmark exercises and note pages, single problem from a file
+│   ├── shelf.ts               # Shelf actions: add PDF, mark/unmark exercises and note pages, problemImageFromFile
 │   ├── checkIn.ts             # Skill check-in: which topics to offer, starting a check-in board
 │   ├── learnerProfile.ts      # Tutor memory: topic catalog, ratings, tutor notes (noteTopic, splitTutorNotes), profileForTutor
 │   ├── backup.ts              # Backup file: build (backup.json + boards/ + pdfs/), ZIP download, restore from ZIP/folder/JSON
@@ -173,7 +178,8 @@ capacitor.config.ts            # App id, webDir `out`, androidScheme `http`
 
 ### Shelf
 - PDFs live in the IndexedDB store `shelf` (db version 2) as `ShelfDocument`s: the file Blob, a cover, the last page read, and the marked `exercises` (`page` plus a `rect` in fractions of the page).
-- Marking an exercise crops that region to a PNG (`cropPage`) and creates its board, the session `shelf:<document id>:<exercise id>`, with the crop as `problemImage` (so the tutor gets it as the problem figure) and `exerciseStatement` as the problem text. Home lists these once they hold work and opens them at `/shelf/read?doc=…&open=…`.
+- In the app a Shelf PDF is a **book** (code and storage keep the name Shelf). There is no Shelf page: books are on Home, **+ New → Add a PDF…** (or a drop on Home) adds one and opens its page, and `/shelf` sends to Home. Each book has a page (`/book?doc=<id>`, `BookPage`): the book with **Read at p. N** / **Start reading**, kind, Remove, and every board marked in it in page order (`toHistoryItem(…, { untouched: true })`), where Delete also removes the mark. The reader's breadcrumb is the book's title, linking to its page. This is step 2 of the library plan (design: https://claude.ai/artifact/HwasY4HpAiE6Y5qNts1X6k, option B); folders come next, and a book will then get a folder of its own.
+- Marking an exercise crops that region to a PNG (`cropPage`) and creates its board, the session `shelf:<document id>:<exercise id>`, with the crop as `problemImage` (so the tutor gets it as the problem figure) and `exerciseStatement` as the problem text. Its book's page lists it; Home's search and filters find it once it holds work. It opens at `/shelf/read?doc=…&open=…`.
 - **Note pages**: **Mark** asks Exercise or Note. A note is a `ShelfExercise` with `kind: 'note'` (unset = exercise), so it is stored, backed up and removed like one, but its board is a Notes session (lined paper, Explain this / Check my notes, no Mark solved) and it sends no book pages: with `bookContext` the route always uses `SYSTEM_PROMPT`, and a note page should explain directly. Its mark on the page is dotted with the notes icon.
 - **Book pages for the tutor** (`src/lib/bookContext.ts`): with every question on a Shelf board, the reader sends the text of the pages leading up to the exercise as `bookContext`. They run from the last PDF bookmark at or before the exercise's page (skipping "Exercises"/"Answers" bookmarks), or the 6 pages before it without bookmarks, to the exercise's page; never past it (answer keys sit later), at most `MAX_BOOK_PAGES` (15). The student can change the start or turn it off on the board (`ShelfExercise.readFrom`, 0 = off), and later exercises in the same section reuse that choice. Scans with no text layer send nothing.
 - **Put on board** (Shelf board header; main page beside the captured problem) places `problemImage` on the canvas as a locked image shape (`meta.problemImage`, once per board; Clear leaves it). The tutor then sees it twice: as `problemImage` and inside the board export, which is what lets it read work written on the figure. A Shelf exercise opened on an **empty** board is put on it automatically (`ShelfReader` waits for the canvas's `LOADED`, then checks `hasContent`); a board with work is left as it is. Home ignores that shape when deciding whether an exercise holds work (`hasDrawing` in `history.ts`).
@@ -186,8 +192,8 @@ capacitor.config.ts            # App id, webDir `out`, androidScheme `http`
 - With no board open, the list beside the page (Your list / Contents / Search) has **Hide** (remembered in `localStorage`, `math-tutor:shelfListHidden`), giving the page the full width; a **Your list** button in the page toolbar brings it back. An open board always shows.
 - The reader uses `useSessionAutosave(handle, { reopenLast: false })`: the same autosave as the main page, but it never touches `math-tutor:currentSession`; the URL says which board is open.
 - Removing a mark or a PDF deletes the boards with it (and their recovery copies).
-- **Shelf cards** (`ShelfCover`, also on Home): cover, title, the kind (`ShelfDocument.kind`: Textbook, Problem set or Handout, `SHELF_KINDS`; the card asks "What is it?" until chosen, and **Change kind** in its menu asks again), solved progress ("solved of exercises" with a bar, from `solvedExercises`; Home shows counts only) and where you left off (`lastPageLabel` and `lastSection`, saved by the reader with `lastPage`). The card opens the book on that page.
-- **Single problem** saves a new free-form session whose `problemImage` is the picture (or a PDF's first page), sets it as the session `/board` opens and goes there.
+- **Book cards** (`BookCard`/`BookCover` on Home): cover, title, the kind (`ShelfDocument.kind`: Textbook, Problem set or Handout, `SHELF_KINDS`; the card asks "What is it?" until chosen, and **Change kind** in its menu asks again), solved progress ("solved of exercises" with a bar, from `solvedExercises`) and where you left off (`lastPageLabel` and `lastSection`, saved by the reader with `lastPage`). The card opens the book's page.
+- A problem from a picture: **Add picture** beside the problem text (`problemImageFromFile`: an image, or a PDF's first page) sets `problemImage` on any problem board. It replaced the Shelf's Single problem.
 - PDF.js is the **legacy** build: the modern one uses JavaScript (e.g. `Map.prototype.getOrInsertComputed`) that current Chromium and tablet web views lack. Its worker, fonts, cmaps and decoders are copied into `public/pdfjs` (gitignored) by `postinstall`, so nothing loads from a CDN.
 
 ### API Route (`/api/tutor`)
@@ -224,7 +230,7 @@ capacitor.config.ts            # App id, webDir `out`, androidScheme `http`
 - `db.ts` exports: `saveSession`, `loadSession`, `deleteSession`, `listSessions`, `renameSession`, for the Shelf `listShelf`, `loadShelfDocument`, `saveShelfDocument`, `deleteShelfDocument`, `shelfSessionId`, and for backup `onDataChange`, `restoreRecords`, `hasSavedWork`, `getSetting`, `setSetting`, and for the tutor memory `loadProfile`, `saveProfile`.
 - Session fields: `id`, `title`, `problemStatement`, `problemImage`, `canvasStrokes` (pre-tldraw only), `canvasDocument?`, `canvasImageBlob` (the History thumbnail), `chatHistory`, `createdAt`, `updatedAt`, `isSolved?`, `sessionType?`, `customTitle?`, `checkIn?`, `writeUp?`, `paper?`.
 - `customTitle` is the name given on Home. Pages that autosave don't know it, so `saveSession` keeps the stored one when a save omits it; `renameSession` is the only writer.
-- **Home** (`/`, `home/Home.tsx`) opens with a **Continue** card for the last board worked on, then lists free-form boards and Shelf exercises (`shelf:<document>:<exercise>`) that have work in them. A Shelf entry opens beside its page; a free board is set as the one `/board` opens (`setBoardToOpen`). Filters: All, Problems, Notes, In progress, Solved, Favorites. Below the list, the Shelf's newest PDFs. Sessions left from the removed built-in workbook (`workbook:…` ids) stay stored and in backups but are not listed.
+- **Home** (`/`, `home/Home.tsx`), the library, opens with a **Continue** card for the last board worked on, then **Books** (every Shelf PDF) and the free-form boards (`libraryView`). A search or a filter other than All also lists Shelf exercises (`shelf:<document>:<exercise>`) that have work in them, named with their book, and books only match by title under All. A Shelf entry opens beside its page; a free board is set as the one `/board` opens (`setBoardToOpen`). Filters: All, Problems, Notes, In progress, Solved, Favorites. Sessions left from the removed built-in workbook (`workbook:…` ids) stay stored and in backups but are not listed.
 - **Backup** (Settings → Backup): a backup is `backup.json` (`BackupManifest` version 2: the list of boards, Shelf entries without their file, ink, tutor memory), each board as `boards/<id>.json` (`boardPath`: the id URI-encoded, so no `:` in file names; thumbnail as a data URL) and `pdfs/<id>.pdf`. Boards are separate files so folder backup rewrites only the ones whose `updatedAt`/`customTitle` changed (`SavedState.boards`), however many there are. Version 1 backups (boards inline as `sessions`) still restore. The download is one stored ZIP (`zip.ts`); folder backup writes the same files into `Math Tutor backup/` in the chosen folder, plus `backup-YYYY-MM-DD.json` and `history/YYYY-MM-DD/` (the boards changed that day; both last 7 days), 30s after a change; **Restore from folder** on a folder with dated copies asks for the latest backup or an earlier day (`restoreFromFiles(files, day)`: that day's copy, each board from the newest `history/` copy up to it) (`onDataChange` in `db.ts` fires on every session/Shelf write). Restore (`restoreRecords`) writes a record only when this device has none or an older `updatedAt`. The folder handle and backup state live in the IndexedDB `settings` store (db version 3). Folder backup is Chromium-only; elsewhere (e.g. Android) only download/restore show. If you add a store or a field that holds work, add it to the backup.
 - **Tutor memory** (`/memory`, from Settings → Tutor and, while empty, a line on Home): a `LearnerProfile` (`aboutMe`, rated `topics`, `favorites?`, `notebook?`, `shareWithTutor`, `updatedAt`) in the `settings` store under `learnerProfile` (`loadProfile` / `saveProfile`). Catalog topics (`TOPIC_AREAS`) exist in the profile only while rated or noted by the tutor; topics the student adds stay until removed. Topic ids are `area/name` slugs, so don't rename catalog entries' ids casually. It is in backups (`BackupManifest.profile`; newer `updatedAt` wins on restore).
 - `SessionMetadata` (used for session list): `id`, `title`, `problemStatement`, `createdAt`, `updatedAt`, `messageCount`, `isSolved?`, `sessionType?`.
@@ -312,18 +318,18 @@ ESLint uses the Next.js core web vitals config. Run `npm run lint` before commit
 - **Autosave:** `useSessionAutosave` saves 800ms after the last change (problem, image, chat, solved, type, drawing), reading the live document from the handle. It skips an untouched new session and a session that was only opened (it compares content, not timestamps), keeps `createdAt`, and serializes saves. The top bar shows Saving…/Saved, or a Retry button after a failure. New saves write `canvasStrokes: []`.
 - **Reload:** the open session's id is kept in `localStorage` (`math-tutor:currentSession`) and reopened on load. On `pagehide`/hidden it stages a synchronous recovery copy via `src/lib/sessionRecovery.ts` (shared with the Shelf reader); a session reopened from that copy is written back to IndexedDB.
 - **Open / New:** Home opens a free board by setting it as `/board`'s session; `startNew` saves the current session first, then loads an empty one.
-- **New:** **+ New** in `AppBar` (every page) is a dropdown — *New Problem* or *New Notes*. On `/board` it calls `AppShell.handleNew()`; elsewhere it goes to `/board?new=<type>`, which starts the board once and drops the parameter.
+- **New:** **+ New** in `AppBar` (every page) is a dropdown — *New Problem*, *New Notes* or *Add a PDF…*. New Problem/Notes on `/board` call `AppShell.handleNew()`; elsewhere they go to `/board?new=<type>`, which starts the board once and drops the parameter. Add a PDF saves the open board (`beforeLeave`), adds the files (`useAddPdfs`) and opens the first one's book page.
 
 ### Navigation
-- `AppBar` is on every page (hidden in full screen): **Home** and **Shelf** tabs, **+ New**, and a Settings gear. Pass `locked` while a tutor reply streams so links can't leave the page.
-- The reader's breadcrumb leads back to the Shelf.
-- Design direction (agreed 2026-10-14): boards, the Shelf, and a tutor you call. Later: folders (or similar) for problems and notes, and a new name for the app.
+- `AppBar` is on every page (hidden in full screen): the **Home** tab, **+ New**, and a Settings gear. Pass `locked` while a tutor reply streams so links can't leave the page.
+- The reader's breadcrumb leads to the book's page.
+- Design direction (agreed 2026-10-14, revised 2026-10-16): boards, books you work from, and a tutor you call, in one library on Home. Building in steps: per-board backup files (done), Home and the Shelf as one page (done), nested folders (a book comes with its own), several exercises on one board. Later, a new name for the app.
 
 ### Visual language
 - Ink on paper: grays, black and white. Meaning is carried by icon, shape and word, so every screen still reads in greyscale on an e-ink tablet.
 - **Only the tutor has a color**, Tailwind `indigo-700` (`indigo-50` for its replies and tints): **Ask tutor**, the **Tutor** toggle, the drawer's edge and heading, Send/Ask in a chat, "Tutor reads". Nothing else uses indigo, and the tutor uses nothing else. Focus rings and links are ink.
 - **Solved** is a filled ink check (`SolvedCheck` in `common/Icons.tsx`) plus the word, everywhere (boards, Home, Shelf lists; the Shelf page's mark gets a filled label). No green.
-- Kinds wear their icon (`KindIcon`: Problem, Notes; `ShelfIcon` for the Shelf) on cards, in the board's title line and in **+ New**.
+- Kinds wear their icon (`KindIcon`: Problem, Notes; `ShelfIcon` for books) on cards, in the board's title line and in **+ New**.
 - Controls are at least 44px tall (`min-h-11`) and labelled in words. One solid ink button per screen for its main action. Delete, Rename and Remove live in a `MoreMenu` ("⋯"), with an inline confirm for deletes.
 - Red is only for errors and failed saves, always with words.
 
