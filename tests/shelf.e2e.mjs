@@ -247,8 +247,24 @@ try {
   await page.getByRole('link', { name: 'Home' }).waitFor();
   console.log('PASS a single problem opens on a new board; it goes on the board; full screen main board');
 
-  // Removing the PDF takes its remaining boards with it.
+  // The Shelf card: asks what the PDF is until told, then shows it, with solved progress and where
+  // you left off; the kind can be changed from the menu.
   await page.goto(`${origin}/shelf`);
+  const kinds = page.getByRole('group', { name: 'What Algebra drills is' });
+  await kinds.getByRole('button', { name: 'Problem set' }).click();
+  await kinds.waitFor({ state: 'hidden' });
+  await page.getByText('Problem set', { exact: true }).waitFor();
+  await page.getByText(/^\d+ of \d+ solved/).waitFor();
+  await page.getByText(/^p\. \d+/).waitFor();
+  await page.reload();
+  await page.getByText('Problem set', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'More for Algebra drills' }).click();
+  await page.getByRole('menuitem', { name: 'Change kind' }).click();
+  await kinds.getByRole('button', { name: 'Textbook' }).click();
+  await page.getByText('Textbook', { exact: true }).waitFor();
+  console.log('PASS the Shelf card shows its kind, solved progress and where you left off');
+
+  // Removing the PDF takes its remaining boards with it.
   await page.getByRole('button', { name: 'More for Algebra drills' }).click();
   await page.getByRole('menuitem', { name: 'Remove' }).click();
   await page.getByRole('button', { name: 'Remove', exact: true }).click();

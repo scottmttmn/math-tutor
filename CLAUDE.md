@@ -184,6 +184,7 @@ capacitor.config.ts            # App id, webDir `out`, androidScheme `http`
 - With no board open, the list beside the page (Your list / Contents / Search) has **Hide** (remembered in `localStorage`, `math-tutor:shelfListHidden`), giving the page the full width; a **Your list** button in the page toolbar brings it back. An open board always shows.
 - The reader uses `useSessionAutosave(handle, { reopenLast: false })`: the same autosave as the main page, but it never touches `math-tutor:currentSession`; the URL says which board is open.
 - Removing a mark or a PDF deletes the boards with it (and their recovery copies).
+- **Shelf cards** (`ShelfCover`, also on Home): cover, title, the kind (`ShelfDocument.kind`: Textbook, Problem set or Handout, `SHELF_KINDS`; the card asks "What is it?" until chosen, and **Change kind** in its menu asks again), solved progress ("solved of exercises" with a bar, from `solvedExercises`; Home shows counts only) and where you left off (`lastPageLabel` and `lastSection`, saved by the reader with `lastPage`). The card opens the book on that page.
 - **Single problem** saves a new free-form session whose `problemImage` is the picture (or a PDF's first page), sets it as the session `/board` opens and goes there.
 - PDF.js is the **legacy** build: the modern one uses JavaScript (e.g. `Map.prototype.getOrInsertComputed`) that current Chromium and tablet web views lack. Its worker, fonts, cmaps and decoders are copied into `public/pdfjs` (gitignored) by `postinstall`, so nothing loads from a CDN.
 

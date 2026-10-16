@@ -136,6 +136,9 @@ export interface ShelfExercise {
 }
 
 /** A PDF on the Shelf, with the exercises and note pages marked on it. */
+/** What a Shelf PDF is: a textbook, a problem set or a handout. */
+export type ShelfKind = 'textbook' | 'problem-set' | 'handout';
+
 export interface ShelfDocument {
   id: string;
   title: string;
@@ -145,6 +148,11 @@ export interface ShelfDocument {
   cover: Blob | null;
   /** The page the reader was last on (1-based). */
   lastPage: number;
+  /** That page's printed number, and the section (bookmark) it is in, for the Shelf card. */
+  lastPageLabel?: string;
+  lastSection?: string;
+  /** What it is, chosen on the Shelf card. Unset until chosen. */
+  kind?: ShelfKind;
   exercises: ShelfExercise[];
   /** False when the student turned off trimming the pages' blank margins. Unset: trimmed. */
   trimMargins?: boolean;
