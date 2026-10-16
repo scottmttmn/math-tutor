@@ -75,7 +75,22 @@ try {
   await page.getByText('There is no page 40 in this PDF.').waitFor();
   await page.getByLabel('Go to page').press('Escape');
   await at('p. ii (2 of 5)');
-  console.log('PASS go to page by printed number');
+  // A box drawn but not saved doesn't follow you to another page (its crop would be of the wrong page).
+  await page.getByRole('button', { name: 'Mark exercise' }).click();
+  const marking = await page.getByTestId('page-overlay').boundingBox();
+  await page.mouse.move(marking.x + marking.width * 0.2, marking.y + marking.height * 0.2);
+  await page.mouse.down();
+  await page.mouse.move(marking.x + marking.width * 0.6, marking.y + marking.height * 0.3, { steps: 5 });
+  await page.mouse.up();
+  await page.getByRole('button', { name: 'Save and open' }).waitFor();
+  await page.getByRole('button', { name: 'Next page' }).click();
+  await at('p. 1 (3 of 5)');
+  await page.getByRole('button', { name: 'Save and open' }).waitFor({ state: 'detached' });
+  assert.equal(await page.getByTestId('page-overlay').locator('.border-dashed').count(), 0);
+  await page.getByRole('button', { name: 'Done marking' }).click();
+  await page.getByRole('button', { name: 'Previous page' }).click();
+  await at('p. ii (2 of 5)');
+  console.log('PASS go to page by printed number; an unsaved box stays behind');
 
   // Contents from the bookmarks, nested, with where you are; tapping one goes there.
   await page.getByRole('tab', { name: 'Contents' }).click();

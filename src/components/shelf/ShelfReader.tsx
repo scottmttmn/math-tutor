@@ -188,8 +188,11 @@ export default function ShelfReader() {
     });
   }, [isSolved, openId, shelfDocument, currentSessionId]);
 
-  // A new page starts at its top.
-  useEffect(() => { pageArea.current?.closest('.overflow-y-auto')?.scrollTo?.(0, 0); }, [page]);
+  // A new page starts at its top, and a box drawn but not saved stays with the page it was drawn on.
+  useEffect(() => {
+    pageArea.current?.closest('.overflow-y-auto')?.scrollTo?.(0, 0);
+    setPendingMark(null);
+  }, [page]);
 
   const pageCount = pdf?.numPages ?? 1;
   const turn = useCallback((direction: -1 | 1) => {
