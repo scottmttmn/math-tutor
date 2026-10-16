@@ -3,6 +3,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { CanvasProvider } from '@/context/CanvasContext';
 import { SessionProvider, useSessionState, useSessionDispatch } from '@/context/SessionContext';
+import { paperFor } from '@/lib/paper';
 import { useTutorChat } from '@/hooks/useTutorChat';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
 import { useSessionAutosave } from '@/hooks/useSessionAutosave';
@@ -33,7 +34,8 @@ function AppContent() {
   const { fullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
   const { toolsHidden, toggleTools } = useToolsHidden();
 
-  const { isStreaming, isSolved, sessionType, problemStatement, checkIn, chatHistory } = useSessionState();
+  const { isStreaming, isSolved, sessionType, problemStatement, checkIn, chatHistory, paper: chosenPaper } = useSessionState();
+  const paper = paperFor(chosenPaper, sessionType);
   const sessionDispatch = useSessionDispatch();
   const { sendHelp } = useTutorChat();
   const { status: saveStatus, saveNow, startNew } = useSessionAutosave(canvasHandle);
@@ -143,7 +145,7 @@ function AppContent() {
             <h1 className="font-semibold text-gray-900 truncate">{checkIn ? checkInTitle(checkIn) : problemStatement.split('\n')[0].trim() || (sessionType === 'note' ? 'New notes' : 'New problem')}</h1>
           </>
         )}
-        canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} />}
+        canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} paper={paper} />}
         toolbar={(
           <BottomToolbar
             onAskForHelp={(question) => void handleAskForHelp(question)}
@@ -154,6 +156,7 @@ function AppContent() {
             isSolved={isSolved}
             onToggleSolved={() => sessionDispatch({ type: 'TOGGLE_SOLVED' })}
             sessionType={sessionType}
+            paper={{ value: paper, onChange: (next) => sessionDispatch({ type: 'SET_PAPER', paper: next }) }}
             fullScreen={{ on: fullScreen, toggle: toggleFullScreen }}
             tools={{ hidden: toolsHidden, toggle: toggleTools }}
             tutor={{ open: tutorOpen, toggle: () => setTutorOpen((open) => !open) }}

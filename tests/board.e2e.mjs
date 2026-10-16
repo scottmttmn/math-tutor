@@ -122,6 +122,19 @@ try {
   assert.match(request.messages[0].content, /The answer is theirs to find/);
   assert.match(JSON.stringify(request.messages), /Find a strategy for a quadratic/);
   console.log('PASS a problem board gets hints with its problem and board');
+  // A problem board starts on blank paper; the choice is kept with the board.
+  await page.locator('[data-paper="blank"]').waitFor();
+  await page.getByRole('button', { name: 'Paper: Blank' }).click();
+  await page.getByRole('menuitem', { name: 'Lined' }).click();
+  await page.locator('[data-paper="lined"]').waitFor();
+  await page.waitForTimeout(1200);
+  await page.reload(); await waitProblem();
+  await page.locator('[data-paper="lined"]').waitFor();
+  await page.getByRole('button', { name: 'Paper: Lined' }).click();
+  await page.getByRole('menuitem', { name: 'Blank' }).click();
+  await page.locator('[data-paper="blank"]').waitFor();
+  await page.getByRole('button', { name: 'Tutor', exact: true }).click(); // The reload closed it.
+  console.log('PASS board paper: blank by default, changed and kept');
 
   // One request at a time: a long reply blocks others past five seconds, then a follow-up can go at once.
   await waitForTutorReady();
@@ -156,22 +169,31 @@ try {
   console.log('PASS immediate reload preserves board, conversation, problem and Solved');
 
   // Selecting shapes sends just those shapes, trimmed.
+  // The shapes on screen, with where they are, to find the new stroke (and to report on failure).
+  const shapesShown = () => page.locator('.tl-shape').evaluateAll((shapes) => shapes.map((shape) => {
+    const { x, y, width, height } = shape.getBoundingClientRect();
+    return { id: shape.dataset.shapeId ?? shape.id, x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
+  }));
+  const earlier = new Set((await shapesShown()).map((shape) => shape.id));
   await draw(260);
-  const box = await board().boundingBox();
+  const drawn = (await shapesShown()).filter((shape) => !earlier.has(shape.id));
+  assert.equal(drawn.length, 1, `one new stroke (${JSON.stringify(await shapesShown())}, board ${JSON.stringify(await board().boundingBox())})`);
   await page.locator('[data-testid="tools.select"]').first().click();
-  // Drag from empty board toward the top-left: starting the drag there could land on tldraw's
-  // undo/redo panel (its size varies by machine) and select nothing. Delete turns on once it holds a shape.
-  await page.mouse.move(box.x + 220, box.y + 200); await page.mouse.down();
-  await page.mouse.move(box.x + 20, box.y + 60, { steps: 5 }); await page.mouse.up();
-  await page.waitForFunction(() => document.querySelector('[data-testid="quick-actions.delete"]')?.disabled === false);
+  // Click the middle of the new stroke where it is on screen (a straight diagonal line passes
+  // through the middle of its box), so the selection doesn't depend on the board's camera or panels.
+  await page.mouse.click(drawn[0].x + drawn[0].width / 2, drawn[0].y + drawn[0].height / 2);
+  await page.waitForFunction(() => document.querySelector('[data-testid="quick-actions.delete"]')?.disabled === false, null, { timeout: 5000 })
+    .catch(async () => assert.fail(`the stroke wasn't selected (${JSON.stringify(drawn[0])}; shapes ${JSON.stringify(await shapesShown())})`));
   request = await askTutor('Problem hint.');
+  // Whether the stroke is still selected after asking, for the message if the size check fails.
+  const stillSelected = await page.evaluate(() => document.querySelector('[data-testid="quick-actions.delete"]')?.disabled === false);
   const image = imageOf(request);
   assert.ok(image?.startsWith('data:image/png;base64,'));
   const [width, height] = await page.evaluate(async (src) => {
     const image = new Image(); image.src = src; await image.decode(); return [image.naturalWidth, image.naturalHeight];
   }, image);
   // One ~140x80 stroke at 2x with padding, not both strokes and not the whole board.
-  assert.ok(width > 200 && width < 450 && height > 120 && height < 330, `unexpected image size ${width}x${height}`);
+  assert.ok(width > 200 && width < 450 && height > 120 && height < 330, `unexpected image size ${width}x${height} (still selected after asking: ${stillSelected})`);
   // The shared five-second limit: no countdown, and direct API bursts never reach the provider.
   assert.ok(await page.getByRole('button', { name: 'Ask tutor', exact: true }).isDisabled());
   assert.equal(await page.getByRole('button', { name: /^Wait / }).count(), 0);
@@ -282,6 +304,7 @@ try {
 
   // A Notes board explains directly; dictated follow-ups land in the box.
   await newBoard('note');
+  await page.locator('[data-paper="lined"]').waitFor(); // Notes start on lined paper.
   await page.getByPlaceholder("Topic or concept you're studying...").fill('Complex modulus');
   request = await askTutor('Notes explanation.');
   assert.match(request.messages[0].content, /Give clear, direct explanations/);
