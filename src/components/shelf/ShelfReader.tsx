@@ -220,10 +220,13 @@ export default function ShelfReader() {
   // Remember the page for next time.
   useEffect(() => {
     const current = documentRef.current;
-    if (!current || current.lastPage === page) return;
+    if (!current) return;
     // Where that is, for the Shelf card: the printed page number and the last bookmark at or before it.
+    // Written again when they change on the same page too (a book opened on its first page, or labels
+    // and bookmarks that load after the page).
     const lastPageLabel = pageName(labels, page);
     const section = contents.reduce<ContentsEntry | undefined>((found, entry) => (entry.page <= page && (!found || entry.page >= found.page) ? entry : found), undefined);
+    if (current.lastPage === page && current.lastPageLabel === lastPageLabel && current.lastSection === section?.title) return;
     const timer = setTimeout(() => {
       void writeDocument(async (latest) => {
         const next = { ...latest, lastPage: page, lastPageLabel, lastSection: section?.title, updatedAt: Date.now() };
