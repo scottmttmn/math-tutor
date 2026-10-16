@@ -137,6 +137,56 @@ try {
   await page.getByRole('link', { name: 'Home' }).waitFor();
   console.log('PASS full screen reading with bars on tap');
 
+  // Ink: the pen writes on the page (a finger would still turn it), saved with the page.
+  const inkPixels = () => page.getByTestId('page-ink').evaluate((canvas) => {
+    const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+    let count = 0;
+    for (let i = 3; i < data.length; i += 4) if (data[i] > 0) count += 1;
+    return count;
+  });
+  // Waits for the page's ink to show this many pixels (it is drawn once the page and its ink load).
+  const inkShown = async (expected) => {
+    for (let tries = 0; tries < 50 && await inkPixels() !== expected; tries += 1) await page.waitForTimeout(100);
+    assert.equal(await inkPixels(), expected);
+  };
+  const stroke = async (from, to) => {
+    const box = await page.getByTestId('page-overlay').boundingBox();
+    await page.mouse.move(box.x + box.width * from[0], box.y + box.height * from[1]);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * to[0], box.y + box.height * to[1], { steps: 8 });
+    await page.mouse.up();
+  };
+  await page.getByRole('button', { name: 'Pen', exact: true }).click();
+  assert.equal(await inkPixels(), 0);
+  // Drawn across the page's edge zone: with the pen on, it writes instead of turning the page.
+  await stroke([0.6, 0.3], [0.9, 0.35]);
+  await at('p. 3 (5 of 5)');
+  const penInk = await inkPixels();
+  assert.ok(penInk > 50, `the pen wrote (${penInk} px)`);
+  await page.getByRole('button', { name: 'Highlight', exact: true }).click();
+  await stroke([0.2, 0.6], [0.7, 0.6]);
+  const withHighlight = await inkPixels();
+  assert.ok(withHighlight > penInk * 2, `the highlight is wider than the pen (${withHighlight} vs ${penInk})`);
+  // The eraser rubs out the stroke it crosses, and Undo brings it back.
+  await page.getByRole('button', { name: 'Eraser', exact: true }).click();
+  await stroke([0.45, 0.5], [0.45, 0.7]);
+  assert.equal(await inkPixels(), penInk);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await inkShown(withHighlight);
+  // Off again, and a tap at the edge turns the page; the ink stays with its page.
+  await page.getByRole('button', { name: 'Eraser', exact: true }).click();
+  await page.getByRole('button', { name: 'Undo', exact: true }).waitFor({ state: 'detached' });
+  await tapPage(0.1, 0.5);
+  await at('p. 2 (4 of 5)');
+  await inkShown(0);
+  await page.waitForTimeout(1200);
+  await page.reload();
+  await at('p. 2 (4 of 5)');
+  await page.getByRole('button', { name: 'Next page' }).click();
+  await at('p. 3 (5 of 5)');
+  await inkShown(withHighlight);
+  console.log('PASS ink on the page: pen, highlighter, eraser, undo, kept after reload');
+
   assert.deepEqual(browserErrors, []);
   console.log('PASS no browser exceptions');
 } finally {

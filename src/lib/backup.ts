@@ -1,13 +1,13 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import { listSessions, listShelf, loadProfile, restoreRecords } from '@/lib/db';
+import { listInk, listSessions, listShelf, loadProfile, restoreRecords } from '@/lib/db';
 import { readZip, writeZip } from '@/lib/zip';
 import { RATINGS } from '@/lib/learnerProfile';
-import type { BackupManifest, LearnerProfile, ProfileTopic, RestoreResult, SaveFilePlugin, Session, ShelfDocument, TopicRating, TutorNote } from '@/types';
+import type { BackupManifest, InkStroke, LearnerProfile, PageInk, ProfileTopic, RestoreResult, SaveFilePlugin, Session, ShelfDocument, TopicRating, TutorNote } from '@/types';
 
 const TOPIC_RATINGS: (TopicRating | null)[] = RATINGS.map((option) => option.rating);
 
 // A backup is backup.json (every board, with its thumbnail and problem picture, and every Shelf
-// entry with its cover and marks) plus each Shelf PDF as pdfs/<id>.pdf. The download is all of it
+// entry with its cover, marks and the ink on its pages) plus each Shelf PDF as pdfs/<id>.pdf. The download is all of it
 // in one ZIP; a backup folder holds the same files side by side (see autoBackup.ts), so restoring
 // a folder is restoring its files.
 export const MANIFEST_NAME = 'backup.json';
@@ -32,7 +32,7 @@ export function dataUrlToBlob(url: string): Blob {
 }
 
 /** The backup of these records: backup.json's contents, and the PDFs by path. */
-export async function buildBackup(sessions: Session[], shelf: ShelfDocument[], profile?: LearnerProfile, now = Date.now()) {
+export async function buildBackup(sessions: Session[], shelf: ShelfDocument[], profile?: LearnerProfile, ink: PageInk[] = [], now = Date.now()) {
   const manifest: BackupManifest = {
     app: 'math-tutor',
     version: 1,
@@ -46,6 +46,7 @@ export async function buildBackup(sessions: Session[], shelf: ShelfDocument[], p
       return { ...rest, cover: cover ? await blobToDataUrl(cover) : null };
     })),
     ...(profile ? { profile } : {}),
+    ...(ink.length ? { ink } : {}),
   };
   const pdfs = new Map(shelf.map((document) => [pdfPath(document.id), document.file] as const));
   return { manifest, pdfs };
@@ -53,20 +54,22 @@ export async function buildBackup(sessions: Session[], shelf: ShelfDocument[], p
 
 /** Everything saved on this device. */
 export async function collectBackup() {
-  const [sessions, shelf, profile] = await Promise.all([listSessions(), listShelf(), loadProfile()]);
-  return buildBackup(sessions, shelf, profile);
+  const [sessions, shelf, profile, ink] = await Promise.all([listSessions(), listShelf(), loadProfile(), listInk()]);
+  return buildBackup(sessions, shelf, profile, ink);
 }
 
-/** Changes whenever a board or Shelf entry is added, changed, renamed or removed. */
+/** Changes whenever a board, Shelf entry or page of ink is added, changed, renamed or removed. */
 export function backupFingerprint(
   sessions: Pick<Session, 'id' | 'updatedAt' | 'customTitle'>[],
   shelf: Pick<ShelfDocument, 'id' | 'updatedAt'>[],
   profile?: Pick<LearnerProfile, 'updatedAt'>,
+  ink: Pick<PageInk, 'id' | 'updatedAt'>[] = [],
 ) {
   return [
     ...sessions.map((session) => `s ${session.id} ${session.updatedAt} ${session.customTitle ?? ''}`),
     ...shelf.map((document) => `p ${document.id} ${document.updatedAt}`),
     ...(profile ? [`m ${profile.updatedAt}`] : []),
+    ...ink.map((page) => `i ${page.id} ${page.updatedAt}`),
   ].sort().join('\n');
 }
 
@@ -99,9 +102,10 @@ export async function restoreManifest(manifest: BackupManifest, pdfs: Map<string
     const file = pdfs.get(pdfPath(document.id));
     return { ...document, cover: cover ? dataUrlToBlob(cover) : null, file: file ? new Blob([file], { type: 'application/pdf' }) : null };
   });
-  const written = await restoreRecords(sessions, shelf, validProfile(manifest.profile));
+  const ink = Array.isArray(manifest.ink) ? manifest.ink.map(validPageInk).filter((page): page is PageInk => page !== undefined) : [];
+  const written = await restoreRecords(sessions, shelf, validProfile(manifest.profile), ink);
   return {
-    restoredSessions: written.sessions.length, restoredShelf: written.shelf.length, restoredProfile: written.profile,
+    restoredSessions: written.sessions.length, restoredShelf: written.shelf.length, restoredProfile: written.profile, restoredInk: written.ink.length,
     skipped: written.skipped, missingPdfs: written.missingPdfs,
   };
 }
@@ -127,6 +131,18 @@ function validTutorNote(note: unknown): TutorNote | undefined {
   if (!t || !TOPIC_RATINGS.includes(t.level) || !['low', 'medium', 'high'].includes(t.confidence)
     || typeof t.note !== 'string' || !Number.isFinite(t.updatedAt)) return undefined;
   return { level: t.level, confidence: t.confidence, note: t.note, updatedAt: t.updatedAt, ...(t.edited === true ? { edited: true } : {}) };
+}
+
+// Ink is drawn straight from these numbers, so a damaged page is left out and its stroke checked.
+function validPageInk(page: unknown): PageInk | undefined {
+  const p = page as PageInk | null;
+  if (!p || typeof p.documentId !== 'string' || !Number.isInteger(p.page) || p.page < 1 || !Number.isFinite(p.updatedAt) || !Array.isArray(p.strokes)) return undefined;
+  const strokes = (p.strokes as unknown[]).filter((stroke): stroke is InkStroke => {
+    const s = stroke as InkStroke | null;
+    return !!s && (s.tool === 'pen' || s.tool === 'highlighter') && Array.isArray(s.points) && s.points.length % 3 === 0
+      && s.points.every((value) => Number.isFinite(value));
+  }).map(({ tool, points }) => ({ tool, points }));
+  return strokes.length ? { id: `${p.documentId}:${p.page}`, documentId: p.documentId, page: p.page, strokes, updatedAt: p.updatedAt } : undefined;
 }
 
 // A folder picked with <input webkitdirectory> names files from the picked folder ("Backup/pdfs/x.pdf").

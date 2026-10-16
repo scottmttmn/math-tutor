@@ -1,5 +1,5 @@
 import { openDB, type IDBPDatabase, type DBSchema } from 'idb';
-import type { CanvasDocument, Stroke, ChatMessage, LearnerProfile, SessionType, ShelfDocument } from '@/types';
+import type { CanvasDocument, Stroke, ChatMessage, InkStroke, LearnerProfile, PageInk, SessionType, ShelfDocument } from '@/types';
 
 interface MathTutorDB extends DBSchema {
   sessions: {
@@ -27,6 +27,14 @@ interface MathTutorDB extends DBSchema {
     key: string;
     value: ShelfDocument;
   };
+  /** Ink written on Shelf pages, one record per page. */
+  ink: {
+    key: string;
+    value: PageInk;
+    indexes: {
+      'by-document': string;
+    };
+  };
   /** Small app settings kept beside the work, e.g. the backup folder (a handle can't go in localStorage). */
   settings: {
     key: string;
@@ -35,7 +43,7 @@ interface MathTutorDB extends DBSchema {
 }
 
 const DB_NAME = 'math-tutor';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let dbPromise: Promise<IDBPDatabase<MathTutorDB>> | null = null;
 
@@ -49,13 +57,14 @@ export function getDB(): Promise<IDBPDatabase<MathTutorDB>> {
         }
         if (oldVersion < 2) db.createObjectStore('shelf', { keyPath: 'id' });
         if (oldVersion < 3) db.createObjectStore('settings');
+        if (oldVersion < 4) db.createObjectStore('ink', { keyPath: 'id' }).createIndex('by-document', 'documentId');
       },
     });
   }
   return dbPromise;
 }
 
-// Writes to sessions, the Shelf or the tutor memory, so automatic backup knows when to run.
+// Writes to sessions, the Shelf (its ink too) or the tutor memory, so automatic backup knows when to run.
 const changeListeners = new Set<() => void>();
 const changed = () => changeListeners.forEach((listener) => listener());
 
@@ -131,14 +140,40 @@ export async function saveShelfDocument(document: ShelfDocument) {
   changed();
 }
 
-/** Removes a PDF and the boards of every exercise marked on it. */
+/** Removes a PDF, the boards of every exercise marked on it, and the ink on its pages. */
 export async function deleteShelfDocument(id: string) {
   const db = await getDB();
-  const tx = db.transaction(['shelf', 'sessions'], 'readwrite');
+  const tx = db.transaction(['shelf', 'sessions', 'ink'], 'readwrite');
   await tx.objectStore('shelf').delete(id);
   const prefix = `shelf:${id}:`;
   await tx.objectStore('sessions').delete(IDBKeyRange.bound(prefix, `${prefix}\uffff`));
+  for (const key of await tx.objectStore('ink').index('by-document').getAllKeys(id)) await tx.objectStore('ink').delete(key);
   await tx.done;
+  changed();
+}
+
+// === Ink on Shelf pages ===
+
+export const pageInkId = (documentId: string, page: number) => `${documentId}:${page}`;
+
+/** The ink on every page of a Shelf PDF. */
+export async function loadInk(documentId: string): Promise<PageInk[]> {
+  const db = await getDB();
+  return db.getAllFromIndex('ink', 'by-document', documentId);
+}
+
+/** Every page of ink on the Shelf, for backups. */
+export async function listInk(): Promise<PageInk[]> {
+  const db = await getDB();
+  return db.getAll('ink');
+}
+
+/** Saves one page's ink; a page with none left has its record removed. */
+export async function savePageInk(documentId: string, page: number, strokes: InkStroke[]) {
+  const db = await getDB();
+  const id = pageInkId(documentId, page);
+  if (strokes.length) await db.put('ink', { id, documentId, page, strokes, updatedAt: Date.now() });
+  else await db.delete('ink', id);
   changed();
 }
 
@@ -155,10 +190,11 @@ export async function restoreRecords(
   sessions: StoredSession[],
   shelf: (Omit<ShelfDocument, 'file'> & { file: Blob | null })[],
   profile?: LearnerProfile,
+  ink: PageInk[] = [],
 ) {
   const db = await getDB();
-  const tx = db.transaction(['sessions', 'shelf', 'settings'], 'readwrite');
-  const written = { sessions: [] as string[], shelf: [] as string[], profile: false, skipped: 0, missingPdfs: [] as string[] };
+  const tx = db.transaction(['sessions', 'shelf', 'settings', 'ink'], 'readwrite');
+  const written = { sessions: [] as string[], shelf: [] as string[], profile: false, ink: [] as string[], skipped: 0, missingPdfs: [] as string[] };
   for (const session of sessions) {
     const existing = await tx.objectStore('sessions').get(session.id);
     if (existing && existing.updatedAt >= session.updatedAt) { written.skipped += 1; continue; }
@@ -178,8 +214,16 @@ export async function restoreRecords(
     if (existing && existing.updatedAt >= profile.updatedAt) written.skipped += 1;
     else { await tx.objectStore('settings').put(profile, PROFILE_KEY); written.profile = true; }
   }
+  // Ink only for a PDF that is on this device (now that its entry may have been restored).
+  for (const page of ink) {
+    if (!await tx.objectStore('shelf').getKey(page.documentId)) continue;
+    const existing = await tx.objectStore('ink').get(page.id);
+    if (existing && existing.updatedAt >= page.updatedAt) { written.skipped += 1; continue; }
+    await tx.objectStore('ink').put(page);
+    written.ink.push(page.id);
+  }
   await tx.done;
-  if (written.sessions.length || written.shelf.length || written.profile) changed();
+  if (written.sessions.length || written.shelf.length || written.profile || written.ink.length) changed();
   return written;
 }
 

@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { renderPage } from '@/lib/pdf';
 import { toPage, toShown } from '@/lib/reader';
-import type { PageRect, ShelfExercise } from '@/types';
+import { ERASER_RADIUS, drawStroke, drawStrokes, eraseAt, inkPoint, pageScale } from '@/lib/ink';
+import type { InkStroke, InkTool, PageRect, ShelfExercise } from '@/types';
 
 interface Props {
   pdf: PDFDocumentProxy;
@@ -26,6 +27,11 @@ interface Props {
   onTurn: (direction: -1 | 1) => void;
   /** A tap in the middle of the page. */
   onTapMiddle?: () => void;
+  /** The ink on this page, and the tool writing with it (null: none, the page is only read). */
+  ink: InkStroke[];
+  tool: InkTool | null;
+  /** The page's ink after a stroke is written or rubbed out. */
+  onInk: (strokes: InkStroke[]) => void;
 }
 
 // A box smaller than this (as a fraction of the page) is a stray tap, not a mark.
@@ -54,7 +60,7 @@ const TAP_SLOP = 10;
 const percent = (rect: PageRect) => ({ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%` });
 
 /** One PDF page (or its printed part), fit to its container's width, with marked exercises drawn over it. */
-export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, marking, pending, pendingForm, onMark, onOpenMark, crop, onTurn, onTapMiddle }: Props) {
+export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, marking, pending, pendingForm, onMark, onOpenMark, crop, onTurn, onTapMiddle, ink, tool, onInk }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [width, setWidth] = useState(0);
@@ -63,6 +69,13 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
   const [draft, setDraft] = useState<PageRect | null>(null);
   const form = useRef<HTMLDivElement>(null);
   const press = useRef<{ x: number; y: number; id: number } | null>(null);
+  const overlay = useRef<HTMLDivElement>(null);
+  // Ink: the saved strokes on one canvas, the one being written on another above it.
+  const inkCanvas = useRef<HTMLCanvasElement>(null);
+  const liveCanvas = useRef<HTMLCanvasElement>(null);
+  const [shownSize, setShownSize] = useState<{ width: number; height: number } | null>(null);
+  // The stroke being written, or the strokes left so far by the eraser.
+  const writing = useRef<{ id: number; tool: InkTool; points: number[]; strokes: InkStroke[]; last?: { x: number; y: number } } | null>(null);
 
   // The page may be scrolled: bring the form into view and put the cursor in its name field.
   useEffect(() => {
@@ -77,6 +90,47 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
     const observer = new ResizeObserver(([entry]) => setWidth(Math.floor(entry.contentRect.width)));
     observer.observe(element);
     return () => observer.disconnect();
+  }, []);
+
+  // The ink canvases match the page as it is shown.
+  useEffect(() => {
+    const element = canvas.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => {
+      const { width: shownWidth, height: shownHeight } = element.getBoundingClientRect();
+      setShownSize((current) => (current?.width === shownWidth && current?.height === shownHeight ? current : { width: shownWidth, height: shownHeight }));
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  // Draw the saved ink whenever it, or the page's size, changes; the stroke just finished is in it now.
+  useEffect(() => {
+    const target = inkCanvas.current;
+    if (!shownSize || !target) return;
+    const ratio = window.devicePixelRatio || 1;
+    for (const layer of [target, liveCanvas.current]) {
+      if (!layer) continue;
+      layer.width = Math.round(shownSize.width * ratio);
+      layer.height = Math.round(shownSize.height * ratio);
+      layer.getContext('2d')?.setTransform(ratio, 0, 0, ratio, 0, 0);
+    }
+    const context = target.getContext('2d');
+    if (context) drawStrokes(context, writing.current?.tool === 'eraser' ? writing.current.strokes : ink, pageScale(shownSize.width, shownSize.height, crop), crop);
+  }, [ink, shownSize, crop]);
+
+  // A pen on the page writes rather than scrolling it: its touch events (browsers send them for a
+  // pen too) are cancelled, while fingers still scroll and pinch.
+  useEffect(() => {
+    const element = overlay.current;
+    if (!element) return;
+    const onTouch = (event: TouchEvent) => { if (writing.current) event.preventDefault(); };
+    element.addEventListener('touchstart', onTouch, { passive: false });
+    element.addEventListener('touchmove', onTouch, { passive: false });
+    return () => {
+      element.removeEventListener('touchstart', onTouch);
+      element.removeEventListener('touchmove', onTouch);
+    };
   }, []);
 
   useEffect(() => {
@@ -103,6 +157,73 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
     return { x: clamp(onPage.x), y: clamp(onPage.y) };
   };
 
+  const scale = () => pageScale(shownSize?.width ?? 1, shownSize?.height ?? 1, crop);
+  const redraw = (strokes: InkStroke[]) => {
+    const context = inkCanvas.current?.getContext('2d');
+    if (!context || !shownSize) return;
+    context.clearRect(0, 0, shownSize.width, shownSize.height);
+    drawStrokes(context, strokes, scale(), crop);
+  };
+  const clearLive = () => {
+    const context = liveCanvas.current?.getContext('2d');
+    if (context && shownSize) context.clearRect(0, 0, shownSize.width, shownSize.height);
+  };
+
+  // Adds the event's samples (all of them, not just the last, so fast writing stays smooth) to the stroke.
+  const continueInk = (event: React.PointerEvent) => {
+    const current = writing.current;
+    if (!current || current.id !== event.pointerId) return;
+    const native = event.nativeEvent;
+    const samples = native.getCoalescedEvents?.() ?? [];
+    const size = scale();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    for (const sample of samples.length ? samples : [native]) {
+      const onPage = toPage({ x: (sample.clientX - bounds.left) / bounds.width, y: (sample.clientY - bounds.top) / bounds.height }, crop);
+      if (current.tool === 'eraser') {
+        // From where the eraser was at the last sample, so a fast sweep misses nothing in between.
+        const left = eraseAt(current.strokes, onPage, ERASER_RADIUS, size, current.last);
+        current.last = onPage;
+        if (left !== current.strokes) { current.strokes = left; redraw(left); }
+        continue;
+      }
+      const [x, y, pressure] = inkPoint(clamp(onPage.x), clamp(onPage.y), sample.pressure);
+      const last = current.points.length - 3;
+      // Samples closer than half a pixel add nothing but size.
+      if (last >= 0 && Math.hypot((x - current.points[last]) * size.x, (y - current.points[last + 1]) * size.y) < 0.5) continue;
+      current.points.push(x, y, pressure);
+    }
+    if (current.tool === 'eraser') return;
+    const context = liveCanvas.current?.getContext('2d');
+    if (!context || !shownSize) return;
+    // Redrawn whole each time: cheap for one stroke, and a highlight stays even where it overlaps itself.
+    context.clearRect(0, 0, shownSize.width, shownSize.height);
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    drawStroke(context, { tool: current.tool, points: current.points }, size, (crop?.x ?? 0) * size.x, (crop?.y ?? 0) * size.y);
+  };
+
+  const startInk = (event: React.PointerEvent) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    press.current = null;
+    // The pen's eraser end (button 5) rubs out, whatever the tool.
+    writing.current = { id: event.pointerId, tool: event.button === 5 ? 'eraser' : tool ?? 'pen', points: [], strokes: ink };
+    continueInk(event);
+  };
+
+  const endInk = (event: React.PointerEvent, cancelled = false) => {
+    const current = writing.current;
+    if (!current || current.id !== event.pointerId) return;
+    if (!cancelled) continueInk(event);
+    writing.current = null;
+    if (current.tool === 'eraser') {
+      if (current.strokes !== ink) onInk(current.strokes);
+      return;
+    }
+    if (!cancelled && current.points.length) onInk([...ink, { tool: current.tool, points: current.points }]);
+    else clearLive();
+  };
+
   // Not marking: a tap at an edge or a sideways swipe turns the page, a tap in the middle is passed
   // on. Taps on a mark open it instead, and an up-and-down drag scrolls (the browser takes it).
   const endPress = (event: React.PointerEvent) => {
@@ -127,12 +248,21 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
     <div ref={container} className="w-full">
       <div className="relative inline-block align-top bg-white shadow-sm">
         <canvas ref={canvas} aria-label={`Page ${pageNumber}`} className="block" />
+        {/* Ink sits over the print and under the marks; the overlay above takes the pointer. */}
+        <canvas ref={inkCanvas} data-testid="page-ink" className="absolute inset-0 w-full h-full pointer-events-none" />
+        <canvas ref={liveCanvas} className="absolute inset-0 w-full h-full pointer-events-none" />
         {failed && <p className="absolute inset-0 grid place-items-center text-sm text-red-600">This page could not be shown.</p>}
         <div
           // Up-and-down drags still scroll the page and pinches still zoom; sideways ones are swipes.
-          className={`absolute inset-0 ${marking ? 'cursor-crosshair touch-none' : 'touch-pan-y touch-pinch-zoom'}`}
+          ref={overlay}
+          className={`absolute inset-0 ${marking ? 'cursor-crosshair touch-none' : 'touch-pan-y touch-pinch-zoom'} ${tool && !marking ? 'cursor-crosshair' : ''}`}
           data-testid="page-overlay"
+          onContextMenu={(event) => { if (tool) event.preventDefault(); }}
           onPointerDown={(event) => {
+            // With a tool on, the pen (or mouse) writes; a finger still turns, scrolls and zooms.
+            if (tool && !marking && event.pointerType !== 'touch' && (event.button === 0 || event.button === 5)) { startInk(event); return; }
+            // A palm resting while the pen writes does nothing.
+            if (writing.current) return;
             if (!marking) {
               if (event.target === event.currentTarget && event.isPrimary && event.button === 0) press.current = { x: event.clientX, y: event.clientY, id: event.pointerId };
               return;
@@ -141,15 +271,19 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
             start.current = point(event);
             setDraft({ ...start.current, width: 0, height: 0 });
           }}
-          onPointerMove={(event) => { if (start.current) setDraft(box(start.current, point(event))); }}
+          onPointerMove={(event) => {
+            if (writing.current) continueInk(event);
+            else if (start.current) setDraft(box(start.current, point(event)));
+          }}
           onPointerUp={(event) => {
+            if (writing.current) { endInk(event); return; }
             if (!start.current) { endPress(event); return; }
             const rect = box(start.current, point(event));
             start.current = null;
             setDraft(null);
             if (rect.width >= MIN_MARK && rect.height >= MIN_MARK) onMark(rect);
           }}
-          onPointerCancel={() => { start.current = null; press.current = null; setDraft(null); }}
+          onPointerCancel={(event) => { endInk(event, true); start.current = null; press.current = null; setDraft(null); }}
         >
           {marks.map((mark) => {
             const solved = solvedIds.includes(mark.id);
@@ -161,7 +295,7 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
                 aria-label={`Open ${mark.label}`}
                 style={percent(toShown(mark.rect, crop))}
                 // Ink only, so marks read on e-ink: the open one is heavier, a solved one has a filled label.
-                className={`absolute rounded border-gray-900 ${active ? 'border-[3px] bg-gray-900/10' : 'border-2'} ${marking ? 'pointer-events-none' : ''} hover:bg-gray-900/10`}
+                className={`absolute rounded border-gray-900 ${active ? 'border-[3px] bg-gray-900/10' : 'border-2'} ${marking || tool ? 'pointer-events-none' : ''} hover:bg-gray-900/10`}
               >
                 <span className={`absolute bottom-full left-0 mb-0.5 px-1.5 rounded border border-gray-900 text-[11px] leading-5 font-medium whitespace-nowrap ${solved || active ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
                   {solved ? '✓ ' : ''}{mark.label}

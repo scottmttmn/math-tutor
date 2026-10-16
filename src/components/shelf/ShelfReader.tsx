@@ -9,12 +9,12 @@ import { useTutorChat } from '@/hooks/useTutorChat';
 import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
 import { useToolsHidden } from '@/hooks/useToolsHidden';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
-import { loadShelfDocument, saveShelfDocument, shelfSessionId } from '@/lib/db';
+import { loadInk, loadShelfDocument, savePageInk, saveShelfDocument, shelfSessionId } from '@/lib/db';
 import { openPdf, trimmedArea } from '@/lib/pdf';
 import { findPage, pageName } from '@/lib/reader';
 import { ensureExerciseBoard, markExercise, nextLabel, setReadFrom, solvedExercises, unmarkExercise } from '@/lib/shelf';
 import { MAX_BOOK_PAGES, loadContents, loadSectionStarts, readBookPages, readingRange, type ContentsEntry, type ReadingRange, type SectionStart } from '@/lib/bookContext';
-import type { BookContext, PageRect, ShelfDocument, ShelfExercise } from '@/types';
+import type { BookContext, InkStroke, InkTool, PageRect, ShelfDocument, ShelfExercise } from '@/types';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
 import AppBar from '@/components/layout/AppBar';
@@ -30,6 +30,17 @@ const LIST_HIDDEN_KEY = 'math-tutor:shelfListHidden';
 
 // Which list is beside the page: the marked exercises or the PDF's contents.
 type ListTab = 'exercises' | 'contents';
+
+// The page toolbar's ink tools, as labelled there.
+const INK_TOOLS: { tool: InkTool; label: string }[] = [
+  { tool: 'pen', label: 'Pen' },
+  { tool: 'highlighter', label: 'Highlight' },
+  { tool: 'eraser', label: 'Eraser' },
+];
+// A page with no ink: one array, so the page isn't redrawn on every render.
+const NO_INK: InkStroke[] = [];
+// Undo steps kept for each page while the PDF is open.
+const MAX_UNDO = 50;
 
 // Reading position is saved once the student stops turning pages.
 const PAGE_SAVE_DELAY_MS = 1000;
@@ -76,6 +87,11 @@ export default function ShelfReader() {
   const [barsShown, setBarsShown] = useState(true);
   const [panelOpen, setPanelOpen] = useState(false);
   const pageArea = useRef<HTMLDivElement>(null);
+  // Ink on the pages, by page number; the tool writing (null: reading); earlier ink for Undo.
+  const [ink, setInk] = useState<Record<number, InkStroke[]>>({});
+  const [inkTool, setInkTool] = useState<InkTool | null>(null);
+  const [inkUndo, setInkUndo] = useState<Record<number, InkStroke[][]>>({});
+  const inkWrites = useRef<Promise<unknown>>(Promise.resolve());
   const switching = useRef(false);
   const book = useRef<{ pdf: PDFDocumentProxy; document: ShelfDocument; range: ReadingRange } | null>(null);
 
@@ -138,6 +154,9 @@ export default function ShelfReader() {
       opened = await openPdf(stored.file);
       // Left before it finished opening: the cleanup has already run, so free it here.
       if (!active) { void opened.loadingTask.destroy(); return; }
+      const pages = await loadInk(stored.id);
+      if (!active) { void opened.loadingTask.destroy(); return; }
+      setInk(Object.fromEntries(pages.map((entry) => [entry.page, entry.strokes])));
       updateDocument(stored);
       setPdf(opened);
       void loadSectionStarts(opened).then((starts) => { if (active) setSectionStarts(starts); });
@@ -260,6 +279,23 @@ export default function ShelfReader() {
     } catch { setError('The exercise could not be removed. Try again.'); }
   };
 
+  // A page's ink changed: show it now, and save it (one page's writes at a time, in order).
+  const changeInk = (inkPage: number, strokes: InkStroke[], undoable = true) => {
+    const documentId = documentRef.current?.id;
+    if (!documentId) return;
+    if (undoable) setInkUndo((current) => ({ ...current, [inkPage]: [...(current[inkPage] ?? []), ink[inkPage] ?? []].slice(-MAX_UNDO) }));
+    setInk((current) => ({ ...current, [inkPage]: strokes }));
+    const write = () => savePageInk(documentId, inkPage, strokes);
+    inkWrites.current = inkWrites.current.then(write, write).catch(() => setError('Your ink could not be saved. Try again.'));
+  };
+
+  const undoInk = () => {
+    const steps = inkUndo[page];
+    if (!steps?.length) return;
+    setInkUndo((current) => ({ ...current, [page]: steps.slice(0, -1) }));
+    changeInk(page, steps[steps.length - 1], false);
+  };
+
   const changeTrim = async (trimMargins: boolean) => {
     try {
       await writeDocument(async (latest) => {
@@ -377,12 +413,20 @@ export default function ShelfReader() {
       <button onClick={() => turn(1)} disabled={page >= pageCount} aria-label="Next page" className={smallButton}>Next ›</button>
       {goToError && <span role="alert" className="text-sm text-red-700">{goToError}</span>}
       <div className="flex-1" />
+      <div role="group" aria-label="Write on the page" className="flex items-center gap-1">
+        {INK_TOOLS.map(({ tool, label }) => (
+          <button key={tool} aria-pressed={inkTool === tool}
+            onClick={() => { setInkTool((current) => (current === tool ? null : tool)); setMarking(false); setPendingMark(null); }}
+            className={`min-h-11 px-3 text-sm rounded-lg border border-gray-900 ${inkTool === tool ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 hover:bg-gray-100'}`}>{label}</button>
+        ))}
+        {inkTool && <button onClick={undoInk} disabled={!inkUndo[page]?.length} className={smallButton}>Undo</button>}
+      </div>
       <button onClick={() => void changeTrim(!trim)} aria-pressed={trim} title="Hide the pages' blank margins so the print is bigger"
         className={`min-h-11 px-3 text-sm rounded-lg border ${trim ? 'border-gray-900 bg-gray-100 text-gray-900' : 'border-gray-300 bg-white text-gray-700'} hover:bg-gray-50`}>Trim margins</button>
       {/* Reading full screen has its way out in the top bar; a board has its own Full screen. */}
       {!exercise && !fullScreen && <button onClick={toggleFullScreen} className={smallButton}>Full screen</button>}
       <button
-        onClick={() => { setMarking((on) => !on); setPendingMark(null); }}
+        onClick={() => { setMarking((on) => !on); setPendingMark(null); setInkTool(null); }}
         aria-pressed={marking}
         className={`min-h-11 px-3 text-sm font-medium rounded-lg border border-gray-900 ${marking ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 hover:bg-gray-100'}`}
       >
@@ -412,6 +456,9 @@ export default function ShelfReader() {
         crop={crop}
         onTurn={turn}
         onTapMiddle={readingFullScreen ? () => { setBarsShown((shown) => !shown); setPanelOpen(false); } : undefined}
+        ink={ink[page] ?? NO_INK}
+        tool={inkTool}
+        onInk={(strokes) => changeInk(page, strokes)}
       />
     </div>
   );
