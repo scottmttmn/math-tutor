@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { loadProfile, saveProfile } from '@/lib/db';
+import { loadProfile, loadSession, updateProfile } from '@/lib/db';
 import { emptyProfile, findFavorite, removeFavorite, setFavorite } from '@/lib/learnerProfile';
 import type { FavoriteProblem, LearnerProfile } from '@/types';
 
@@ -12,8 +12,8 @@ export interface FavoriteSubject {
 }
 
 /**
- * Whether the open board is a favorite, and starring it. Favorites live in the tutor memory, read and
- * written fresh each time so a reply's notes saved meanwhile are kept.
+ * Whether the open board is a favorite, and starring it. Favorites live in the tutor memory, changed
+ * in one transaction each time so a reply's notes saved meanwhile are kept.
  */
 export function useFavorite(sessionId: string | null, subject: FavoriteSubject) {
   // Kept with the board it belongs to, so a switched board never shows the last one's star.
@@ -34,13 +34,14 @@ export function useFavorite(sessionId: string | null, subject: FavoriteSubject) 
     return () => { active = false; };
   }, [sessionId]);
 
-  const change = useCallback((apply: (profile: LearnerProfile, id: string) => LearnerProfile) => {
+  const change = useCallback((apply: (profile: LearnerProfile, id: string, customTitle: string) => LearnerProfile) => {
     if (!sessionId) return Promise.resolve();
     setFailed(false);
     queue.current = queue.current.then(async () => {
       try {
-        const next = apply((await loadProfile()) ?? emptyProfile(), sessionId);
-        await saveProfile(next);
+        // A name given on Home isn't in the board's state, so read it from the saved board.
+        const customTitle = (await loadSession(sessionId).catch(() => undefined))?.customTitle ?? '';
+        const next = await updateProfile((saved) => apply(saved ?? emptyProfile(), sessionId, customTitle));
         setLoaded({ id: sessionId, favorite: findFavorite(next, sessionId) ?? null });
       } catch {
         if (currentId.current === sessionId) setFailed(true);
@@ -51,7 +52,7 @@ export function useFavorite(sessionId: string | null, subject: FavoriteSubject) 
 
   const { title, problem } = subject;
   /** Stars the board, or keeps its star with a new reason. */
-  const star = useCallback((reason: string) => change((profile, id) => setFavorite(profile, { id, title, problem, reason })), [change, title, problem]);
+  const star = useCallback((reason: string) => change((profile, id, customTitle) => setFavorite(profile, { id, title: customTitle || title, problem, reason })), [change, title, problem]);
   const unstar = useCallback(() => change((profile, id) => removeFavorite(profile, id)), [change]);
 
   return { favorite, star, unstar, failed };

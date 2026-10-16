@@ -6,7 +6,7 @@ import { useSessionState, useSessionDispatch } from '@/context/SessionContext';
 import { getModelConfig } from '@/lib/modelConfig';
 import { recordTutorUsage, tryStartTutorRequest, useRateLimit } from '@/hooks/useRateLimit';
 import { RATE_LIMIT_MS, TUTOR_UNAVAILABLE } from '@/lib/constants';
-import { loadProfile, saveProfile } from '@/lib/db';
+import { loadProfile, updateProfile } from '@/lib/db';
 import { requestTutor } from '@/lib/tutorRequest';
 import { emptyProfile, noteTopic, profileForTutor, splitTutorNotes, writeNotebook, type TopicObservation } from '@/lib/learnerProfile';
 import type { BookContext, ChatMessage, TutorStreamEvent } from '@/types';
@@ -14,11 +14,13 @@ import type { BookContext, ChatMessage, TutorStreamEvent } from '@/types';
 /** Writes the tutor's topic notes and notebook into the tutor memory, unless the student turned sharing off meanwhile. */
 async function keepNotes(notes: TopicObservation[], notebook: string | null) {
   try {
-    const profile = (await loadProfile()) ?? emptyProfile();
-    if (!profile.shareWithTutor) return;
     const now = Date.now();
-    const noted = notes.reduce((current, note) => noteTopic(current, note, now), profile);
-    await saveProfile(notebook ? writeNotebook(noted, notebook, false, now) : noted);
+    await updateProfile((saved) => {
+      const profile = saved ?? emptyProfile();
+      if (!profile.shareWithTutor) return profile;
+      const noted = notes.reduce((current, note) => noteTopic(current, note, now), profile);
+      return notebook ? writeNotebook(noted, notebook, false, now) : noted;
+    });
   } catch { /* The reply still stands; the notes are lost. */ }
 }
 

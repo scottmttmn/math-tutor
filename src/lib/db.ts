@@ -243,6 +243,21 @@ export async function saveProfile(profile: LearnerProfile) {
   changed();
 }
 
+/**
+ * Changes the tutor memory as one read-modify-write transaction, so writers (a reply's notes, a
+ * favorite, the memory page, another tab) never undo each other. `change` must not await.
+ */
+export async function updateProfile(change: (current: LearnerProfile | undefined) => LearnerProfile): Promise<LearnerProfile> {
+  const db = await getDB();
+  const tx = db.transaction('settings', 'readwrite');
+  const current = (await tx.store.get(PROFILE_KEY)) as LearnerProfile | undefined;
+  const next = change(current);
+  if (next !== current) await tx.store.put(next, PROFILE_KEY);
+  await tx.done;
+  if (next !== current) changed();
+  return next;
+}
+
 /** Whether anything is saved yet: a board, a Shelf PDF or the tutor memory. */
 export async function hasSavedWork() {
   const db = await getDB();
