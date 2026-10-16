@@ -3,13 +3,13 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AppBar from '@/components/layout/AppBar';
-import { TutorIcon } from '@/components/common/Icons';
+import { FavoriteStar, TutorIcon } from '@/components/common/Icons';
 import MoreMenu from '@/components/common/MoreMenu';
 import { useLearnerProfile } from '@/hooks/useLearnerProfile';
 import { MAX_CHECK_IN_TOPICS, checkInCandidates, startCheckIn } from '@/lib/checkIn';
 import {
-  CONFIDENCES, MAX_ABOUT_ME, OWN_AREA, RATINGS, TOPIC_AREAS, addOwnTopic, forgetTutorNote, profileForTutor, rateTopic,
-  removeTopic, setTutorLevel, topicId,
+  CONFIDENCES, MAX_ABOUT_ME, MAX_NOTEBOOK, OWN_AREA, RATINGS, TOPIC_AREAS, addOwnTopic, forgetTutorNote, profileForTutor, rateTopic,
+  removeFavorite, removeTopic, setTutorLevel, topicId, writeNotebook,
 } from '@/lib/learnerProfile';
 import type { LearnerProfile, ProfileTopic, TopicRating, TutorNote } from '@/types';
 
@@ -286,6 +286,55 @@ export default function TutorMemory() {
                   </button>
                 </form>
               </div>
+            </section>
+
+            <section aria-labelledby="notebook-heading" className="flex flex-col gap-2">
+              <h2 id="notebook-heading" className="flex items-center gap-2 font-semibold text-gray-900"><span className="text-indigo-700"><TutorIcon /></span>The tutor&apos;s notebook</h2>
+              <p className="text-sm text-gray-600">
+                What the tutor keeps in its own words about how you work and what you enjoy, rewritten as it learns more. Change anything you like; it reads your version from then on.
+              </p>
+              <textarea
+                value={profile.notebook?.text ?? ''}
+                onChange={(event) => { const text = event.target.value; update((current) => writeNotebook(current, text, true)); }}
+                rows={6}
+                aria-label="The tutor's notebook"
+                placeholder="Empty for now. The tutor writes here once your boards show it something worth remembering."
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900"
+              />
+              <div className="flex items-center gap-3 text-xs text-gray-500">
+                {profile.notebook && (
+                  <span className="flex-1">
+                    {profile.notebook.edited ? 'Last changed by you' : 'Last written by the tutor'} · {new Date(profile.notebook.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                  </span>
+                )}
+                <span className="ml-auto">{profile.notebook?.text.length ?? 0} / {MAX_NOTEBOOK}</span>
+              </div>
+            </section>
+
+            <section aria-labelledby="favorites-heading" className="flex flex-col gap-2">
+              <h2 id="favorites-heading" className="flex items-center gap-2 font-semibold text-gray-900"><FavoriteStar filled />Your favorite problems</h2>
+              <p className="text-sm text-gray-600">
+                Problems you starred with Favorite on their board, and why if you said. The tutor reads all of them; one stays here even after its board is deleted.
+              </p>
+              {!profile.favorites?.length ? (
+                <p className="text-sm text-gray-700">None yet. When a problem delights you, tap Favorite beside Mark solved.</p>
+              ) : (
+                <ul className="bg-white border border-gray-200 rounded-lg px-3">
+                  {profile.favorites.map((favorite) => (
+                    <li key={favorite.id} data-testid="favorite" className="flex items-start gap-2 py-2 border-b border-gray-100 last:border-b-0">
+                      <div className="flex-1 min-w-0 text-sm">
+                        <p className="font-medium text-gray-900">{favorite.title}</p>
+                        {favorite.problem && favorite.problem !== favorite.title && <p className="text-gray-600 truncate">{favorite.problem}</p>}
+                        {favorite.reason && <p className="text-gray-700">Why: {favorite.reason}</p>}
+                      </div>
+                      <MoreMenu
+                        label={`Change the favorite ${favorite.title}`}
+                        items={[{ label: 'Remove star', onSelect: () => update((current) => removeFavorite(current, favorite.id)) }]}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
 
             <CheckInSection profile={profile} beforeStart={saveNow} />

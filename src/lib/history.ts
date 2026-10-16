@@ -10,15 +10,17 @@ function hasDrawing(session: Session) {
 
 /**
  * A saved session as History shows it, or null for Shelf exercises that were only opened
- * and for boards of the built-in workbook, which the app no longer has.
+ * and for boards of the built-in workbook, which the app no longer has. `favoriteIds`: the
+ * sessions the student starred.
  */
-export function toHistoryItem(session: Session): HistoryItem | null {
+export function toHistoryItem(session: Session, favoriteIds: ReadonlySet<string> = new Set()): HistoryItem | null {
+  const favorite = favoriteIds.has(session.id);
   let href: string | null = null;
   let source: HistoryItem['source'] = 'board';
   if (session.id.startsWith('workbook:')) return null;
   if (session.id.startsWith('shelf:')) {
     // The reader saves every exercise it opens; only ones with work in them belong in History.
-    if (session.chatHistory.length === 0 && !hasDrawing(session) && !session.isSolved) return null;
+    if (session.chatHistory.length === 0 && !hasDrawing(session) && !session.isSolved && !favorite) return null;
     const shelf = SHELF_ENTRY.exec(session.id);
     if (!shelf) return null;
     source = 'shelf';
@@ -35,6 +37,7 @@ export function toHistoryItem(session: Session): HistoryItem | null {
     isSolved: sessionType === 'problem' && Boolean(session.isSolved),
     sessionType,
     renamed: Boolean(session.customTitle),
+    favorite,
     thumbnail: session.canvasImageBlob ?? null,
     source,
     href,
@@ -47,6 +50,7 @@ const SHOWN: Record<HistoryShow, (item: HistoryItem) => boolean> = {
   inProgress: (item) => item.sessionType === 'problem' && !item.isSolved,
   solved: (item) => item.isSolved,
   notes: (item) => item.sessionType === 'note',
+  favorites: (item) => item.favorite,
 };
 
 const ORDER: Record<HistorySort, (a: HistoryItem, b: HistoryItem) => number> = {

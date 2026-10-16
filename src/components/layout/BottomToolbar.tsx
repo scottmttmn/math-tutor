@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { useCanvasState } from '@/context/CanvasContext';
 import { useRateLimit } from '@/hooks/useRateLimit';
 import { RATE_LIMIT_MS } from '@/lib/constants';
@@ -32,9 +33,11 @@ interface Props {
   onWriteUp?: () => void;
   /** Shows Paper, which picks the board's paper: blank, lined or grid. */
   paper?: { value: Paper; onChange: (paper: Paper) => void };
+  /** The Favorite button (FavoriteButton), shown beside Mark solved on problems. */
+  favorite?: ReactNode;
 }
 
-export default function BottomToolbar({ onAskForHelp, onAskOwn, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp, paper }: Props) {
+export default function BottomToolbar({ onAskForHelp, onAskOwn, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp, paper, favorite }: Props) {
   const { hasContent } = useCanvasState();
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
   const helpDisabled = isLimited || isStreaming;
@@ -100,6 +103,8 @@ export default function BottomToolbar({ onAskForHelp, onAskOwn, onClear, isStrea
       <button onClick={onClear} disabled={!hasContent} className={plain} title="Erase the whole board (undo with Ctrl+Z)">
         Clear
       </button>
+
+      {sessionType === 'problem' && favorite}
 
       {/* Solved: only for problems. A filled ink check once solved; no color. */}
       {sessionType === 'problem' && (

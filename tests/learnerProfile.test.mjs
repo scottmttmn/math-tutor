@@ -4,7 +4,7 @@ import load from './load-typescript.mjs';
 
 const {
   TOPIC_AREAS, OWN_AREA, emptyProfile, isProfileEmpty, rateTopic, addOwnTopic, removeTopic, topicId, profileForTutor,
-  noteTopic, setTutorLevel, forgetTutorNote, splitTutorNotes,
+  noteTopic, setTutorLevel, forgetTutorNote, splitTutorNotes, writeNotebook, setFavorite, removeFavorite, findFavorite, MAX_NOTEBOOK,
 } = load('src/lib/learnerProfile.ts');
 
 test('topic ids are unique and stable', () => {
@@ -120,5 +120,61 @@ test('topic notes are cut from the reply the student reads, also while it stream
     assert.ok(visible.startsWith(shown), JSON.stringify(shown));
   }
   assert.equal(splitTutorNotes('Try x = 2 <').visible, 'Try x = 2');
-  assert.deepEqual(splitTutorNotes('No notes here.'), { visible: 'No notes here.', notes: [] });
+  assert.deepEqual(splitTutorNotes('No notes here.'), { visible: 'No notes here.', notes: [], notebook: null });
+});
+
+test('the notebook is cut from the reply, and kept only once its block is closed', () => {
+  const reply = 'Nice symmetry argument.\n\n<memory>\nInduction | solid | medium | Clean base case\n</memory>\n<notebook>\nLoves symmetry.\nPrefers a nudge over a hint.\n</notebook>';
+  const { visible, notes, notebook } = splitTutorNotes(reply);
+  assert.equal(visible, 'Nice symmetry argument.');
+  assert.equal(notes.length, 1);
+  assert.equal(notebook, 'Loves symmetry.\nPrefers a nudge over a hint.');
+  for (let end = 0; end <= reply.length; end++) {
+    const part = splitTutorNotes(reply.slice(0, end));
+    assert.ok(visible.startsWith(part.visible), JSON.stringify(part.visible));
+    // A reply cut off inside the notebook never replaces it with half a notebook.
+    if (end < reply.length) assert.equal(part.notebook, null);
+  }
+  // Either order, and a notebook with no topic notes.
+  assert.equal(splitTutorNotes('Hi <notebook>Likes proofs</notebook>').notebook, 'Likes proofs');
+  assert.equal(splitTutorNotes('Hi <notebook>Likes proofs</notebook>').visible, 'Hi');
+  assert.equal(splitTutorNotes('Hi <notebook>   </notebook>').notebook, null);
+  assert.equal(splitTutorNotes('Try x = 2 <note').visible, 'Try x = 2');
+});
+
+test('the notebook is replaced whole, bounded, and goes to the tutor', () => {
+  let profile = writeNotebook(emptyProfile(), '  Likes geometry.  ', false, 5);
+  assert.deepEqual(profile.notebook, { text: 'Likes geometry.', updatedAt: 5 });
+  assert.equal(isProfileEmpty(profile), false);
+  assert.match(profileForTutor(profile), /Your notebook about them \(you wrote it; the student can read and edit it\):\nLikes geometry\./);
+  // The student's edit is kept as typed and marked as theirs; clearing it removes it.
+  profile = writeNotebook(profile, 'Likes geometry ', true, 6);
+  assert.deepEqual(profile.notebook, { text: 'Likes geometry ', updatedAt: 6, edited: true });
+  assert.match(profileForTutor(profile), /last edited by the student/);
+  assert.equal(writeNotebook(profile, 'x'.repeat(MAX_NOTEBOOK + 50), false).notebook.text.length, MAX_NOTEBOOK);
+  assert.equal(writeNotebook(profile, ' ', true).notebook, undefined);
+});
+
+test('favorites keep their first day, and every one goes to the tutor (reasons for the newest)', () => {
+  let profile = setFavorite(emptyProfile(), { id: 'a', title: 'Pigeonhole', problem: 'Show that two of 13 people share a birth month.', reason: 'The  trick' }, 1);
+  profile = setFavorite(profile, { id: 'b', title: 'Untitled problem', problem: 'A problem given as a picture', reason: '' }, 2);
+  assert.equal(isProfileEmpty(profile), false);
+  assert.deepEqual(profile.favorites.map((item) => item.id), ['b', 'a']);
+  // A new reason keeps the day it was first starred.
+  profile = setFavorite(profile, { id: 'a', title: 'Pigeonhole', problem: 'Show that two of 13 people share a birth month.', reason: 'So short' }, 9);
+  assert.equal(findFavorite(profile, 'a').createdAt, 1);
+  assert.equal(findFavorite(profile, 'a').reason, 'So short');
+  assert.equal(profileForTutor(profile), [
+    'Problems they marked as favorites, newest first:',
+    '- Untitled problem: A problem given as a picture',
+    '- Pigeonhole: Show that two of 13 people share a birth month. (why they liked it: So short)',
+  ].join('\n'));
+  // Past the newest 20, only the problem goes.
+  let many = emptyProfile();
+  for (let i = 0; i < 25; i++) many = setFavorite(many, { id: `p${i}`, title: `P${i}`, problem: '', reason: 'neat' }, i);
+  const lines = profileForTutor(many).split('\n').slice(1);
+  assert.equal(lines.length, 25);
+  assert.equal(lines.filter((line) => line.includes('why they liked it')).length, 20);
+  assert.equal(lines.at(-1), '- P0');
+  assert.deepEqual(removeFavorite(profile, 'a', 10).favorites.map((item) => item.id), ['b']);
 });

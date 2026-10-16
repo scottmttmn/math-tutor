@@ -10,7 +10,7 @@ import { useTutorChat } from '@/hooks/useTutorChat';
 import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
 import { useToolsHidden } from '@/hooks/useToolsHidden';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
-import { loadInk, loadShelfDocument, savePageInk, saveShelfDocument, shelfSessionId } from '@/lib/db';
+import { loadInk, loadProfile, loadShelfDocument, savePageInk, saveShelfDocument, shelfSessionId } from '@/lib/db';
 import { openPdf, trimmedArea } from '@/lib/pdf';
 import { findPage, pageName } from '@/lib/reader';
 import { ensureExerciseBoard, isNote, markExercise, nextLabel, setReadFrom, solvedExercises, unmarkExercise } from '@/lib/shelf';
@@ -31,6 +31,8 @@ import BookList from './BookList';
 import BookSearch from './BookSearch';
 import PageAsk from './PageAsk';
 import { useBookSearch } from '@/hooks/useBookSearch';
+import { useFavorite } from '@/hooks/useFavorite';
+import FavoriteButton from '@/components/layout/FavoriteButton';
 
 // Whether the list beside the page is hidden, so the page gets the width.
 const LIST_HIDDEN_KEY = 'math-tutor:shelfListHidden';
@@ -370,6 +372,23 @@ export default function ShelfReader() {
   const range = shelfDocument && openExerciseForBook && !isNote(openExerciseForBook) ? readingRange(shelfDocument, openExerciseForBook, sectionStarts) : null;
   book.current = pdf && shelfDocument && range ? { pdf, document: shelfDocument, range } : null;
 
+  // The open exercise's star, and which of the book's exercises are starred (for Your list).
+  const favoriteSubject = shelfDocument && openExerciseForBook
+    ? { title: `${openExerciseForBook.label} · ${shelfDocument.title}, p. ${pageName(labels, openExerciseForBook.page)}`, problem: '' }
+    : { title: '', problem: '' };
+  const favorite = useFavorite(shelfDocument && openExerciseForBook ? shelfSessionId(shelfDocument.id, openExerciseForBook.id) : null, favoriteSubject);
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+  const bookId = shelfDocument?.id;
+  useEffect(() => {
+    if (!bookId) return;
+    let active = true;
+    const prefix = shelfSessionId(bookId, '');
+    loadProfile().then((profile) => {
+      if (active) setFavoriteIds((profile?.favorites ?? []).filter((item) => item.id.startsWith(prefix)).map((item) => item.id.slice(prefix.length)));
+    }, () => undefined);
+    return () => { active = false; };
+  }, [bookId, favorite.favorite]);
+
   // Say so when the pages have no text to read (a scanned book).
   const rangeKey = range ? `${range.from}-${range.to}` : '';
   useEffect(() => {
@@ -616,7 +635,7 @@ export default function ShelfReader() {
         ) : listTab === 'search' ? (
           <BookSearch search={search} pageCount={pageCount} contents={contents} labels={labels} onGoTo={goToEntry} />
         ) : (
-          <BookList pdf={pdf} marks={shelfDocument.exercises} solvedIds={solvedIds} ink={ink} contents={contents} labels={labels}
+          <BookList pdf={pdf} marks={shelfDocument.exercises} solvedIds={solvedIds} favoriteIds={favoriteIds} ink={ink} contents={contents} labels={labels}
             onOpen={(mark) => { setPanelOpen(false); void openExercise(mark); }} onGoTo={goToEntry} disabled={isStreaming} />
         )}
       </div>
@@ -701,6 +720,7 @@ export default function ShelfReader() {
               tools={{ hidden: toolsHidden, toggle: toggleTools }}
               tutor={{ open: tutorOpen, toggle: () => setTutorOpen((open) => !open) }}
               onSaveAs={(format) => void saveBoardAs(canvasHandle.current, format, `${exercise.label} - ${shelfDocument.title}`)}
+              favorite={<FavoriteButton favorite={favorite.favorite} failed={favorite.failed} onStar={(reason) => void favorite.star(reason)} onUnstar={() => void favorite.unstar()} />}
             />
           )}
           tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel getCanvasImage={followUpImage} getBookContext={getBookContext} /> }}

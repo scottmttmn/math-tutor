@@ -11,7 +11,7 @@ import { boardToOpen, setBoardToOpen } from '@/lib/currentBoard';
 import AppBar from '@/components/layout/AppBar';
 import BlobImage from '@/components/common/BlobImage';
 import MoreMenu from '@/components/common/MoreMenu';
-import { KindIcon, ShelfIcon, SolvedCheck, TutorIcon } from '@/components/common/Icons';
+import { FavoriteStar, KindIcon, ShelfIcon, SolvedCheck, TutorIcon } from '@/components/common/Icons';
 import { ShelfCover } from '@/components/shelf/Shelf';
 import type { HistoryItem, HistoryShow, HistorySort, ShelfDocument } from '@/types';
 
@@ -21,12 +21,18 @@ const SHOW_OPTIONS: { value: HistoryShow; label: string }[] = [
   { value: 'notes', label: 'Notes' },
   { value: 'inProgress', label: 'In progress' },
   { value: 'solved', label: 'Solved' },
+  { value: 'favorites', label: 'Favorites' },
 ];
 
 // The Shelf row on Home shows the most recently added PDFs; the Shelf has the rest.
 const SHELF_PREVIEW = 3;
 
-const loadItems = async () => (await listSessions()).map(toHistoryItem).filter((item): item is HistoryItem => item !== null);
+const loadItems = async () => {
+  // Favorites live in the tutor memory; without it, nothing shows as starred.
+  const [sessions, profile] = await Promise.all([listSessions(), loadProfile().catch(() => undefined)]);
+  const favoriteIds = new Set((profile?.favorites ?? []).map((favorite) => favorite.id));
+  return sessions.map((session) => toHistoryItem(session, favoriteIds)).filter((item): item is HistoryItem => item !== null);
+};
 
 /**
  * The page the app opens on: the board last worked on, every problem and note (free boards,
@@ -106,13 +112,14 @@ export default function Home() {
               aria-label="Search problems and notes"
               className="flex-1 min-w-[12rem] max-w-md min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900"
             />
-            <div className="flex rounded-lg border border-gray-300 overflow-hidden" role="group" aria-label="Show">
+            {/* Two rows of three on a phone, where six don't fit in one. */}
+            <div className="grid grid-cols-3 sm:flex rounded-lg border border-gray-300 overflow-hidden" role="group" aria-label="Show">
               {SHOW_OPTIONS.map((option) => (
                 <button
                   key={option.value}
                   onClick={() => setShow(option.value)}
                   aria-pressed={show === option.value}
-                  className={`min-h-11 px-3 text-sm ${show === option.value ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                  className={`min-h-11 px-3 text-sm whitespace-nowrap ${show === option.value ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
                 >
                   {option.label}
                 </button>
@@ -193,13 +200,14 @@ function ContinueCard({ item, onOpen }: { item: HistoryItem; onOpen: () => void 
   );
 }
 
-/** What a board is (problem or notes), where it came from, and whether it's solved. */
+/** What a board is (problem or notes), where it came from, and whether it's solved or a favorite. */
 function KindLine({ item }: { item: HistoryItem }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-700">
       <span className="flex items-center gap-1"><KindIcon type={item.sessionType} />{item.sessionType === 'note' ? 'Notes' : 'Problem'}</span>
       {item.source === 'shelf' && <span className="flex items-center gap-1"><ShelfIcon />Shelf</span>}
       {item.isSolved && <span className="flex items-center gap-1 font-semibold text-gray-900"><SolvedCheck size={14} />Solved</span>}
+      {item.favorite && <span className="flex items-center gap-1 font-semibold text-gray-900"><FavoriteStar filled size={14} />Favorite</span>}
     </div>
   );
 }

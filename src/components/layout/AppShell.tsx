@@ -14,6 +14,8 @@ import { useWriteUp } from '@/hooks/useWriteUp';
 import type { SessionType } from '@/types';
 import TopBar from './TopBar';
 import BottomToolbar from './BottomToolbar';
+import FavoriteButton from './FavoriteButton';
+import { useFavorite } from '@/hooks/useFavorite';
 import ProblemStatement from '../workspace/ProblemStatement';
 import NoteHeader from '../workspace/NoteHeader';
 import CheckInHeader from '../workspace/CheckInHeader';
@@ -34,13 +36,18 @@ function AppContent() {
   const { fullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
   const { toolsHidden, toggleTools } = useToolsHidden();
 
-  const { isStreaming, isSolved, sessionType, problemStatement, checkIn, chatHistory, paper: chosenPaper } = useSessionState();
+  const { isStreaming, isSolved, sessionType, problemStatement, problemImage, checkIn, chatHistory, paper: chosenPaper, currentSessionId } = useSessionState();
   const paper = paperFor(chosenPaper, sessionType);
   const sessionDispatch = useSessionDispatch();
   const { sendHelp } = useTutorChat();
   const { status: saveStatus, saveNow, startNew } = useSessionAutosave(canvasHandle);
   const writeUp = useWriteUp();
   const boardTitle = checkIn ? checkInTitle(checkIn) : problemStatement || (sessionType === 'note' ? 'Notes' : 'Problem');
+  // A board is starred once it is saved (has an id); the tutor reads its statement, or that it was a picture.
+  const favorite = useFavorite(currentSessionId, {
+    title: checkIn ? checkInTitle(checkIn) : problemStatement.split('\n')[0].trim() || 'Untitled problem',
+    problem: problemStatement.trim() ? problemStatement : problemImage ? 'A problem given as a picture' : 'Written on the board',
+  });
 
   // A new board opens with its tutor closed, so the problem or topic is in view.
   const { cancel: cancelWriteUp } = writeUp;
@@ -162,6 +169,10 @@ function AppContent() {
             tutor={{ open: tutorOpen, toggle: () => setTutorOpen((open) => !open) }}
             onSaveAs={(format) => void saveBoardAs(canvasHandle.current, format, boardTitle)}
             onWriteUp={() => setWriteUpOpen(true)}
+            favorite={checkIn ? undefined : (
+              <FavoriteButton favorite={favorite.favorite} disabled={!currentSessionId} failed={favorite.failed}
+                onStar={(reason) => void favorite.star(reason)} onUnstar={() => void favorite.unstar()} />
+            )}
           />
         )}
         tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel getCanvasImage={getFollowUpImage} /> }}
