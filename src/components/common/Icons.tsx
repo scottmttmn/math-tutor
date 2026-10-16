@@ -68,3 +68,12 @@ export function UnsolvedCheck({ size = 16 }: { size?: number }) {
     </svg>
   );
 }
+
+/** Favorite: a star, filled in ink once starred (no color). */
+export function FavoriteStar({ filled = false, size = 16 }: { filled?: boolean; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
+      <path d="M8 1.6l1.95 4.1 4.45.55-3.28 3.08.85 4.42L8 11.58l-3.97 2.17.85-4.42L1.6 6.25l4.45-.55z" />
+    </svg>
+  );
+}

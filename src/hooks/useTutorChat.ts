@@ -8,16 +8,17 @@ import { recordTutorUsage, tryStartTutorRequest, useRateLimit } from '@/hooks/us
 import { RATE_LIMIT_MS, TUTOR_UNAVAILABLE } from '@/lib/constants';
 import { loadProfile, saveProfile } from '@/lib/db';
 import { requestTutor } from '@/lib/tutorRequest';
-import { emptyProfile, noteTopic, profileForTutor, splitTutorNotes, type TopicObservation } from '@/lib/learnerProfile';
+import { emptyProfile, noteTopic, profileForTutor, splitTutorNotes, writeNotebook, type TopicObservation } from '@/lib/learnerProfile';
 import type { BookContext, ChatMessage, TutorStreamEvent } from '@/types';
 
-/** Writes the tutor's topic notes into the tutor memory, unless the student turned sharing off meanwhile. */
-async function keepNotes(notes: TopicObservation[]) {
+/** Writes the tutor's topic notes and notebook into the tutor memory, unless the student turned sharing off meanwhile. */
+async function keepNotes(notes: TopicObservation[], notebook: string | null) {
   try {
     const profile = (await loadProfile()) ?? emptyProfile();
     if (!profile.shareWithTutor) return;
     const now = Date.now();
-    await saveProfile(notes.reduce((current, note) => noteTopic(current, note, now), profile));
+    const noted = notes.reduce((current, note) => noteTopic(current, note, now), profile);
+    await saveProfile(notebook ? writeNotebook(noted, notebook, false, now) : noted);
   } catch { /* The reply still stands; the notes are lost. */ }
 }
 
@@ -106,9 +107,9 @@ export function useTutorChat(getBookContext?: () => Promise<BookContext | null>)
         }
       }
       if (!stopped && !hadError) throw new Error('The tutor response was interrupted. Please try again.');
-      const { visible, notes } = splitTutorNotes(reply);
+      const { visible, notes, notebook } = splitTutorNotes(reply);
       if (visible.length > shown) append(visible.slice(shown));
-      if (takeNotes && notes.length && !hadError) await keepNotes(notes);
+      if (takeNotes && (notes.length || notebook) && !hadError) await keepNotes(notes, notebook);
       return !hadError && !abort.signal.aborted;
     } catch (error) {
       append(`\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`);

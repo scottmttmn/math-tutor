@@ -11,8 +11,8 @@ const provider = createServer(async (req, res) => {
   for await (const part of req) raw += part;
   requests.push(JSON.parse(raw));
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
-  // The reply ends with a topic note, split across chunks the way a stream splits it.
-  for (const content of ['Memory hint.', '\n\n<mem', 'ory>\nLimits | learning | medium | Mixed up left and', ' right limits\n</memory>']) {
+  // The reply ends with a topic note and the notebook, split across chunks the way a stream splits them.
+  for (const content of ['Memory hint.', '\n\n<mem', 'ory>\nLimits | learning | medium | Mixed up left and', ' right limits\n</memory>', '\n<note', 'book>\nEnjoys seeing why a rule works.\n</notebook>']) {
     res.write(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`);
   }
   res.end('data: [DONE]\n\n');
@@ -106,11 +106,21 @@ try {
   assert.match(profileSent().content, /Retired engineer[\s\S]*- Solid: Derivatives[\s\S]*- Rusty: Limits/);
   console.log('PASS questions carry the tutor memory');
 
-  // The tutor's topic note stays out of the chat and lands in the memory.
-  assert.match(system.content, /TOPIC NOTES/);
-  assert.doesNotMatch(await page.locator('body').innerText(), /Mixed up|memory>|<mem/);
+  // The tutor's topic note and notebook stay out of the chat and land in the memory.
+  assert.match(system.content, /TOPIC NOTES[\s\S]*YOUR NOTEBOOK/);
+  assert.doesNotMatch(await page.locator('body').innerText(), /Mixed up|memory>|<mem|Enjoys seeing|notebook>/);
   // The notes are saved once the reply ends; wait for that before opening the memory page.
-  await waitForProfile((profile) => profile.topics.some((item) => item.name === 'Limits' && item.tutor));
+  await waitForProfile((profile) => profile.topics.some((item) => item.name === 'Limits' && item.tutor) && profile.notebook?.text === 'Enjoys seeing why a rule works.');
+
+  // Favorite stars the board and asks, optionally, what made it good.
+  const star = page.getByRole('button', { name: 'Favorite', exact: true });
+  assert.equal(await star.getAttribute('aria-pressed'), 'false');
+  await star.click();
+  await page.getByLabel(/What made it good/).fill('Product rule and a trig identity at once');
+  await page.getByRole('button', { name: 'Done' }).click();
+  await waitForProfile((profile) => profile.favorites?.[0]?.reason === 'Product rule and a trig identity at once');
+  assert.equal(await star.getAttribute('aria-pressed'), 'true');
+  console.log('PASS a board is starred as a favorite, with why');
 
   // Settings leads there too; the note shows under its topic, and the student can correct it.
   await page.getByRole('button', { name: 'Settings' }).click();
@@ -125,6 +135,25 @@ try {
   await page.getByText('What the tutor reads').click();
   assert.match(await page.getByTestId('tutor-reads').innerText(), /- Limits: Rusty \(set by the student\): Mixed up left and right limits/);
   console.log('PASS the tutor notes a topic out of sight of the chat; the student sees and corrects it');
+
+  // The notebook and the favorite show on the memory page and go to the tutor; the student can edit the notebook.
+  const notebook = page.getByRole('textbox', { name: "The tutor's notebook" });
+  assert.equal(await notebook.inputValue(), 'Enjoys seeing why a rule works.');
+  assert.match(await page.getByTestId('favorite').innerText(), /Differentiate x\^2 sin x[\s\S]*Why: Product rule and a trig identity at once/);
+  await notebook.fill('Enjoys seeing why a rule works. Likes short hints.');
+  await page.getByText('Last changed by you').waitFor();
+  await page.getByText('Saved', { exact: true }).waitFor();
+  assert.match(await page.getByTestId('tutor-reads').innerText(),
+    /Your notebook about them \(last edited by the student\):\nEnjoys seeing why a rule works\. Likes short hints\.\nProblems they marked as favorites, newest first:\n- Differentiate x\^2 sin x \(why they liked it: Product rule and a trig identity at once\)/);
+
+  // Home's Favorites filter shows the starred board.
+  await page.goto(`${origin}/`);
+  await page.getByRole('button', { name: 'Favorites', exact: true }).click();
+  await page.getByText('Favorite', { exact: true }).first().waitFor();
+  assert.match(await page.locator('main').innerText(), /Differentiate x\^2 sin x/);
+  await page.goto(`${origin}/memory`);
+  await page.getByRole('heading', { name: 'Tutor memory' }).waitFor();
+  console.log('PASS the notebook and favorites show on Tutor memory and Home, and the tutor reads them');
 
   // With sharing off, nothing is sent and no notes are taken.
   await page.getByLabel('Share this with the tutor').uncheck();

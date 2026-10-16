@@ -6,12 +6,14 @@ import { bookList, pageTextBoxes, textUnder } from '@/lib/bookList';
 import { pageName } from '@/lib/reader';
 import type { ContentsEntry } from '@/lib/bookContext';
 import type { InkStroke, ShelfExercise } from '@/types';
-import { NotesIcon, SolvedCheck, UnsolvedCheck } from '@/components/common/Icons';
+import { FavoriteStar, NotesIcon, SolvedCheck, UnsolvedCheck } from '@/components/common/Icons';
 
 interface Props {
   pdf: PDFDocumentProxy;
   marks: ShelfExercise[];
   solvedIds: string[];
+  /** Exercises the student starred. */
+  favoriteIds?: string[];
   ink: Record<number, InkStroke[]>;
   contents: ContentsEntry[];
   labels: string[] | null;
@@ -22,7 +24,7 @@ interface Props {
 }
 
 /** Your list: everything made in this book (exercises, note pages, highlights, ink) by section. */
-export default function BookList({ pdf, marks, solvedIds, ink, contents, labels, onOpen, onGoTo, disabled }: Props) {
+export default function BookList({ pdf, marks, solvedIds, favoriteIds = [], ink, contents, labels, onOpen, onGoTo, disabled }: Props) {
   const sections = useMemo(() => bookList(marks, solvedIds, ink, contents, pdf.numPages), [marks, solvedIds, ink, contents, pdf]);
 
   // The words under each highlight, read from the page's text once per stroke.
@@ -64,6 +66,7 @@ export default function BookList({ pdf, marks, solvedIds, ink, contents, labels,
                   <button onClick={() => onOpen(item.mark)} disabled={disabled} className={row}>
                     {item.mark.kind === 'note' ? <NotesIcon /> : item.solved ? <SolvedCheck /> : <UnsolvedCheck />}
                     <span className="flex-1 min-w-0 truncate font-medium text-gray-900">{item.mark.label}</span>
+                    {favoriteIds.includes(item.mark.id) && <span title="Favorite" className="text-gray-900"><FavoriteStar filled /><span className="sr-only">Favorite</span></span>}
                     {item.solved && <span className="text-xs font-semibold text-gray-900">Solved</span>}
                     <span className="text-xs text-gray-500 tabular-nums">p. {name(item.mark.page)}</span>
                   </button>
