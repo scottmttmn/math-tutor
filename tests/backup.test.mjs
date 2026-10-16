@@ -170,7 +170,11 @@ test('a version 1 backup (boards inside backup.json) still restores', async () =
 });
 
 test('the tutor memory goes into the backup and comes back; a malformed one is left out', async () => {
-  const profile = { aboutMe: 'Self-taught', topics: [{ id: 'calculus/limits', name: 'Limits', area: 'Calculus', rating: 'solid' }], shareWithTutor: false, updatedAt: 7 };
+  const profile = {
+    aboutMe: 'Self-taught', topics: [{ id: 'calculus/limits', name: 'Limits', area: 'Calculus', rating: 'solid' }], shareWithTutor: false, updatedAt: 7,
+    favorites: [{ id: 'board-1', title: 'Pigeonhole', problem: '13 people', reason: 'The trick', createdAt: 3 }],
+    notebook: { text: 'Loves symmetry.', updatedAt: 6 },
+  };
   const { manifest } = await backup.buildBackup([], [], profile);
   assert.deepEqual(manifest.profile, profile);
   assert.equal((await backup.buildBackup([], [])).manifest.profile, undefined);

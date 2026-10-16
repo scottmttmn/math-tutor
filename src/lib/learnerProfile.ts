@@ -1,4 +1,4 @@
-import type { LearnerProfile, ProfileTopic, TopicRating, TutorConfidence, TutorNote } from '@/types';
+import type { FavoriteProblem, LearnerProfile, ProfileTopic, TopicRating, TutorConfidence, TutorNote } from '@/types';
 
 // Topics a self-motivated learner might rate, roughly from school math to university courses.
 // Ratings are stored by id, so ids must not change; names and areas can.
@@ -37,7 +37,8 @@ export const emptyProfile = (): LearnerProfile => ({ aboutMe: '', topics: [], sh
 
 /** True when the student hasn't told the tutor anything yet. */
 export const isProfileEmpty = (profile: LearnerProfile) =>
-  !profile.aboutMe.trim() && !profile.topics.some((topic) => topic.rating || topic.tutor);
+  !profile.aboutMe.trim() && !profile.topics.some((topic) => topic.rating || topic.tutor)
+  && !profile.favorites?.length && !profile.notebook?.text.trim();
 
 /** The profile with one catalog topic rated, or unrated (null), which drops it. */
 export function rateTopic(profile: LearnerProfile, area: string, name: string, rating: TopicRating | null, now = Date.now()): LearnerProfile {
@@ -116,34 +117,86 @@ export function forgetTutorNote(profile: LearnerProfile, id: string, now = Date.
 
 const LEVELS = new Set<string>(RATINGS.map((option) => option.rating));
 const CONFIDENCE_SET = new Set<string>(CONFIDENCES.map((option) => option.confidence));
-const NOTES_OPEN = '<memory>';
-const NOTES_CLOSE = '</memory>';
+// The blocks a reply can end with: topic notes, and the tutor's notebook rewritten whole.
+const NOTES_BLOCK = 'memory';
+const NOTEBOOK_BLOCK = 'notebook';
+const OPENERS = [NOTES_BLOCK, NOTEBOOK_BLOCK].map((name) => `<${name}>`);
+
+/** Takes one block out of a reply: what is left, and its body (null when absent; open when the reply stops inside it). */
+function takeBlock(raw: string, name: string): { rest: string; body: string | null; closed: boolean } {
+  const open = `<${name}>`;
+  const close = `</${name}>`;
+  const start = raw.indexOf(open);
+  if (start < 0) return { rest: raw, body: null, closed: false };
+  const end = raw.indexOf(close, start);
+  const body = raw.slice(start + open.length, end < 0 ? undefined : end);
+  return { rest: raw.slice(0, start) + (end < 0 ? '' : raw.slice(end + close.length)), body, closed: end >= 0 };
+}
 
 /**
- * Splits a tutor reply into what the student reads and the topic notes it ended with: a <memory>
- * block of lines "Topic | level | confidence | note". Malformed lines are ignored.
+ * Splits a tutor reply into what the student reads and what it ended with for the memory: a <memory>
+ * block of lines "Topic | level | confidence | note" (malformed lines are ignored), and a <notebook>
+ * block with the whole notebook rewritten (kept only once closed, so a cut-off reply never shortens it).
  */
-export function splitTutorNotes(raw: string): { visible: string; notes: TopicObservation[] } {
-  const start = raw.indexOf(NOTES_OPEN);
-  if (start < 0) return { visible: withoutPartialTag(raw), notes: [] };
-  const end = raw.indexOf(NOTES_CLOSE, start);
-  const block = raw.slice(start + NOTES_OPEN.length, end < 0 ? undefined : end);
-  const after = end < 0 ? '' : raw.slice(end + NOTES_CLOSE.length);
-  const notes = block.split('\n').flatMap((line): TopicObservation[] => {
+export function splitTutorNotes(raw: string): { visible: string; notes: TopicObservation[]; notebook: string | null } {
+  const memory = takeBlock(raw, NOTES_BLOCK);
+  const book = takeBlock(memory.rest, NOTEBOOK_BLOCK);
+  const notes = (memory.body ?? '').split('\n').flatMap((line): TopicObservation[] => {
     const [topic, level, confidence, ...note] = line.replace(/^\s*[-*]\s*/, '').split('|').map((part) => part.trim());
     const levelKey = level?.toLowerCase().replace(/^never seen$/, 'never');
     if (!topic || !LEVELS.has(levelKey) || !CONFIDENCE_SET.has(confidence?.toLowerCase())) return [];
     return [{ topic, level: levelKey as TopicRating, confidence: confidence.toLowerCase() as TutorConfidence, note: note.join('|').trim() }];
   });
-  return { visible: (raw.slice(0, start) + after).trimEnd(), notes: notes.slice(0, 5) };
+  const notebook = book.closed ? book.body?.trim() || null : null;
+  return { visible: withoutPartialTag(book.rest), notes: notes.slice(0, 5), notebook };
 }
 
-/** While a reply streams, holds back what might be the start of the notes block. */
+/** While a reply streams, holds back what might be the start of a block. */
 function withoutPartialTag(raw: string) {
-  for (let length = Math.min(NOTES_OPEN.length - 1, raw.length); length > 0; length--) {
-    if (raw.endsWith(NOTES_OPEN.slice(0, length))) return raw.slice(0, -length).trimEnd();
+  for (const opener of OPENERS) {
+    for (let length = Math.min(opener.length - 1, raw.length); length > 0; length--) {
+      if (raw.endsWith(opener.slice(0, length))) return raw.slice(0, -length).trimEnd();
+    }
   }
   return raw.trimEnd();
+}
+
+export const MAX_NOTEBOOK = 1500;
+
+/** The profile with the notebook replaced; empty text removes it. `edited`: the student wrote this version. */
+export function writeNotebook(profile: LearnerProfile, text: string, edited: boolean, now = Date.now()): LearnerProfile {
+  // The student's text is kept as typed (trimming each keystroke would eat spaces).
+  const clean = (edited ? text : text.trim()).slice(0, MAX_NOTEBOOK);
+  const rest = { ...profile, updatedAt: now };
+  delete rest.notebook;
+  return clean.trim() ? { ...rest, notebook: { text: clean, updatedAt: now, ...(edited ? { edited: true } : {}) } } : rest;
+}
+
+export const MAX_FAVORITE_REASON = 300;
+const MAX_FAVORITE_LINE = 160;
+// With every favorite sent, older ones go as a name and a line; the newest also carry the student's reason.
+const FAVORITE_REASONS_SENT = 20;
+
+const oneLine = (text: string, max: number) => text.replace(/\s+/g, ' ').trim().slice(0, max);
+
+/** A favorite as it is stored: one line each, the reason bounded. */
+export function favoriteEntry(id: string, title: string, problem: string, reason: string, createdAt: number): FavoriteProblem {
+  return { id, title: oneLine(title, MAX_FAVORITE_LINE), problem: oneLine(problem, MAX_FAVORITE_LINE), reason: oneLine(reason, MAX_FAVORITE_REASON), createdAt };
+}
+
+export const findFavorite = (profile: LearnerProfile | null | undefined, id: string | null) =>
+  id ? profile?.favorites?.find((favorite) => favorite.id === id) : undefined;
+
+/** The profile with a board starred, or its favorite updated (it keeps the day it was first starred). */
+export function setFavorite(profile: LearnerProfile, favorite: Omit<FavoriteProblem, 'createdAt'>, now = Date.now()): LearnerProfile {
+  const existing = findFavorite(profile, favorite.id);
+  const entry = favoriteEntry(favorite.id, favorite.title, favorite.problem, favorite.reason, existing?.createdAt ?? now);
+  const favorites = [entry, ...(profile.favorites ?? []).filter((item) => item.id !== favorite.id)].sort((a, b) => b.createdAt - a.createdAt);
+  return { ...profile, favorites, updatedAt: now };
+}
+
+export function removeFavorite(profile: LearnerProfile, id: string, now = Date.now()): LearnerProfile {
+  return { ...profile, favorites: (profile.favorites ?? []).filter((item) => item.id !== id), updatedAt: now };
 }
 
 export function removeTopic(profile: LearnerProfile, id: string, now = Date.now()): LearnerProfile {
@@ -161,8 +214,8 @@ function sortTopics(topics: ProfileTopic[]) {
 }
 
 /**
- * What the tutor reads: the student's words, their ratings grouped by rating, and the tutor's own
- * notes. Empty when there is nothing to say or the student turned sharing off.
+ * What the tutor reads: the student's words, their ratings grouped by rating, the tutor's own
+ * notes and notebook, and the problems they starred. Empty when there is nothing to say or the student turned sharing off.
  */
 export function profileForTutor(profile: LearnerProfile | null | undefined): string {
   if (!profile?.shareWithTutor) return '';
@@ -187,6 +240,20 @@ export function profileForTutor(profile: LearnerProfile | null | undefined): str
       const how = tutor.edited ? 'set by the student' : `${tutor.confidence} confidence`;
       lines.push(`- ${name}: ${level} (${how})${tutor.note ? `: ${tutor.note}` : ''}`);
     }
+  }
+  const notebook = profile.notebook?.text.trim();
+  if (notebook) {
+    lines.push(`Your notebook about them (${profile.notebook?.edited ? 'last edited by the student' : 'you wrote it; the student can read and edit it'}):`);
+    lines.push(notebook.slice(0, MAX_NOTEBOOK));
+  }
+  // Last, so if the whole profile is ever cut short, the oldest favorites go first.
+  const favorites = profile.favorites ?? [];
+  if (favorites.length) {
+    lines.push('Problems they marked as favorites, newest first:');
+    favorites.forEach(({ title, problem, reason }, index) => {
+      const what = problem && problem !== title ? `${title}: ${problem}` : title;
+      lines.push(`- ${what}${reason && index < FAVORITE_REASONS_SENT ? ` (why they liked it: ${reason})` : ''}`);
+    });
   }
   return lines.join('\n');
 }

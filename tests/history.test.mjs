@@ -41,7 +41,7 @@ test('search matches every word in the name or problem; filters and sorts apply'
     session({ id: '1', title: 'Roots of unity', problemStatement: 'Find all z with z^5 = 1', isSolved: true, createdAt: 3, updatedAt: 4 }),
     session({ id: '2', title: 'Polar form', problemStatement: 'Write 1 + i in polar form', createdAt: 2, updatedAt: 6 }),
     session({ id: '3', title: 'Conjugates', sessionType: 'note', createdAt: 1, updatedAt: 5 }),
-  ].map(toHistoryItem);
+  ].map((item) => toHistoryItem(item));
   const ids = (options) => queryHistory(items, { search: '', show: 'all', sort: 'updated', ...options }).map((item) => item.id);
   assert.deepEqual(ids({}), ['2', '3', '1']);
   assert.deepEqual(ids({ sort: 'created' }), ['1', '2', '3']);
@@ -53,4 +53,13 @@ test('search matches every word in the name or problem; filters and sorts apply'
   assert.deepEqual(ids({ show: 'inProgress' }), ['2']);
   assert.deepEqual(ids({ show: 'notes' }), ['3']);
   assert.deepEqual(ids({ show: 'problems' }), ['2', '1']);
+});
+
+test('favorites: a starred board shows as one, and a starred Shelf exercise shows even without work', () => {
+  const ids = new Set(['board-1', 'shelf:doc1:ex1']);
+  assert.equal(toHistoryItem(session({ id: 'board-1' }), ids).favorite, true);
+  assert.equal(toHistoryItem(session({ id: 'board-2' }), ids).favorite, false);
+  assert.equal(toHistoryItem(session({ id: 'shelf:doc1:ex1' }), ids).favorite, true);
+  const items = [toHistoryItem(session({ id: 'board-1' }), ids), toHistoryItem(session({ id: 'board-2' }), ids)];
+  assert.deepEqual(queryHistory(items, { search: '', show: 'favorites', sort: 'updated' }).map((item) => item.id), ['board-1']);
 });

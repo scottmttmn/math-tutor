@@ -1,8 +1,8 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { listInk, listSessions, listShelf, loadProfile, restoreRecords } from '@/lib/db';
 import { readZip, writeZip } from '@/lib/zip';
-import { RATINGS } from '@/lib/learnerProfile';
-import type { BackupManifest, BackupSession, InkStroke, LearnerProfile, PageInk, ProfileTopic, RestoreResult, SaveFilePlugin, Session, ShelfDocument, TopicRating, TutorNote } from '@/types';
+import { MAX_NOTEBOOK, RATINGS, favoriteEntry } from '@/lib/learnerProfile';
+import type { BackupManifest, BackupSession, FavoriteProblem, InkStroke, LearnerProfile, PageInk, ProfileTopic, RestoreResult, SaveFilePlugin, Session, ShelfDocument, TopicRating, TutorNote } from '@/types';
 
 const TOPIC_RATINGS: (TopicRating | null)[] = RATINGS.map((option) => option.rating);
 
@@ -162,7 +162,18 @@ function validProfile(profile: unknown): LearnerProfile | undefined {
     const note = validTutorNote(tutor);
     return { id, name, area, rating, ...(note ? { tutor: note } : {}) };
   });
-  return { aboutMe: candidate.aboutMe, topics, shareWithTutor: candidate.shareWithTutor !== false, updatedAt: candidate.updatedAt };
+  const favorites = Array.isArray(candidate.favorites) ? (candidate.favorites as unknown[]).flatMap((item) => {
+    const f = item as FavoriteProblem | null;
+    return f && typeof f.id === 'string' && typeof f.title === 'string' && Number.isFinite(f.createdAt)
+      ? [favoriteEntry(f.id, f.title, typeof f.problem === 'string' ? f.problem : '', typeof f.reason === 'string' ? f.reason : '', f.createdAt)] : [];
+  }) : [];
+  const notebook = candidate.notebook;
+  const validNotebook = notebook && typeof notebook.text === 'string' && notebook.text.trim() && Number.isFinite(notebook.updatedAt)
+    ? { text: notebook.text.slice(0, MAX_NOTEBOOK), updatedAt: notebook.updatedAt, ...(notebook.edited === true ? { edited: true } : {}) } : undefined;
+  return {
+    aboutMe: candidate.aboutMe, topics, shareWithTutor: candidate.shareWithTutor !== false, updatedAt: candidate.updatedAt,
+    ...(favorites.length ? { favorites } : {}), ...(validNotebook ? { notebook: validNotebook } : {}),
+  };
 }
 
 function validTutorNote(note: unknown): TutorNote | undefined {

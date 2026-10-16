@@ -94,6 +94,8 @@ export interface HistoryItem {
   isSolved: boolean;
   sessionType: SessionType;
   renamed: boolean;
+  /** The student starred it (see FavoriteProblem). */
+  favorite: boolean;
   thumbnail: Blob | null;
   /** Where it was worked on: a free-form board, or an exercise marked on the Shelf. */
   source: 'board' | 'shelf';
@@ -101,8 +103,8 @@ export interface HistoryItem {
   href: string | null;
 }
 
-/** History's filter: everything, problems not yet solved, solved problems, or notes. */
-export type HistoryShow = 'all' | 'problems' | 'notes' | 'inProgress' | 'solved';
+/** History's filter: everything, problems, notes, problems not yet solved, solved problems, or favorites. */
+export type HistoryShow = 'all' | 'problems' | 'notes' | 'inProgress' | 'solved' | 'favorites';
 export type HistorySort = 'updated' | 'created' | 'title';
 
 // === Shelf ===
@@ -344,11 +346,38 @@ export interface TutorNote {
   edited?: boolean;
 }
 
+/**
+ * A problem the student marked as a favorite. Kept in the tutor memory, so it outlives its board and
+ * the tutor keeps hearing about it; `id` is the board's session id.
+ */
+export interface FavoriteProblem {
+  id: string;
+  /** The board's name when it was starred (or last given a reason). */
+  title: string;
+  /** A short line on what the problem was: its statement, or where it came from. */
+  problem: string;
+  /** What made it good, in the student's words; optional. */
+  reason: string;
+  createdAt: number;
+}
+
+/** The tutor's own notes on the student, in its own words: rewritten whole when it learns something worth keeping. */
+export interface TutorNotebook {
+  text: string;
+  updatedAt: number;
+  /** The student edited it last. */
+  edited?: boolean;
+}
+
 /** What the tutor knows about the student: kept on this device, edited by the student, sent with questions. */
 export interface LearnerProfile {
   /** In the student's own words: what they study and why, how they like to be helped. */
   aboutMe: string;
   topics: ProfileTopic[];
+  /** Problems the student starred, newest first; missing in profiles saved before favorites existed. */
+  favorites?: FavoriteProblem[];
+  /** The tutor's notebook; unset until it writes one. */
+  notebook?: TutorNotebook;
   /** Off: nothing here goes to the tutor. */
   shareWithTutor: boolean;
   updatedAt: number;

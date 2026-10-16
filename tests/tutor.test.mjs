@@ -213,6 +213,9 @@ for (const provider of ['anthropic', 'openai-compatible']) {
     const noting = provider === 'anthropic' ? calls[2].system : calls[2].messages[0].content;
     assert.match(noting, /The answer is theirs to find[\s\S]*TOPIC NOTES[\s\S]*<memory>[\s\S]*Never the answer to the problem/);
     assert.match(noting, /Integration techniques/);
+    // And the notebook, rewritten whole and bounded, with no notebook unless notes are taken.
+    assert.match(noting, /YOUR NOTEBOOK[\s\S]*<notebook>[\s\S]*under 1500 characters[\s\S]*never the answer to a problem/);
+    assert.doesNotMatch(plain, /YOUR NOTEBOOK/);
   });
 }
 

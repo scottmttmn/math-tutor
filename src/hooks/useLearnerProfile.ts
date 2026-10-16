@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { loadProfile, saveProfile } from '@/lib/db';
+import { loadProfile, updateProfile } from '@/lib/db';
 import { emptyProfile } from '@/lib/learnerProfile';
 import type { AutosaveStatus, LearnerProfile } from '@/types';
 
@@ -13,7 +13,8 @@ export function useLearnerProfile() {
   const [profile, setProfile] = useState<LearnerProfile | null>(null);
   const [status, setStatus] = useState<AutosaveStatus>('idle');
   const [loadFailed, setLoadFailed] = useState(false);
-  const pending = useRef<LearnerProfile | null>(null);
+  // Changes not yet saved, replayed onto the stored memory so a note or favorite saved meanwhile is kept.
+  const pending = useRef<((current: LearnerProfile) => LearnerProfile)[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
@@ -27,16 +28,18 @@ export function useLearnerProfile() {
   const flush = useCallback(async () => {
     clearTimeout(timer.current);
     timer.current = undefined;
-    const next = pending.current;
-    if (!next) return;
-    pending.current = null;
+    const changes = pending.current;
+    if (!changes.length) return;
+    pending.current = [];
     setStatus('saving');
     try {
-      await saveProfile(next);
-      setStatus(pending.current ? 'saving' : 'saved');
+      const saved = await updateProfile((stored) => changes.reduce((current, change) => change(current), stored ?? emptyProfile()));
+      // Show what is stored, with anything typed since on top.
+      setProfile(pending.current.reduce((current, change) => change(current), saved));
+      setStatus(pending.current.length ? 'saving' : 'saved');
     } catch {
-      // Keep it pending so leaving the page tries again.
-      pending.current ??= next;
+      // Keep them pending so leaving the page tries again.
+      pending.current = [...changes, ...pending.current];
       setStatus('error');
     }
   }, []);
@@ -55,15 +58,11 @@ export function useLearnerProfile() {
 
   /** Applies a change and saves it after a short pause. */
   const update = useCallback((change: (current: LearnerProfile) => LearnerProfile) => {
-    setProfile((current) => {
-      if (!current) return current;
-      const next = change(current);
-      if (next === current) return current;
-      pending.current = next;
-      clearTimeout(timer.current);
-      timer.current = setTimeout(() => void flush(), SAVE_DELAY_MS);
-      return next;
-    });
+    // Kept outside the state updater, which React may run twice.
+    pending.current.push(change);
+    setProfile((current) => (current ? change(current) : current));
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => void flush(), SAVE_DELAY_MS);
   }, [flush]);
 
   return { profile, update, status, loadFailed, saveNow: flush };

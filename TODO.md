@@ -52,6 +52,8 @@ Done (step 1): **Tutor memory** (Settings → Tutor, or the line on Home while i
 
 Done (step 2): the tutor notes what your boards show, per topic with a level and how sure it is, at the end of a reply and out of sight of the chat. The notes show under each topic on the Tutor memory page, where you can correct the level or forget the note, and the tutor reads them back with later questions.
 
+Done (step 3): **Favorites** and **the tutor's notebook**. Favorite beside Mark solved stars a problem and asks, optionally, what made it good; Home has a Favorites filter and the tutor reads every favorite. The tutor also keeps a short notebook on you in its own words (how you like to be helped, what you enjoy), rewritten as it learns and editable on the Tutor memory page. Later: the tutor recommends a problem, built on the favorites.
+
 - A local, user-editable learner profile, summarized after each session and sent with tutor requests (not the raw history).
 - Kept in app storage, so it moves with the app to the tablet.
 - **Self-assessment** (optional): pick topics and rate each one (solid, rusty, learning, never seen), plus a free-text "About me". This is the tutor's starting picture of the learner.
