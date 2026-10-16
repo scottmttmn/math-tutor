@@ -10,9 +10,10 @@ import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
 import { useToolsHidden } from '@/hooks/useToolsHidden';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
 import { loadShelfDocument, saveShelfDocument, shelfSessionId } from '@/lib/db';
-import { openPdf } from '@/lib/pdf';
+import { openPdf, trimmedArea } from '@/lib/pdf';
+import { findPage, pageName } from '@/lib/reader';
 import { ensureExerciseBoard, markExercise, nextLabel, setReadFrom, solvedExercises, unmarkExercise } from '@/lib/shelf';
-import { MAX_BOOK_PAGES, loadSectionStarts, readBookPages, readingRange, type ReadingRange, type SectionStart } from '@/lib/bookContext';
+import { MAX_BOOK_PAGES, loadContents, loadSectionStarts, readBookPages, readingRange, type ContentsEntry, type ReadingRange, type SectionStart } from '@/lib/bookContext';
 import type { BookContext, PageRect, ShelfDocument, ShelfExercise } from '@/types';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
@@ -26,6 +27,9 @@ import PdfPage from './PdfPage';
 
 // Whether the Exercises list beside the page is hidden, so the page gets the width.
 const LIST_HIDDEN_KEY = 'math-tutor:shelfListHidden';
+
+// Which list is beside the page: the marked exercises or the PDF's contents.
+type ListTab = 'exercises' | 'contents';
 
 // Reading position is saved once the student stops turning pages.
 const PAGE_SAVE_DELAY_MS = 1000;
@@ -59,6 +63,19 @@ export default function ShelfReader() {
   const { fullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
   const { toolsHidden, toggleTools } = useToolsHidden();
   const [listHidden, setListHidden] = useState(false);
+  const [listTab, setListTab] = useState<ListTab>('exercises');
+  // Printed page numbers ("xii", "47") when the PDF records them; the PDF's bookmarks.
+  const [labels, setLabels] = useState<string[] | null>(null);
+  const [contents, setContents] = useState<ContentsEntry[]>([]);
+  // The printed part of the pages; undefined while it is being measured.
+  const [printed, setPrinted] = useState<PageRect | null | undefined>(undefined);
+  // Typing a page to go to (null when not), and what went wrong with the last one.
+  const [goTo, setGoTo] = useState<string | null>(null);
+  const [goToError, setGoToError] = useState('');
+  // Reading full screen: the bars come and go with a tap in the middle of the page; the list is a panel.
+  const [barsShown, setBarsShown] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const pageArea = useRef<HTMLDivElement>(null);
   const switching = useRef(false);
   const book = useRef<{ pdf: PDFDocumentProxy; document: ShelfDocument; range: ReadingRange } | null>(null);
 
@@ -124,6 +141,9 @@ export default function ShelfReader() {
       updateDocument(stored);
       setPdf(opened);
       void loadSectionStarts(opened).then((starts) => { if (active) setSectionStarts(starts); });
+      void loadContents(opened).then((entries) => { if (active) setContents(entries); });
+      void opened.getPageLabels().then((found) => { if (active) setLabels(found); }, () => undefined);
+      void trimmedArea(opened).then((area) => { if (active) setPrinted(area); });
       setPage(Math.min(Math.max(1, stored.lastPage), opened.numPages));
       setSolvedIds(await solvedExercises(stored));
       const exercise = stored.exercises.find((item) => item.id === exerciseId);
@@ -168,8 +188,32 @@ export default function ShelfReader() {
     });
   }, [isSolved, openId, shelfDocument, currentSessionId]);
 
-  // Only a board can be full screen.
-  useEffect(() => { if (!openId) leaveFullScreen(); }, [openId, leaveFullScreen]);
+  // A new page starts at its top, and a box drawn but not saved stays with the page it was drawn on.
+  useEffect(() => {
+    pageArea.current?.closest('.overflow-y-auto')?.scrollTo?.(0, 0);
+    setPendingMark(null);
+  }, [page]);
+
+  const pageCount = pdf?.numPages ?? 1;
+  const turn = useCallback((direction: -1 | 1) => {
+    setPage((current) => Math.min(pageCount, Math.max(1, current + direction)));
+  }, [pageCount]);
+
+  // Arrow keys turn the page while no board is open (a board uses them for its drawing).
+  useEffect(() => {
+    if (openId) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (event.altKey || event.ctrlKey || event.metaKey || target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (event.key === 'ArrowLeft') turn(-1);
+      else if (event.key === 'ArrowRight') turn(1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openId, turn]);
+
+  // Leaving full screen brings the bars back for next time.
+  useEffect(() => { if (!fullScreen) { setBarsShown(true); setPanelOpen(false); } }, [fullScreen]);
 
   const closeExercise = async () => {
     if (!shelfDocument || isStreaming || switching.current) return;
@@ -214,6 +258,29 @@ export default function ShelfReader() {
       await writeDocument(async (latest) => updateDocument(await unmarkExercise(latest, exercise.id)));
       setSolvedIds((ids) => ids.filter((id) => id !== exercise.id));
     } catch { setError('The exercise could not be removed. Try again.'); }
+  };
+
+  const changeTrim = async (trimMargins: boolean) => {
+    try {
+      await writeDocument(async (latest) => {
+        const next = { ...latest, trimMargins, updatedAt: Date.now() };
+        await saveShelfDocument(next);
+        updateDocument(next);
+      });
+    } catch { setError('That could not be saved. Try again.'); }
+  };
+
+  const submitGoTo = () => {
+    const found = findPage(goTo ?? '', labels, pageCount);
+    if (!found) { setGoToError(`There is no page ${goTo?.trim()} in this PDF.`); return; }
+    setPage(found);
+    setGoTo(null);
+    setGoToError('');
+  };
+
+  const goToEntry = (target: number) => {
+    setPage(target);
+    setPanelOpen(false);
   };
 
   const changeReadFrom = async (exerciseId: string, readFrom: number) => {
@@ -266,23 +333,47 @@ export default function ShelfReader() {
       </div>
     );
   }
-  if (!shelfDocument || !pdf) return <div className="p-6 text-gray-500">Opening PDF…</div>;
+  const trim = shelfDocument?.trimMargins !== false;
+  // With trimming on, the page waits for the measurement so it doesn't change shape once shown.
+  if (!shelfDocument || !pdf || (trim && printed === undefined)) return <div className="p-6 text-gray-500">Opening PDF…</div>;
+  const crop = trim ? printed ?? null : null;
 
   const exercise = openExerciseForBook;
   // An open board always shows; with none open, the list can make way for the page.
   const pageOnly = listHidden && !exercise;
   const marksOnPage = shelfDocument.exercises.filter((item) => item.page === page);
-  const pageCount = pdf.numPages;
+  const name = pageName(labels, page);
+  const pageText = name === String(page) ? `Page ${page} of ${pageCount}` : `p. ${name} (${page} of ${pageCount})`;
+  const readingFullScreen = fullScreen && !exercise;
+  // The bookmark the page is in: the last one starting at or before it.
+  const hereIndex = contents.reduce((found, entry, index) => (entry.page <= page && (found < 0 || entry.page >= contents[found].page) ? index : found), -1);
 
   // The page and its controls: beside an open board, or beside the list of exercises.
+  const smallButton = 'min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40';
   const pageToolbar = (
     <>
-      <button onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} aria-label="Previous page"
-        className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40">‹ Prev</button>
-      <span className="text-sm text-gray-600 tabular-nums">Page {page} of {pageCount}</span>
-      <button onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page >= pageCount} aria-label="Next page"
-        className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40">Next ›</button>
+      <button onClick={() => turn(-1)} disabled={page <= 1} aria-label="Previous page" className={smallButton}>‹ Prev</button>
+      {goTo === null ? (
+        <button onClick={() => { setGoTo(''); setGoToError(''); }} title="Go to a page" aria-label={`${pageText}. Go to a page`}
+          className="min-h-11 px-2 text-sm text-gray-700 tabular-nums rounded-lg hover:bg-gray-100">{pageText}</button>
+      ) : (
+        <form onSubmit={(event) => { event.preventDefault(); submitGoTo(); }}
+          onKeyDown={(event) => { if (event.key === 'Escape') { setGoTo(null); setGoToError(''); } }}
+          className="flex items-center gap-1">
+          <input autoFocus aria-label="Go to page" value={goTo} onChange={(event) => { setGoTo(event.target.value); setGoToError(''); }}
+            placeholder={labels ? 'e.g. 47' : `1–${pageCount}`} inputMode={labels ? 'text' : 'numeric'}
+            className="w-24 min-h-11 px-2 text-sm border border-gray-900 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
+          <button type="submit" className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Go</button>
+          <button type="button" onClick={() => { setGoTo(null); setGoToError(''); }} className={smallButton}>Cancel</button>
+        </form>
+      )}
+      <button onClick={() => turn(1)} disabled={page >= pageCount} aria-label="Next page" className={smallButton}>Next ›</button>
+      {goToError && <span role="alert" className="text-sm text-red-700">{goToError}</span>}
       <div className="flex-1" />
+      <button onClick={() => void changeTrim(!trim)} aria-pressed={trim} title="Hide the pages' blank margins so the print is bigger"
+        className={`min-h-11 px-3 text-sm rounded-lg border ${trim ? 'border-gray-900 bg-gray-100 text-gray-900' : 'border-gray-300 bg-white text-gray-700'} hover:bg-gray-50`}>Trim margins</button>
+      {/* Reading full screen has its way out in the top bar; a board has its own Full screen. */}
+      {!exercise && !fullScreen && <button onClick={toggleFullScreen} className={smallButton}>Full screen</button>}
       <button
         onClick={() => { setMarking((on) => !on); setPendingMark(null); }}
         aria-pressed={marking}
@@ -293,7 +384,7 @@ export default function ShelfReader() {
     </>
   );
   const pageView = (
-    <div className="p-3">
+    <div ref={pageArea} className="p-3">
       {marking && <p className="mb-2 text-sm font-medium text-gray-900">{pendingMark ? 'Name it and save, or drag again to redraw the box.' : 'Drag a box around an exercise on the page.'}</p>}
       <PdfPage
         pdf={pdf} pageNumber={page} marks={marksOnPage} solvedIds={solvedIds} activeId={openId} marking={marking}
@@ -311,8 +402,67 @@ export default function ShelfReader() {
         )}
         onMark={(rect) => { if (!pendingMark) setMarkLabel(nextLabel(shelfDocument)); setPendingMark(rect); }}
         onOpenMark={(mark) => void openExercise(mark)}
+        crop={crop}
+        onTurn={turn}
+        onTapMiddle={readingFullScreen ? () => { setBarsShown((shown) => !shown); setPanelOpen(false); } : undefined}
       />
     </div>
+  );
+
+  // The book's lists: its marked exercises, and its contents from the PDF's bookmarks.
+  const listPanel = (
+    <>
+      <div className="flex items-center gap-2 px-4 pt-3 border-b border-gray-200">
+        <div role="tablist" aria-label="Lists" className="flex gap-1">
+          {(['exercises', 'contents'] as const).map((tab) => (
+            <button key={tab} role="tab" aria-selected={listTab === tab} onClick={() => setListTab(tab)}
+              className={`min-h-11 px-3 text-sm ${listTab === tab ? 'font-semibold text-gray-900 shadow-[inset_0_-3px_0_#111827]' : 'text-gray-600 hover:text-gray-900'}`}>
+              {tab === 'exercises' ? 'Exercises' : 'Contents'}
+            </button>
+          ))}
+        </div>
+        <div className="flex-1" />
+        {!readingFullScreen && (
+          <button onClick={() => changeListHidden(true)} title="Hide this list so the page gets the whole width"
+            className="mb-2 min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Hide</button>
+        )}
+      </div>
+      <div role="tabpanel" className="flex-1 overflow-y-auto p-4">
+        {listTab === 'contents' ? (
+          contents.length === 0 ? (
+            <p className="text-sm text-gray-500">This PDF has no contents (bookmarks). Tap the page number to go to a page.</p>
+          ) : (
+            <ul className="grid">
+              {contents.map((entry, index) => (
+                <li key={`${index}-${entry.title}`}>
+                  <button onClick={() => goToEntry(entry.page)} aria-current={index === hereIndex ? 'location' : undefined}
+                    style={{ paddingLeft: `${0.75 + entry.depth * 1.25}rem` }}
+                    className={`w-full min-h-11 flex items-baseline gap-3 pr-3 py-2 text-left text-sm border-l-[3px] hover:bg-gray-100 ${index === hereIndex ? 'border-gray-900 font-semibold text-gray-900' : `border-transparent ${entry.depth === 0 ? 'font-medium text-gray-900' : 'text-gray-700'}`}`}>
+                    <span className="flex-1 min-w-0">{entry.title}</span>
+                    <span className="text-xs text-gray-500 tabular-nums">{pageName(labels, entry.page)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )
+        ) : shelfDocument.exercises.length === 0 ? (
+          <p className="text-sm text-gray-500">Tap <strong>Mark exercise</strong> and drag a box around a problem on the page. It opens here on its own board, and stays marked on the page.</p>
+        ) : (
+          <ul className="grid gap-2">
+            {[...shelfDocument.exercises].sort((a, b) => a.page - b.page || a.rect.y - b.rect.y).map((item) => (
+              <li key={item.id}>
+                <button onClick={() => { setPanelOpen(false); void openExercise(item); }} disabled={isStreaming}
+                  className="w-full text-left p-3 rounded-lg border border-gray-200 bg-white hover:border-gray-900 hover:bg-gray-50 disabled:opacity-50">
+                  <span className="font-medium text-gray-900">{item.label}</span>
+                  <span className="ml-2 text-xs text-gray-500">Page {pageName(labels, item.page)}</span>
+                  {solvedIds.includes(item.id) && <span className="ml-2 inline-flex items-center gap-1 align-middle text-xs font-semibold text-gray-900"><SolvedCheck size={14} />Solved</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
   );
 
   return (
@@ -395,43 +545,42 @@ export default function ShelfReader() {
           )}
           tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel getCanvasImage={followUpImage} getBookContext={getBookContext} /> }}
         />
+      ) : readingFullScreen ? (
+        // Reading full screen: the page, with its bars until a tap in the middle hides them.
+        <div className="flex-1 min-h-0 flex flex-col bg-white">
+          {barsShown && (
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-900 bg-white">
+              <button onClick={toggleFullScreen} className={smallButton}>Exit full screen</button>
+              <span className="min-w-0 flex-1 truncate font-semibold text-gray-900">{shelfDocument.title}</span>
+              <button onClick={() => setPanelOpen((open) => !open)} aria-pressed={panelOpen} aria-label="Book: exercises and contents"
+                className={`min-h-11 px-3 text-sm rounded-lg border border-gray-900 ${panelOpen ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 hover:bg-gray-100'}`}>Book</button>
+            </div>
+          )}
+          <div className="flex-1 min-h-0 relative">
+            <div className="absolute inset-0 overflow-y-auto">{pageView}</div>
+            {barsShown && panelOpen && (
+              <section aria-label="Book" className="absolute inset-y-0 left-0 z-20 w-[min(22rem,85%)] flex flex-col bg-white border-r border-gray-900 shadow-lg">
+                {listPanel}
+              </section>
+            )}
+          </div>
+          {barsShown && <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-gray-900 bg-white">{pageToolbar}</div>}
+        </div>
       ) : (
-        // No board open: the page, and the list of marked exercises beside it (which can make way).
+        // No board open: the page, and the list beside it (which can make way).
         <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
           <section className={`flex ${pageOnly ? 'flex-1' : 'basis-[45%]'} lg:basis-auto lg:flex-1 min-w-0 min-h-0 flex-col border-b lg:border-b-0 border-gray-200`}>
             <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-white border-b border-gray-200">
               {pageToolbar}
               {pageOnly && (
-                <button onClick={() => changeListHidden(false)} title="Show the list of marked exercises beside the page"
-                  className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50">Exercises</button>
+                <button onClick={() => changeListHidden(false)} title="Show the exercises and contents beside the page"
+                  className={smallButton}>Exercises</button>
               )}
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto">{pageView}</div>
           </section>
           <section className={`${pageOnly ? 'hidden' : 'flex'} flex-1 lg:flex-none lg:w-1/2 min-h-0 flex-col lg:border-l border-gray-200 bg-white`}>
-            <div className="flex-1 overflow-y-auto p-4">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="font-semibold text-gray-900">Exercises</h2>
-                <button onClick={() => changeListHidden(true)} title="Hide this list so the page gets the whole width"
-                  className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Hide</button>
-              </div>
-              {shelfDocument.exercises.length === 0 ? (
-                <p className="mt-2 text-sm text-gray-500">Tap <strong>Mark exercise</strong> and drag a box around a problem on the page. It opens here on its own board, and stays marked on the page.</p>
-              ) : (
-                <ul className="mt-3 grid gap-2">
-                  {[...shelfDocument.exercises].sort((a, b) => a.page - b.page || a.rect.y - b.rect.y).map((item) => (
-                    <li key={item.id}>
-                      <button onClick={() => void openExercise(item)} disabled={isStreaming}
-                        className="w-full text-left p-3 rounded-lg border border-gray-200 bg-white hover:border-gray-900 hover:bg-gray-50 disabled:opacity-50">
-                        <span className="font-medium text-gray-900">{item.label}</span>
-                        <span className="ml-2 text-xs text-gray-500">Page {item.page}</span>
-                        {solvedIds.includes(item.id) && <span className="ml-2 inline-flex items-center gap-1 align-middle text-xs font-semibold text-gray-900"><SolvedCheck size={14} />Solved</span>}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+            {listPanel}
           </section>
         </div>
       )}

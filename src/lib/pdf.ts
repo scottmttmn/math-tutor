@@ -1,5 +1,6 @@
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
 import type { PageRect } from '@/types';
+import { bookCrop, printedArea, samplePages } from '@/lib/reader';
 
 // PDF.js and its worker, fonts and character maps are served from public/pdfjs (copied on npm
 // install), so the Shelf reads PDFs offline. Loaded on first use; it needs the browser. The legacy
@@ -24,15 +25,38 @@ export async function openPdf(file: Blob): Promise<PDFDocumentProxy> {
   }).promise;
 }
 
-/** Draws a page `width` CSS pixels wide, sharp on high-density screens. Cancel the task to stop. */
-export function renderPage(page: PDFPageProxy, canvas: HTMLCanvasElement, width: number): RenderTask {
+/**
+ * Draws a page `width` CSS pixels wide, sharp on high-density screens; with `crop`, only that part
+ * of it (fractions of the page), fit to the width. Cancel the task to stop.
+ */
+export function renderPage(page: PDFPageProxy, canvas: HTMLCanvasElement, width: number, crop: PageRect | null = null): RenderTask {
   const ratio = window.devicePixelRatio || 1;
-  const viewport = page.getViewport({ scale: (width / page.getViewport({ scale: 1 }).width) * ratio });
-  canvas.width = Math.floor(viewport.width);
-  canvas.height = Math.floor(viewport.height);
+  const shown = crop ?? { x: 0, y: 0, width: 1, height: 1 };
+  const viewport = page.getViewport({ scale: (width / (page.getViewport({ scale: 1 }).width * shown.width)) * ratio });
+  canvas.width = Math.floor(viewport.width * shown.width);
+  canvas.height = Math.floor(viewport.height * shown.height);
   canvas.style.width = `${width}px`;
-  canvas.style.height = `${Math.floor(viewport.height / ratio)}px`;
-  return page.render({ canvas, viewport });
+  canvas.style.height = `${Math.floor(canvas.height / ratio)}px`;
+  const transform = crop ? [1, 0, 0, 1, -viewport.width * crop.x, -viewport.height * crop.y] : undefined;
+  return page.render({ canvas, viewport, transform });
+}
+
+// Pages are measured small: margins only need to be found to within a percent or so.
+const MEASURE_WIDTH = 200;
+const crops = new WeakMap<PDFDocumentProxy, Promise<PageRect | null>>();
+
+/** The part of the book's pages that is printed on (see `bookCrop`), measured once per open PDF. */
+export function trimmedArea(pdf: PDFDocumentProxy): Promise<PageRect | null> {
+  let crop = crops.get(pdf);
+  if (!crop) {
+    crop = Promise.all(samplePages(pdf.numPages).map(async (pageNumber) => {
+      const canvas = await drawPage(await pdf.getPage(pageNumber), MEASURE_WIDTH);
+      const pixels = canvas.getContext('2d')?.getImageData(0, 0, canvas.width, canvas.height);
+      return pixels ? printedArea(pixels.data, canvas.width, canvas.height) : null;
+    })).then(bookCrop, () => null);
+    crops.set(pdf, crop);
+  }
+  return crop;
 }
 
 async function drawPage(page: PDFPageProxy, width: number) {

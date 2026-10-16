@@ -68,8 +68,8 @@ src/
 │   │   └── PenTest.tsx        # /pen-test: draws straight to a canvas, reports samples/s, event delay, longest gap
 │   ├── shelf/
 │   │   ├── Shelf.tsx          # Shelf grid: add PDFs, Single problem (image/PDF straight onto a new board), remove
-│   │   ├── ShelfReader.tsx    # Page viewer + mark exercises + the open exercise's board and tutor
-│   │   └── PdfPage.tsx        # One page fit to width, marks drawn over it, drag to mark
+│   │   ├── ShelfReader.tsx    # Page viewer (turns, go to page, Contents, trim, full screen) + mark exercises + the open exercise's board and tutor
+│   │   └── PdfPage.tsx        # One page (margins trimmed) fit to width, marks drawn over it, drag to mark, taps/swipes turn it
 │   └── common/
 │       ├── BlobImage.tsx      # Shows a Blob (thumbnail, cover) via an object URL
 │       ├── Icons.tsx          # Line icons (kinds, Shelf, tutor, nav) and the solved check
@@ -89,7 +89,8 @@ src/
 │   ├── db.ts                  # IndexedDB CRUD for sessions via `idb`
 │   ├── history.ts             # Turns saved sessions into Home's entries; search, filter and sort
 │   ├── currentBoard.ts        # Which free board /board opens (`math-tutor:currentSession`)
-│   ├── pdf.ts                 # PDF.js loading (offline, from public/pdfjs), page render, crops, covers
+│   ├── pdf.ts                 # PDF.js loading (offline, from public/pdfjs), page render, crops, covers, the book's printed area
+│   ├── reader.ts              # Pure reader helpers: margin trim box, page fractions ↔ shown part, printed page numbers
 │   ├── shelf.ts               # Shelf actions: add PDF, mark/unmark exercises, single problem from a file
 │   ├── checkIn.ts             # Skill check-in: which topics to offer, starting a check-in board
 │   ├── learnerProfile.ts      # Tutor memory: topic catalog, ratings, tutor notes (noteTopic, splitTutorNotes), profileForTutor
@@ -154,7 +155,10 @@ capacitor.config.ts            # App id, webDir `out`, androidScheme `http`
 - Marking an exercise crops that region to a PNG (`cropPage`) and creates its board, the session `shelf:<document id>:<exercise id>`, with the crop as `problemImage` (so the tutor gets it as the problem figure) and `exerciseStatement` as the problem text. Home lists these once they hold work and opens them at `/shelf/read?doc=…&open=…`.
 - **Book pages for the tutor** (`src/lib/bookContext.ts`): with every question on a Shelf board, the reader sends the text of the pages leading up to the exercise as `bookContext`. They run from the last PDF bookmark at or before the exercise's page (skipping "Exercises"/"Answers" bookmarks), or the 6 pages before it without bookmarks, to the exercise's page; never past it (answer keys sit later), at most `MAX_BOOK_PAGES` (15). The student can change the start or turn it off on the board (`ShelfExercise.readFrom`, 0 = off), and later exercises in the same section reuse that choice. Scans with no text layer send nothing.
 - **Put on board** (Shelf board header; main page beside the captured problem) places `problemImage` on the canvas as a locked image shape (`meta.problemImage`, once per board; Clear leaves it). The tutor then sees it twice: as `problemImage` and inside the board export, which is what lets it read work written on the figure.
-- With no board open, the **Exercises** list beside the page has **Hide** (remembered in `localStorage`, `math-tutor:shelfListHidden`), giving the page the full width; an **Exercises** button in the page toolbar brings it back. An open board always shows.
+- **Reading** (design: https://claude.ai/artifact/TXw8zCKZbwQ9ohM2Fk9nC8, built step by step): a tap in a page's outer quarter, a sideways swipe or ←/→ (no board open) turns it; the overlay is `touch-pan-y` so up-and-down drags still scroll. Page numbers are the PDF's own labels when it has them (`getPageLabels`; "p. 47 (59 of 312)"), and tapping it goes to a page by label or by place in the file (`findPage`). The list beside the page has **Exercises** and **Contents** tabs; Contents is the PDF's bookmarks (`loadContents`, nested, with the current section marked).
+- **Trim margins** (on unless `ShelfDocument.trimMargins === false`): `trimmedArea` measures the printed area of up to 8 pages once per open PDF and `bookCrop` takes their union, padded, never trimming more than 18% a side, so pages keep one shape. Marks stay in fractions of the whole page; `PdfPage` converts with `toShown`/`toPage`. Exercise crops for the tutor ignore the trim.
+- **Full screen** with no board open is for reading: only the page, a top bar (Exit, title, **Book**: the lists as a panel over the page) and the page toolbar; a tap in the middle hides and brings back both bars. Opening an exercise from there gives a full-screen board.
+- With no board open, the list beside the page (Exercises / Contents) has **Hide** (remembered in `localStorage`, `math-tutor:shelfListHidden`), giving the page the full width; an **Exercises** button in the page toolbar brings it back. An open board always shows.
 - The reader uses `useSessionAutosave(handle, { reopenLast: false })`: the same autosave as the main page, but it never touches `math-tutor:currentSession`; the URL says which board is open.
 - Removing a mark or a PDF deletes the boards with it (and their recovery copies).
 - **Single problem** saves a new free-form session whose `problemImage` is the picture (or a PDF's first page), sets it as the session `/board` opens and goes there.
@@ -237,7 +241,7 @@ npm run start  # Production server
 npm run lint   # ESLint
 npm run typecheck  # tsc --noEmit
 npm test       # Unit tests
-npm run test:e2e   # Browser tests (boards, tutor chat, Shelf, backup, tutor memory, check-in, TeX write-up, pen test; `npm run test:android:e2e` checks the Android bundle in out/); needs `npm run start -- -p 3100` running
+npm run test:e2e   # Browser tests (boards, tutor chat, Shelf, Shelf reading, backup, tutor memory, check-in, TeX write-up, pen test; `npm run test:android:e2e` checks the Android bundle in out/); needs `npm run start -- -p 3100` running
 npm run handwriting  # Handwriting test: transcribe tests/handwriting/wacom/<page-id>.png with each model, score against tests/handwriting/pages.json (results in tests/handwriting/results/, gitignored). chatgpt:<model> entries go through the running app's /api/transcribe, so start the app and sign in first
 ```
 

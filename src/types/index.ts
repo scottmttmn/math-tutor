@@ -133,6 +133,8 @@ export interface ShelfDocument {
   /** The page the reader was last on (1-based). */
   lastPage: number;
   exercises: ShelfExercise[];
+  /** False when the student turned off trimming the pages' blank margins. Unset: trimmed. */
+  trimMargins?: boolean;
   createdAt: number;
   updatedAt: number;
 }

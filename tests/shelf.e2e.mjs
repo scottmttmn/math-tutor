@@ -195,16 +195,16 @@ try {
 
   // History lists the exercise with work in it (not the empty one) and opens it beside its page.
   await page.getByRole('button', { name: 'Close board' }).click();
-  await page.getByRole('heading', { name: 'Exercises', exact: true }).waitFor();
+  await page.getByRole('tab', { name: 'Exercises', exact: true }).waitFor();
   // The list beside the page can be hidden, so the page gets the width; it stays hidden after a reload.
   const pageWidth = (await page.getByTestId('page-overlay').boundingBox()).width;
   await page.getByRole('button', { name: 'Hide', exact: true }).click();
-  await page.getByRole('heading', { name: 'Exercises', exact: true }).waitFor({ state: 'detached' });
+  await page.getByRole('tab', { name: 'Exercises', exact: true }).waitFor({ state: 'detached' });
   await page.waitForTimeout(500);
   assert.ok((await page.getByTestId('page-overlay').boundingBox()).width > pageWidth * 1.3, 'the page is wider');
   await page.reload();
   await page.getByRole('button', { name: 'Exercises', exact: true }).click();
-  await page.getByRole('heading', { name: 'Exercises', exact: true }).waitFor();
+  await page.getByRole('tab', { name: 'Exercises', exact: true }).waitFor();
   await page.getByRole('link', { name: 'Home', exact: true }).click();
   const history = page.locator('[aria-labelledby="boards-heading"]');
   await history.getByRole('button', { name: /^Open Exercise 1/ }).waitFor();
@@ -217,7 +217,7 @@ try {
   // Removing a mark removes its board.
   await page.getByRole('button', { name: 'More for Exercise 1' }).click();
   await page.getByRole('menuitem', { name: 'Remove exercise' }).click();
-  await page.getByRole('heading', { name: 'Exercises', exact: true }).waitFor();
+  await page.getByRole('tab', { name: 'Exercises', exact: true }).waitFor();
   // The board closes before the mark's removal is written, so wait for the mark to go.
   await page.getByRole('button', { name: 'Open Exercise 1' }).waitFor({ state: 'detached' });
   console.log('PASS History opens Shelf exercises; removing a mark removes its board');

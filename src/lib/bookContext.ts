@@ -53,32 +53,42 @@ export function readingRange(document: ShelfDocument, exercise: ShelfExercise, s
   return { from: Math.min(to, Math.max(1, from, to - MAX_BOOK_PAGES + 1)), to, section: section?.title };
 }
 
-const sectionStarts = new WeakMap<PDFDocumentProxy, Promise<SectionStart[]>>();
+/** An entry of the PDF's contents (bookmarks): its title, the page it points at, how deeply nested. */
+export interface ContentsEntry extends SectionStart {
+  depth: number;
+}
+
+const outlines = new WeakMap<PDFDocumentProxy, Promise<ContentsEntry[]>>();
+
+/** The PDF's bookmarks in their own order, with their pages; none when it has no outline. */
+export function loadContents(pdf: PDFDocumentProxy): Promise<ContentsEntry[]> {
+  let contents = outlines.get(pdf);
+  if (!contents) {
+    contents = readOutline(pdf).catch(() => []);
+    outlines.set(pdf, contents);
+  }
+  return contents;
+}
 
 /** The PDF's bookmarks with their pages, in page order; none when it has no outline. */
-export function loadSectionStarts(pdf: PDFDocumentProxy): Promise<SectionStart[]> {
-  let starts = sectionStarts.get(pdf);
-  if (!starts) {
-    starts = readOutline(pdf).catch(() => []);
-    sectionStarts.set(pdf, starts);
-  }
-  return starts;
+export async function loadSectionStarts(pdf: PDFDocumentProxy): Promise<SectionStart[]> {
+  // Stable: a chapter and its first section on one page keep their order, so the section wins.
+  return (await loadContents(pdf)).map(({ title, page }) => ({ title, page })).sort((a, b) => a.page - b.page);
 }
 
 type OutlineItem = Awaited<ReturnType<PDFDocumentProxy['getOutline']>>[number];
 
-async function readOutline(pdf: PDFDocumentProxy): Promise<SectionStart[]> {
-  const starts: SectionStart[] = [];
-  const walk = async (items: OutlineItem[]) => {
+async function readOutline(pdf: PDFDocumentProxy): Promise<ContentsEntry[]> {
+  const entries: ContentsEntry[] = [];
+  const walk = async (items: OutlineItem[], depth: number) => {
     for (const item of items) {
       const page = await destinationPage(pdf, item.dest).catch(() => null);
-      if (page) starts.push({ title: item.title.trim(), page });
-      if (item.items?.length) await walk(item.items);
+      if (page) entries.push({ title: item.title.trim(), page, depth });
+      if (item.items?.length) await walk(item.items, depth + 1);
     }
   };
-  await walk(await pdf.getOutline() ?? []);
-  // Stable: a chapter and its first section on one page keep their order, so the section wins.
-  return starts.sort((a, b) => a.page - b.page);
+  await walk(await pdf.getOutline() ?? [], 0);
+  return entries;
 }
 
 async function destinationPage(pdf: PDFDocumentProxy, dest: OutlineItem['dest']): Promise<number | null> {
