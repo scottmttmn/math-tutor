@@ -60,7 +60,8 @@ function imageSize(src: string): Promise<{ w: number; h: number }> {
 
 // The picture goes in the top-left of the view on an empty board, or above the work already
 // there; it is locked so the pen and eraser leave it alone (unlock it from its menu to move it).
-async function placeProblemImage(editor: Editor, base64: string): Promise<boolean> {
+// `stillCurrent` says whether the same board is still loaded once the picture has been read.
+async function placeProblemImage(editor: Editor, base64: string, stillCurrent: () => boolean): Promise<boolean> {
   const existing = findProblemShape(editor);
   if (existing) {
     const bounds = editor.getShapePageBounds(existing);
@@ -69,8 +70,9 @@ async function placeProblemImage(editor: Editor, base64: string): Promise<boolea
   }
   const src = `data:image/png;base64,${base64}`;
   const natural = await imageSize(src);
-  // A second tap while the picture loaded may have placed it already.
-  if (findProblemShape(editor)) return false;
+  // A second tap while the picture loaded may have placed it already, or another board may have
+  // been opened meanwhile (this picture isn't its problem).
+  if (findProblemShape(editor) || !stillCurrent()) return false;
   const viewport = editor.getViewportPageBounds();
   // Crops are rendered at twice their page size; never wider than most of the view.
   const scale = Math.min(0.5, (viewport.w * 0.8) / natural.w);
@@ -140,7 +142,12 @@ export default function TldrawCanvas({ handleRef, toolsHidden }: { handleRef: Re
   const mountState = useRef({ document, pendingLoad });
   // While a load is pending the editor still shows the previous board, which must not be saved.
   const loadPending = useRef(Boolean(pendingLoad));
-  useEffect(() => { loadPending.current = Boolean(pendingLoad); }, [pendingLoad]);
+  // Counts loads asked for, so work begun on one board can tell another has replaced it.
+  const loads = useRef(0);
+  useEffect(() => {
+    loadPending.current = Boolean(pendingLoad);
+    if (pendingLoad) loads.current += 1;
+  }, [pendingLoad]);
 
   const handleMount = useCallback((mounted: Editor) => {
     const { document: existing, pendingLoad: load } = mountState.current;
@@ -204,7 +211,11 @@ export default function TldrawCanvas({ handleRef, toolsHidden }: { handleRef: Re
       const { blob } = await editor.toImage(ids, { format, background: true, padding: EXPORT_PADDING, pixelRatio, quality: 0.92 });
       return { blob, pixelRatio };
     },
-    placeProblemImage: async (base64) => (editor ? placeProblemImage(editor, base64) : false),
+    placeProblemImage: async (base64) => {
+      if (!editor || loadPending.current) return false;
+      const board = loads.current;
+      return placeProblemImage(editor, base64, () => loads.current === board && !loadPending.current);
+    },
     getRevision: () => documentRevision,
     getDocument: () => (editor && !loadPending.current ? editor.getSnapshot().document : null),
     clear: () => {

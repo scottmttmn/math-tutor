@@ -72,7 +72,8 @@ try {
   assert.equal(await page.getByLabel('Name').inputValue(), 'Exercise 1');
   await page.getByRole('button', { name: 'Save and open' }).click();
   await exerciseHeading('Exercise 1').waitFor();
-  await page.locator('.tl-canvas').waitFor();
+  // A new board opens with its exercise on it, locked, for the tutor to read work written on it.
+  await page.locator('.tl-image').waitFor();
   await drawStroke();
   await page.getByText('Saved', { exact: true }).waitFor();
 
@@ -105,8 +106,8 @@ try {
   await page.waitForTimeout(1200);
   await page.reload();
   await exerciseHeading('Exercise 1').waitFor();
-  await page.locator('.tl-shape').first().waitFor();
-  assert.equal(await shapeCount(), 1);
+  await page.locator('.tl-image').waitFor();
+  assert.equal(await shapeCount(), 2);
 
   // A second exercise on page 2 gets its own empty board; the first keeps its work.
   await page.getByRole('button', { name: 'Next page' }).click();
@@ -147,19 +148,18 @@ try {
   await page.getByLabel('Name').fill('Problem 3');
   await page.getByRole('button', { name: 'Save and open' }).click();
   await exerciseHeading('Problem 3').waitFor();
-  await page.locator('.tl-canvas').waitFor();
-  assert.equal(await shapeCount(), 0);
+  await page.locator('.tl-image').waitFor();
+  assert.equal(await shapeCount(), 1);
   await page.getByRole('button', { name: 'Previous page' }).click();
   await page.getByRole('button', { name: 'Open Exercise 1' }).click();
   await exerciseHeading('Exercise 1').waitFor();
   await page.locator('.tl-shape').first().waitFor();
-  assert.equal(await shapeCount(), 1);
+  await page.waitForTimeout(300);
+  assert.equal(await shapeCount(), 2, 'its exercise and the stroke, not a second copy');
   console.log('PASS add a PDF, mark exercises, boards beside the page, tutor sees the marked region, reload');
 
-  // The marked problem can go on the board, once, locked; Clear leaves it there.
-  await page.getByRole('button', { name: 'Put on board' }).click();
-  await page.locator('.tl-image').waitFor();
-  assert.equal(await shapeCount(), 2);
+  // The marked problem is on the board once; Put on board finds it rather than adding another,
+  // and Clear leaves it there.
   await page.getByRole('button', { name: 'Put on board' }).click();
   await page.waitForTimeout(300);
   assert.equal(await shapeCount(), 2, 'placed only once');

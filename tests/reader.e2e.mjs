@@ -187,6 +187,33 @@ try {
   await inkShown(withHighlight);
   console.log('PASS ink on the page: pen, highlighter, eraser, undo, kept after reload');
 
+  // An upright tablet: an exercise opens on its board, which takes the screen with the exercise
+  // put on it; the page button swaps the page in, and Back to board (or its mark) swaps back.
+  await page.setViewportSize({ width: 800, height: 1100 });
+  await page.getByRole('button', { name: 'Mark exercise' }).click();
+  const markArea = await page.getByTestId('page-overlay').boundingBox();
+  await page.mouse.move(markArea.x + markArea.width * 0.1, markArea.y + markArea.height * 0.1);
+  await page.mouse.down();
+  await page.mouse.move(markArea.x + markArea.width * 0.7, markArea.y + markArea.height * 0.25, { steps: 5 });
+  await page.mouse.up();
+  await page.getByRole('button', { name: 'Save and open' }).click();
+  await page.locator('.tl-image').waitFor();
+  await page.getByTestId('page-overlay').waitFor({ state: 'hidden' });
+  const boardBox = await page.locator('.tl-canvas').boundingBox();
+  assert.ok(boardBox.height > 600, `the board takes the screen (${boardBox.height}px tall)`);
+  await page.getByRole('button', { name: 'Page 3', exact: true }).click();
+  await page.getByTestId('page-overlay').waitFor();
+  await page.locator('.tl-canvas').waitFor({ state: 'hidden' });
+  await page.getByRole('button', { name: 'Back to board' }).click();
+  await page.locator('.tl-canvas').waitFor();
+  await page.getByTestId('page-overlay').waitFor({ state: 'hidden' });
+  await page.getByRole('button', { name: 'Page 3', exact: true }).click();
+  await page.getByRole('button', { name: 'Open Exercise 1' }).click();
+  await page.locator('.tl-canvas').waitFor();
+  await page.getByTestId('page-overlay').waitFor({ state: 'hidden' });
+  assert.equal(await page.locator('.tl-image').count(), 1, 'put on the board once');
+  console.log('PASS on an upright tablet the exercise opens on its board, swapping with the page');
+
   assert.deepEqual(browserErrors, []);
   console.log('PASS no browser exceptions');
 } finally {

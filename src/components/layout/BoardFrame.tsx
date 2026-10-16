@@ -11,6 +11,14 @@ const subscribeWide = (onChange: () => void) => {
   return () => query.removeEventListener('change', onChange);
 };
 const isWide = () => window.matchMedia(WIDE_QUERY).matches;
+// Below Tailwind's lg (an upright tablet, a phone): too narrow for a page beside the board.
+const NARROW_QUERY = '(max-width: 63.99rem)';
+const subscribeNarrow = (onChange: () => void) => {
+  const query = window.matchMedia(NARROW_QUERY);
+  query.addEventListener('change', onChange);
+  return () => query.removeEventListener('change', onChange);
+};
+const isNarrow = () => window.matchMedia(NARROW_QUERY).matches;
 
 interface Props {
   fullScreen: boolean;
@@ -18,7 +26,15 @@ interface Props {
    * What the board works from, shown beside it (above it on an upright tablet): a book page, an
    * exercise, the typed problem. `wide` gives it half the width, for a PDF page.
    */
-  source?: { label: string; content: ReactNode; toolbar?: ReactNode; wide?: boolean };
+  source?: {
+    label: string; content: ReactNode; toolbar?: ReactNode; wide?: boolean;
+    /**
+     * On a narrow screen, swap rather than stack: the board gets the screen, and a button named
+     * `label` (e.g. "Page 47") flips to the source, which has a way back. `key` names the open
+     * board, so another one opens on its board.
+     */
+    swap?: { label: string; key: string };
+  };
   /** The board's name and details, at the top of the board column. */
   title: ReactNode;
   /** Buttons beside the title. */
@@ -34,11 +50,16 @@ interface Props {
 /** The layout every board shares: source, board with its header and toolbar, and the tutor when asked. */
 export default function BoardFrame({ fullScreen, source, title, actions, canvas, toolbar, tutor }: Props) {
   const [sourceHidden, setSourceHidden] = useState(false);
-  const showSource = Boolean(source) && !fullScreen && !sourceHidden;
-  const showTutor = tutor.open && !fullScreen;
   const wide = useSyncExternalStore(subscribeWide, isWide, () => false);
+  const narrow = useSyncExternalStore(subscribeNarrow, isNarrow, () => false);
+  // Swapping: the board, or the source in its place (for the board named when it was flipped).
+  const swapping = Boolean(source?.swap) && narrow && !fullScreen;
+  const [flippedFor, setFlippedFor] = useState<string | null>(null);
+  const flipped = swapping && flippedFor === source?.swap?.key;
+  const showTutor = tutor.open && !fullScreen && !flipped;
+  const showSource = Boolean(source) && !fullScreen && (swapping ? flipped : !sourceHidden);
   // Below 2xl the open tutor takes the source's place, whether or not the source was hidden.
-  const sourceCovered = Boolean(source) && showTutor && !wide;
+  const sourceCovered = Boolean(source) && showTutor && !wide && !swapping;
 
   return (
     <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
@@ -46,20 +67,33 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
         <section
           aria-label={source.label}
           // Below a very wide screen the tutor takes the source's place, so the board keeps its room.
-          className={`${showTutor ? 'hidden 2xl:flex' : 'flex'} flex-col min-w-0 min-h-0 basis-[40%] shrink-0 lg:basis-auto ${
+          className={`${showTutor ? 'hidden 2xl:flex' : 'flex'} flex-col min-w-0 min-h-0 ${flipped ? 'flex-1' : 'basis-[40%] shrink-0'} lg:basis-auto ${
             source.wide ? 'lg:flex-1' : 'lg:w-[22rem] lg:flex-none'
           } border-b lg:border-b-0 lg:border-r border-gray-200 bg-gray-50`}
         >
-          {source.toolbar && <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-white border-b border-gray-200">{source.toolbar}</div>}
+          {(source.toolbar || flipped) && (
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-white border-b border-gray-200">
+              {flipped && (
+                <button onClick={() => setFlippedFor(null)}
+                  className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Back to board</button>
+              )}
+              {source.toolbar}
+            </div>
+          )}
           <div className="flex-1 min-h-0 overflow-y-auto">{source.content}</div>
         </section>
       )}
 
-      <section className={`flex-1 min-w-0 min-h-0 flex flex-col bg-white ${source?.wide && showSource && !showTutor ? 'lg:flex-none lg:w-1/2' : ''}`}>
+      {/* Flipped to the source, the board stays mounted (hidden), so its drawing and undo stay. */}
+      <section className={`${flipped ? 'hidden' : 'flex'} flex-1 min-w-0 min-h-0 flex-col bg-white ${source?.wide && showSource && !showTutor ? 'lg:flex-none lg:w-1/2' : ''}`}>
         <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200">
           <div className="min-w-0 flex-1">{title}</div>
           {actions}
-          {source && !fullScreen && (
+          {source?.swap && swapping ? (
+            <button onClick={() => { tutor.onClose(); setFlippedFor(source.swap?.key ?? null); }}
+              title={`Show the ${source.label.toLowerCase()} in the board's place`}
+              className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">{source.swap.label}</button>
+          ) : source && !fullScreen && (
             <button
               onClick={() => {
                 if (sourceCovered) { tutor.onClose(); setSourceHidden(false); }

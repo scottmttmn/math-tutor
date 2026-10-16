@@ -22,6 +22,10 @@ test('Shelf exercises appear once they hold work, and open beside their page', (
   assert.equal(solved.source, 'shelf');
   assert.equal(solved.href, '/shelf/read?doc=doc1&open=ex1');
   assert.equal(toHistoryItem(session({ id: 'board-1' })).source, 'board');
+  // The exercise put on its board when it opened isn't work; anything drawn beside it is.
+  const placed = { store: { 'shape:p': { meta: { problemImage: true } } }, schema: {} };
+  assert.equal(toHistoryItem(session({ id: 'shelf:doc1:ex1', canvasDocument: placed })), null);
+  assert.equal(toHistoryItem(session({ id: 'shelf:doc1:ex1', canvasDocument: { ...placed, store: { ...placed.store, 'shape:1': { meta: {} } } } })).source, 'shelf');
 });
 
 test('a given name wins over the title from the problem, and notes are never solved', () => {
