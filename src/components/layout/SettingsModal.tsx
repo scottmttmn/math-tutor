@@ -11,7 +11,7 @@ import { DEVICE_KEY_LABELS, deviceKeyName } from '@/lib/deviceKeys';
 import { useDeviceKey } from '@/hooks/useDeviceKey';
 import BackupSettings from './BackupSettings';
 
-const ALL_PRESETS: { label: string; provider: Provider; model: string; baseUrl: string }[] = [
+const PRESETS: { label: string; provider: Provider; model: string; baseUrl: string }[] = [
   { label: 'Anthropic (Claude)', provider: 'anthropic', model: DEFAULT_ANTHROPIC_MODEL, baseUrl: '' },
   { label: 'ChatGPT plan (Sign in with ChatGPT)', provider: 'chatgpt', model: '', baseUrl: '' },
   { label: 'Google Gemini', provider: 'openai-compatible', model: DEFAULT_GEMINI_MODEL, baseUrl: GEMINI_BASE_URL },
@@ -20,16 +20,6 @@ const ALL_PRESETS: { label: string; provider: Provider; model: string; baseUrl: 
   { label: 'Ollama', provider: 'openai-compatible', model: 'llama3.2-vision', baseUrl: process.env.NEXT_PUBLIC_OLLAMA_BASE_URL ?? 'http://localhost:11434/v1' },
   { label: 'Custom', provider: 'openai-compatible', model: '', baseUrl: '' },
 ];
-// Sign in with ChatGPT runs in the Mac's server; the Android app doesn't have it yet.
-const PRESETS = TUTOR_DIRECT ? ALL_PRESETS.filter((preset) => preset.provider !== 'chatgpt') : ALL_PRESETS;
-
-/** The saved choice, or the first preset when it's one this build doesn't offer (a ChatGPT plan saved by an earlier app). */
-function initialConfig(): ModelConfig {
-  const saved = getModelConfig();
-  if (PRESETS.some((preset) => preset.provider === saved.provider)) return saved;
-  return { provider: PRESETS[0].provider, model: PRESETS[0].model, baseUrl: PRESETS[0].baseUrl };
-}
-
 function findPresetIndex(config: ModelConfig): number {
   const idx = PRESETS.findIndex(
     (p) => p.provider === config.provider && p.baseUrl === config.baseUrl && p.label !== 'Custom',
@@ -83,8 +73,8 @@ function SettingsDialog({ onClose, initialTab, saveOpenBoard, restoredMessage }:
 
 function SettingsForm({ onClose, saveOpenBoard }: { onClose: () => void; saveOpenBoard?: () => Promise<unknown> }) {
   const router = useRouter();
-  const [config, setConfig] = useState<ModelConfig>(initialConfig);
-  const [presetIdx, setPresetIdx] = useState(() => findPresetIndex(initialConfig()));
+  const [config, setConfig] = useState<ModelConfig>(getModelConfig);
+  const [presetIdx, setPresetIdx] = useState(() => findPresetIndex(getModelConfig()));
   const isChatGPT = PRESETS[presetIdx]?.provider === 'chatgpt';
   const keyName = TUTOR_DIRECT ? deviceKeyName(config) : null;
   const deviceKey = useDeviceKey(keyName);

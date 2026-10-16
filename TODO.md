@@ -63,7 +63,7 @@ Done: **Skill check-in** on the Tutor memory page offers the topics nobody is su
 
 - **Handwriting to TeX write-up.** Done (free boards): **TeX write-up** in the board's toolbar has the tutor transcribe the board (or the selected part) as LaTeX without solving anything; edit it beside a KaTeX preview and **Download .tex**. It saves with the board and goes in backups. Still to do: drawings come out as `\fbox{Figure: …}` placeholders rather than images; Shelf boards don't have the button yet.
 - **Replace the chat pane.** Pen-only actions on a selection (Explain this, Give me a hint, Review my work), with replies as cards beside the work. The tutor waits until invited.
-- **Android app** that needs no Mac (decided 2026-10-15). Done: the app bundled into an Android app (`android/`, Capacitor), APK built in CI; tutor calls from the device with API keys pasted into Settings and kept encrypted on the tablet. Next: Sign in with ChatGPT on the device (allowed for a personal app that runs locally); BOOX pen SDK once the tablet is here; backup to a folder.
+- **Android app** that needs no Mac (decided 2026-10-15). Done: the app bundled into an Android app (`android/`, Capacitor), APK built in CI; tutor calls from the device with API keys pasted into Settings and kept encrypted on the tablet; Sign in with ChatGPT on the device (allowed for a personal app that runs locally; still to try for real on the tablet). Next: BOOX pen SDK once the tablet is here; backup to a folder.
 
 ## Later
 

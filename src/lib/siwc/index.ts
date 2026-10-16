@@ -1,21 +1,19 @@
 // Modified for Math Tutor from OpenAI's Sign in with ChatGPT DevKit
 // (github.com/openai/sign-in-with-chatgpt-devkit @ f723814, packages/local/src).
 // Changes: relative imports drop the .js suffix so Next's bundler resolves them;
-// re-exports the ResponseContentPart and ResponseUsage types.
+// re-exports the ResponseContentPart and ResponseUsage types, setRemoteFetch and the
+// CredentialStore / CallbackListener types; the store and loopback listener come from
+// ChatGPTConfig (no Node imports here), so the SDK also runs in a browser.
 // Licensed under the Sign-in with ChatGPT DevKit Noncommercial License v1.0; see ./LICENSE.
 
-import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
 import { asError, ChatGPTError, requiresReauthentication } from "./errors";
 import { listModels } from "./models";
 import { authorize, identityVerificationUnavailable, refreshConnection, revokeConnection } from "./oauth";
 import { streamResponse } from "./responses";
-import { ConnectionStore } from "./storage";
 import type { ChatGPTClient, ChatGPTConfig, LoginProfile, PendingRegistration, SessionState, StoredConnection, StoredProfile, StoredState } from "./types";
 
-export { ChatGPTError } from "./errors";
-export type { ChatGPTClient, ChatGPTConfig, ChatGPTModel, CredentialEncryption, LoginProfile, ResponseContentPart, ResponseInputMessage, ResponseUsage, SessionError, SessionIdentity, SessionState, SignInOptions, StreamResponseOptions } from "./types";
+export { ChatGPTError, setRemoteFetch } from "./errors";
+export type { CallbackListener, ChatGPTClient, ChatGPTConfig, ChatGPTModel, CredentialEncryption, CredentialStore, LoginProfile, ResponseContentPart, ResponseInputMessage, ResponseUsage, SessionError, SessionIdentity, SessionState, SignInOptions, StreamResponseOptions } from "./types";
 export const CHATGPT_USAGE_URL = "https://chatgpt.com/settings/usage";
 
 const SHARING_SCOPE = "chatgpt.tokens.use.direct";
@@ -73,9 +71,8 @@ export function createChatGPT(config: ChatGPTConfig): ChatGPTClient {
   if (!config.appName.trim() || config.appName.length > 120 || /[\u0000-\u001f]/.test(config.appName)) throw new ChatGPTError("invalid_config", "Provide a short, human-readable app name.");
   if (!/^[a-z0-9][a-z0-9._-]{0,99}$/.test(config.appId)) throw new ChatGPTError("invalid_config", "Use a stable app ID containing lowercase letters, digits, dots, underscores, or hyphens.");
   if (!Number.isInteger(config.redirectPort) || config.redirectPort < 0 || config.redirectPort > 65535) throw new ChatGPTError("invalid_config", "Provide a valid loopback redirect port, or 0 to select an available port.");
-  if (config.storageDir && !isAbsolute(config.storageDir)) throw new ChatGPTError("invalid_config", "ChatGPT storageDir must be an absolute path.");
   if (config.sendHostId !== undefined && typeof config.sendHostId !== "boolean") throw new ChatGPTError("invalid_config", "sendHostId must be a boolean enabled only for a compatible authorization deployment.");
-  const store = new ConnectionStore(config.storageDir ?? join(homedir(), ".config", config.appId), config.credentialEncryption);
+  const store = config.store;
   const subscribers = new Set<(state: SessionState) => void>();
   const requests = new Set<AbortController>();
   let state: SessionState = { status: "disconnected", sharing: false };
@@ -190,7 +187,7 @@ export function createChatGPT(config: ChatGPTConfig): ChatGPTClient {
           // An unreadable file may contain recoverable credentials. Never reset it
           // merely because a key is unavailable or decryption/parsing failed.
           const saved = (await store.read()) ?? emptyState();
-          const id = (!options.newProfile ? options.profileId ?? saved.activeProfileId : undefined) ?? randomUUID();
+          const id = (!options.newProfile ? options.profileId ?? saved.activeProfileId : undefined) ?? crypto.randomUUID();
           const profile = saved.profiles.find((entry) => entry.id === id);
           const pending = saved.pendingRegistrations.find((entry) => entry.id === id);
           if (options.profileId && !profile && !pending) throw new ChatGPTError("profile_not_found", "The saved ChatGPT profile could not be found.");

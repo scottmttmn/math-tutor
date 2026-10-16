@@ -2,7 +2,9 @@
 // (github.com/openai/sign-in-with-chatgpt-devkit @ f723814, packages/local/src).
 // Changes: relative imports drop the .js suffix so Next's bundler resolves them;
 // ResponseInputMessage.content also accepts input_text / input_image parts;
-// streamResponse also returns token usage (ResponseUsage); StreamResponseOptions.maxOutputTokens.
+// streamResponse also returns token usage (ResponseUsage); StreamResponseOptions.maxOutputTokens;
+// ChatGPTConfig takes the credential store and the loopback listener (CredentialStore,
+// CallbackListener) instead of building them, so the SDK also runs in a browser.
 // Licensed under the Sign-in with ChatGPT DevKit Noncommercial License v1.0; see ./LICENSE.
 
 export interface SessionIdentity {
@@ -56,17 +58,35 @@ export interface CredentialEncryption {
   decrypt(ciphertext: Uint8Array): string | Promise<string>;
 }
 
+/** Where the connection state lives, read and written under a lock (./storage's ConnectionStore on Node). */
+export interface CredentialStore {
+  withLock<T>(operation: () => Promise<T>, signal?: AbortSignal): Promise<T>;
+  read(): Promise<StoredState | undefined>;
+  write(record: StoredState): Promise<void>;
+  getHostId(): Promise<string>;
+}
+
+/**
+ * Listens on the IPv4 loopback for the sign-in callback (./loopback on Node). `result` resolves
+ * with the parameters of the first GET to /auth/callback on 127.0.0.1 whose single `state` matches.
+ */
+export type CallbackListener = (port: number, state: string, signal: AbortSignal) => Promise<{
+  result: Promise<URLSearchParams>;
+  close: () => void;
+  redirectUri: string;
+}>;
+
 export interface ChatGPTConfig {
   /** The same human-readable app name on every installation. */
   appName: string;
-  /** Stable filesystem identifier, separate from the issued OAuth client ID. */
+  /** Stable identifier, separate from the issued OAuth client ID. */
   appId: string;
   /** Port of the IPv4 loopback callback, or 0 to select an available port. */
   redirectPort: number;
-  storageDir?: string;
-  /** Required; credentials are never persisted without this provider. */
-  credentialEncryption: CredentialEncryption;
-  openBrowser?: (url: string) => Promise<void> | void;
+  /** Required; credentials are never persisted without encryption. */
+  store: CredentialStore;
+  listenForCallback: CallbackListener;
+  openBrowser: (url: string) => Promise<void> | void;
   /**
    * Include the persisted host ID in authorization requests. Defaults to false.
    * Enable only when the authorization provider supports ext_agent_host_id.

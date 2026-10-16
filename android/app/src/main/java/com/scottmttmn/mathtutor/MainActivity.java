@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
         // The app's own plugins are registered before the bridge starts.
         registerPlugin(SaveFilePlugin.class);
         registerPlugin(DeviceKeysPlugin.class);
+        registerPlugin(ChatGPTSignInPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
