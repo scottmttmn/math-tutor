@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { useSessionDispatch, useSessionState } from '@/context/SessionContext';
+import { useCanvasState } from '@/context/CanvasContext';
 import { useSessionAutosave } from '@/hooks/useSessionAutosave';
 import { useTutorChat } from '@/hooks/useTutorChat';
 import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
@@ -99,6 +100,17 @@ export default function ShelfReader() {
   const sentRevision = useRef<number | null>(null);
   const { isStreaming, isSolved, currentSessionId, problemImage } = useSessionState();
   const sessionDispatch = useSessionDispatch();
+  // An exercise opened on an empty board is put on it, once it has loaded (so the tutor also reads
+  // anything written on the figure). A board with work keeps it as it is.
+  const [placeOn, setPlaceOn] = useState<string | null>(null);
+  // Counts openings, so opening an exercise (even the open one, from its mark) shows its board.
+  const [openings, setOpenings] = useState(0);
+  const { pendingLoad, hasContent } = useCanvasState();
+  useEffect(() => {
+    if (!placeOn || placeOn !== currentSessionId || pendingLoad) return;
+    setPlaceOn(null);
+    if (!hasContent && problemImage) void canvasHandle.current?.placeProblemImage(problemImage);
+  }, [placeOn, currentSessionId, pendingLoad, hasContent, problemImage]);
   // The pages before the open exercise, read when a question is sent (each page's text is kept).
   const getBookContext = useCallback(async (): Promise<BookContext | null> => {
     const current = book.current;
@@ -133,6 +145,8 @@ export default function ShelfReader() {
     try {
       const id = await ensureExerciseBoard(source.pdf, source.document, exercise);
       if (!await openSession(id)) throw new Error('Not opened');
+      setPlaceOn(id);
+      setOpenings((count) => count + 1);
       setOpenId(exercise.id);
       setPage(exercise.page);
       setMarking(false);
@@ -541,7 +555,7 @@ export default function ShelfReader() {
       {exercise ? (
         <BoardFrame
           fullScreen={fullScreen}
-          source={{ label: 'Page', wide: true, toolbar: pageToolbar, content: pageView }}
+          source={{ label: 'Page', wide: true, toolbar: pageToolbar, content: pageView, swap: { label: `Page ${name}`, key: `${exercise.id}:${openings}` } }}
           title={(
             <>
               <h2 className="font-semibold text-gray-900 truncate">{exercise.label}</h2>

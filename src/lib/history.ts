@@ -2,8 +2,10 @@ import type { HistoryItem, HistoryShow, HistorySort, Session } from '@/types';
 
 const SHELF_ENTRY = /^shelf:([^:]+):([^:]+)$/;
 
+// Something drawn: a shape other than the problem's own picture, which a Shelf board gets on opening.
 function hasDrawing(session: Session) {
-  return session.canvasStrokes.length > 0 || Object.keys(session.canvasDocument?.store ?? {}).some((key) => key.startsWith('shape:'));
+  return session.canvasStrokes.length > 0 || Object.entries(session.canvasDocument?.store ?? {}).some(([key, record]) =>
+    key.startsWith('shape:') && !(record as { meta?: Record<string, unknown> } | null)?.meta?.problemImage);
 }
 
 /**
