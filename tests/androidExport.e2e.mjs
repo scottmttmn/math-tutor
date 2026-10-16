@@ -61,6 +61,8 @@ try {
     window.saves = [];
     window.saveAnswers = [];
     window.deviceKeys = {};
+    // A ChatGPT-plan choice saved by an earlier app, which the tablet app doesn't offer yet.
+    if (!localStorage.getItem('mathTutor_modelConfig')) localStorage.setItem('mathTutor_modelConfig', JSON.stringify({ provider: 'chatgpt', model: 'sol', baseUrl: '' }));
     window.androidBridge = { postMessage() {} };
     window.Capacitor = {
       PluginHeaders: [
@@ -122,15 +124,20 @@ try {
     await app.getByRole('menuitem').first().click();
   };
   await askTutor();
-  await app.getByText('Add your Anthropic API key in Settings → Tutor.').waitFor();
-  assert.equal(providerCalls.length, 0);
-
+  await app.getByText("Sign in with ChatGPT isn't in the tablet app yet. Pick another provider in Settings → Tutor.").waitFor();
   const openTutorSettings = async () => {
     await app.getByRole('button', { name: 'Settings' }).click();
     await app.getByRole('tab', { name: 'Tutor' }).click();
   };
   await openTutorSettings();
   assert.equal(await app.locator('option', { hasText: 'ChatGPT' }).count(), 0);
+  assert.equal(await app.getByRole('dialog', { name: 'Settings' }).getByRole('combobox').first().inputValue(), '0'); // Anthropic
+  await app.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: 'Save', exact: true }).click();
+  await askTutor();
+  await app.getByText('Add your Anthropic API key in Settings → Tutor.').waitFor();
+  assert.equal(providerCalls.length, 0);
+
+  await openTutorSettings();
   await app.getByLabel('Anthropic API key').fill('sk-ant-test-key');
   await app.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: 'Save', exact: true }).click();
   assert.deepEqual(await app.evaluate(() => window.deviceKeys), { anthropic: 'sk-ant-test-key' });
