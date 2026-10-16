@@ -32,7 +32,8 @@ Every board has the same layout: what it works from beside it (the problem or to
 Done (reading, step 1 of the [Shelf design](https://claude.ai/artifact/TXw8zCKZbwQ9ohM2Fk9nC8)): tap a page's edge, swipe sideways or use the arrow keys to turn it; tap the page number to go to a page by its printed number ("47", "xii"); **Contents** beside the page from the PDF's bookmarks; blank margins trimmed so the print is bigger (**Trim margins**, kept per book); **Full screen** for reading, where a tap in the middle hides and brings back the bars and **Book** opens the lists over the page.
 
 - Done: ink on the page (pen, highlighter, eraser, undo), saved per page and in backups.
-- Next, in this order: exercises put on the board when opened, swapping with the page on the tablet; note pages and one list per book with solved counts; search; circle part of a page to ask the tutor (after the "how you call the tutor in" work); Shelf cards with kind, progress and where you left off.
+- Done: an exercise opened on an empty board is put on it; on an upright tablet the board takes the screen and swaps with the page (**Page 47** / **Back to board**).
+- Next, in this order: note pages and one list per book with solved counts; search; circle part of a page to ask the tutor (after the "how you call the tutor in" work); Shelf cards with kind, progress and where you left off.
 - Still to do: no zoom yet; marks can't be moved or renamed after saving.
 
 ### 4. Export and auto-backup
