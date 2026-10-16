@@ -148,10 +148,6 @@ async function writeBackup(force: boolean) {
       dayFolder ??= await (await target.getDirectoryHandle(HISTORY_FOLDER, { create: true })).getDirectoryHandle(day, { create: true });
       await writeFile(dayFolder, name, file);
     }
-    // A board deleted here leaves the backup too (its earlier days stay in history/).
-    const kept = new Set(sessions.map((session) => fileName(boardPath(session.id))));
-    for (const name of present) if (!kept.has(name)) await boardFolder.removeEntry(name).catch(() => undefined);
-
     // PDFs never change, so only new ones are written.
     const pdfFolder = await target.getDirectoryHandle(PDF_FOLDER, { create: true });
     for (const document of shelf) {
@@ -166,6 +162,10 @@ async function writeBackup(force: boolean) {
     const copies: string[] = [];
     for await (const name of target.keys()) if (DAILY_COPY.test(name)) copies.push(name);
     for (const old of copies.sort().reverse().slice(DAILY_COPIES)) await target.removeEntry(old).catch(() => undefined);
+    // A board deleted here leaves the backup too (its earlier days stay in history/). Only now that
+    // backup.json no longer lists it: if a write above failed, the last backup is still whole.
+    const kept = new Set(sessions.map((session) => fileName(boardPath(session.id))));
+    for (const name of present) if (!kept.has(name)) await boardFolder.removeEntry(name).catch(() => undefined);
     const history = await target.getDirectoryHandle(HISTORY_FOLDER, { create: true });
     const days: string[] = [];
     for await (const name of history.keys()) if (HISTORY_DAY.test(name)) days.push(name);

@@ -129,7 +129,11 @@ async function backupBoards(manifest: BackupManifest, files: Map<string, Blob>) 
 /** Puts a backup's records on this device; newer copies already here are kept. */
 export async function restoreManifest(manifest: BackupManifest, files: Map<string, Blob>): Promise<RestoreResult> {
   const { boards, missing } = await backupBoards(manifest, files);
-  if (boards.length === 0 && missing > 0) throw new Error('The boards weren’t with backup.json. Pick the whole backup folder, or the backup ZIP.');
+  // Only backup.json was picked: say so, rather than restore everything but the boards. A board
+  // file that is there but damaged is counted instead, and the rest restores.
+  if (missing > 0 && ![...files.keys()].some((path) => path.startsWith(`${BOARD_FOLDER}/`))) {
+    throw new Error('The boards weren’t with backup.json. Pick the whole backup folder, or the backup ZIP.');
+  }
   const sessions = boards.map(({ canvasImage, ...session }) => ({
     ...session, canvasImageBlob: canvasImage ? dataUrlToBlob(canvasImage) : null,
   }));
@@ -183,12 +187,23 @@ function validPageInk(page: unknown): PageInk | undefined {
 // A folder picked with <input webkitdirectory> names files from the picked folder ("Backup/pdfs/x.pdf").
 const relativeName = (file: File) => (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
 
+const DATED_COPY = /^backup-(\d{4}-\d{2}-\d{2})\.json$/;
+
+/** The earlier days a picked backup folder can go back to (its dated copies), newest first. */
+export function backupDays(files: File[]): string[] {
+  return files.filter((file) => !/(?:^|\/)(boards|history)\//.test(relativeName(file)))
+    .map((file) => DATED_COPY.exec(file.name)?.[1])
+    .filter((day): day is string => day !== undefined)
+    .sort().reverse();
+}
+
 /**
  * Restores from what the student picked: the downloaded ZIP, a backup folder's files, or just its
  * backup.json (then only PDFs already on this device come back; boards need their files, except
- * in a version 1 backup.json, which holds them).
+ * in a version 1 backup.json, which holds them). With `day`, a folder is restored as it was at that
+ * day's last backup: its dated copy, and each board as history/ last kept it on or before that day.
  */
-export async function restoreFromFiles(files: File[]): Promise<RestoreResult> {
+export async function restoreFromFiles(files: File[], day?: string): Promise<RestoreResult> {
   const zip = files.find((file) => /\.zip$/i.test(file.name));
   if (zip) {
     const entries = await readZip(zip).catch(() => { throw new Error('The ZIP file could not be read.'); });
@@ -196,14 +211,27 @@ export async function restoreFromFiles(files: File[]): Promise<RestoreResult> {
     if (!manifest) throw new Error('This ZIP is not a Math Tutor backup.');
     return restoreManifest(parseManifest(await manifest.text()), entries);
   }
-  // The folder's own backup.json, not a dated copy beside it, unless that is all there is.
-  const manifests = files.filter((file) => /\.json$/i.test(file.name) && !/(?:^|\/)(boards|history)\//.test(relativeName(file))).sort((a, b) => Number(b.name === MANIFEST_NAME) - Number(a.name === MANIFEST_NAME) || b.name.localeCompare(a.name));
+  // The folder's own backup.json (or the chosen day's copy), not a dated copy beside it, unless that is all there is.
+  const top = files.filter((file) => /\.json$/i.test(file.name) && !/(?:^|\/)(boards|history)\//.test(relativeName(file)));
+  const manifests = day ? top.filter((file) => file.name === `backup-${day}.json`)
+    : top.sort((a, b) => Number(b.name === MANIFEST_NAME) - Number(a.name === MANIFEST_NAME) || b.name.localeCompare(a.name));
   if (!manifests[0]) throw new Error('Pick the backup ZIP, or the backup folder.');
   // Each file by its path in the backup (pdfs/<id>.pdf, boards/<id>.json), as the backup wrote it.
+  // A board comes from boards/ (now), or for an earlier day from the newest history/<day>/ copy up
+  // to that day; either way the other is the fallback when its file is missing.
   const byPath = new Map<string, Blob>();
+  const history = new Map<string, { day: string; file: File }[]>();
   for (const file of files) {
-    const match = /(?:^|\/)((?:pdfs\/[^/]+\.pdf)|(?:boards\/[^/]+\.json))$/.exec(relativeName(file));
-    if (match) byPath.set(match[1], file);
+    const path = relativeName(file);
+    const match = /(?:^|\/)((?:pdfs\/[^/]+\.pdf)|(?:boards\/[^/]+\.json))$/.exec(path);
+    if (match) { byPath.set(match[1], file); continue; }
+    const kept = /(?:^|\/)history\/(\d{4}-\d{2}-\d{2})\/([^/]+\.json)$/.exec(path);
+    if (kept) history.set(kept[2], [...(history.get(kept[2]) ?? []), { day: kept[1], file }]);
+  }
+  for (const [name, copies] of history) {
+    const path = `${BOARD_FOLDER}/${name}`;
+    const usable = copies.filter((copy) => !day || copy.day <= day).sort((a, b) => b.day.localeCompare(a.day));
+    if (usable[0] && (day || !byPath.has(path))) byPath.set(path, usable[0].file);
   }
   return restoreManifest(parseManifest(await manifests[0].text()), byPath);
 }

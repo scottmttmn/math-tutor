@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { useBackupStatus } from '@/hooks/useBackupStatus';
 import { BACKUP_FOLDER_NAME, backUpNow, chooseBackupFolder, recordDownload, resumeBackup, stopBackup } from '@/lib/autoBackup';
-import { backupFileName, backupZip, downloadBlob, restoreFromFiles } from '@/lib/backup';
+import { backupDays, backupFileName, backupZip, downloadBlob, restoreFromFiles } from '@/lib/backup';
 import type { RestoreResult } from '@/types';
 
 /** "just now", "5 minutes ago", "3 days ago", or the date. */
@@ -83,12 +83,25 @@ export default function BackupSettings({ onClose, saveOpenBoard, restoredMessage
     return null;
   });
 
-  const restore = (files: FileList | null) => {
+  // A backup folder with dated copies can go back to an earlier day: ask which before restoring.
+  const [folderPicked, setFolderPicked] = useState<{ files: File[]; days: string[] } | null>(null);
+  const [day, setDay] = useState('');
+  const pickFolder = (files: FileList | null) => {
     if (!files?.length) return;
     const picked = [...files];
+    const days = backupDays(picked);
+    if (!days.length) { restore(picked); return; }
+    setMessage(null);
+    setDay('');
+    setFolderPicked({ files: picked, days });
+  };
+
+  const restore = (picked: File[], fromDay?: string) => {
+    if (!picked.length) return;
+    setFolderPicked(null);
     void run('restore', async () => {
       await saveBoard();
-      const result = await restoreFromFiles(picked);
+      const result = await restoreFromFiles(picked, fromDay || undefined);
       if (!result.restoredSessions && !result.restoredShelf && !result.restoredProfile && !result.restoredInk) return describeRestore(result);
       // The page still holds what it loaded before the restore, and its next autosave would write
       // that over a restored copy; reload so it shows what is saved now.
@@ -141,10 +154,25 @@ export default function BackupSettings({ onClose, saveOpenBoard, restoredMessage
         </div>
         <p className="mt-2 text-xs text-gray-500">Restoring adds what this device doesn&apos;t have and updates older copies; newer work here is kept.</p>
         <input ref={fileInput} type="file" accept=".zip,.json,application/zip,application/json" className="hidden" data-testid="restore-file"
-          onChange={(event) => { restore(event.target.files); event.target.value = ''; }} />
+          onChange={(event) => { restore([...(event.target.files ?? [])]); event.target.value = ''; }} />
         <input ref={folderInput} type="file" className="hidden" data-testid="restore-folder"
           {...{ webkitdirectory: '', directory: '' }}
-          onChange={(event) => { restore(event.target.files); event.target.value = ''; }} />
+          onChange={(event) => { pickFolder(event.target.files); event.target.value = ''; }} />
+        {folderPicked && (
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1">
+              <span>Restore this folder as it was</span>
+              <select value={day} onChange={(event) => setDay(event.target.value)} className="min-h-11 px-2 border border-gray-300 rounded-lg bg-white">
+                <option value="">At its latest backup</option>
+                {folderPicked.days.map((option) => (
+                  <option key={option} value={option}>At the end of {new Date(`${option}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</option>
+                ))}
+              </select>
+            </label>
+            <button onClick={() => restore(folderPicked.files, day)} disabled={busy !== null} className={plain}>Restore</button>
+            <button onClick={() => setFolderPicked(null)} disabled={busy !== null} className={plain}>Cancel</button>
+          </div>
+        )}
       </section>
 
       {message && <p role="status" className={`mb-4 ${message.error ? 'text-red-700' : 'text-gray-900'}`}>{message.text}</p>}

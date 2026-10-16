@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
@@ -156,6 +156,21 @@ try {
     await fresh.page.getByText('Restored 1 board and 1 Shelf PDF.').waitFor();
     await fresh.page.getByTestId('restore-file').setInputFiles(zip.path);
     await fresh.page.getByText('Nothing to restore: this device already has everything in the backup.').waitFor();
+
+    // A backup folder with dated copies asks which day to restore it as.
+    const backupDir = join(folder, 'Math Tutor backup');
+    await mkdir(join(backupDir, 'boards'), { recursive: true });
+    for (const [path, blob] of zipEntries) {
+      if (path.startsWith('pdfs/')) continue;
+      await writeFile(join(backupDir, path), Buffer.from(await blob.arrayBuffer()));
+    }
+    await writeFile(join(backupDir, 'backup-2026-10-14.json'), Buffer.from(await zipEntries.get('backup.json').arrayBuffer()));
+    await fresh.page.getByTestId('restore-folder').setInputFiles(backupDir);
+    const dayChoice = fresh.page.getByLabel('Restore this folder as it was');
+    assert.deepEqual(await dayChoice.locator('option').allInnerTexts(), ['At its latest backup', `At the end of ${new Date('2026-10-14T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}`]);
+    await dayChoice.selectOption('2026-10-14');
+    await fresh.page.getByRole('button', { name: 'Restore', exact: true }).click();
+    await fresh.page.getByText('Nothing to restore: this device already has everything in the backup.').waitFor();
     await fresh.page.getByRole('button', { name: 'Done' }).click();
     await fresh.page.reload();
     await fresh.page.getByText('Find x when 2x + 3 = 7 (check it)').first().waitFor();
@@ -172,7 +187,7 @@ try {
   } finally {
     await fresh.context.close();
   }
-  console.log('PASS restoring the ZIP on an empty browser brings back the board and the Shelf PDF');
+  console.log('PASS restoring the ZIP on an empty browser brings back the board and the Shelf PDF; a backup folder asks which day');
 
   assert.deepEqual(browserErrors, []);
   console.log('PASS no browser exceptions');

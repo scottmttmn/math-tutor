@@ -118,6 +118,40 @@ test('a backup folder restores from its files: backup.json over the dated copies
   ]);
   assert.equal(partial.restoredSessions, 1);
   assert.equal(partial.missingBoards, 1);
+  // Even when the only board's file is damaged, the Shelf and the rest still come back.
+  const one = await backup.buildBackup([session({ id: 'a' })], [shelfDocument({})]);
+  written.length = 0;
+  const damaged = await backup.restoreFromFiles([
+    asFile(new Blob([JSON.stringify(one.manifest)]), 'backup.json', 'B/backup.json'),
+    asFile(new Blob(['{not json']), 'a.json', 'B/boards/a.json'),
+    asFile(new Blob(['%PDF']), 'doc1.pdf', 'B/pdfs/doc1.pdf'),
+  ]);
+  assert.equal(damaged.restoredSessions, 0);
+  assert.equal(damaged.restoredShelf, 1);
+  assert.equal(damaged.missingBoards, 1);
+});
+
+test('a backup folder restores as it was on an earlier day, from its dated copy and history/', async () => {
+  const board = (id, updatedAt) => new Blob([JSON.stringify({ ...session({ id, updatedAt }), canvasImageBlob: undefined, canvasImage: null })]);
+  const now = await backup.buildBackup([session({ id: 'a', updatedAt: 5 })], []);
+  // On the 14th there were two boards; b has since been deleted, a changed again on the 15th and 16th.
+  const then = await backup.buildBackup([session({ id: 'a' }), session({ id: 'b' })], []);
+  const files = [
+    asFile(new Blob([JSON.stringify(now.manifest)]), 'backup.json', 'B/backup.json'),
+    asFile(new Blob([JSON.stringify(then.manifest)]), 'backup-2026-10-14.json', 'B/backup-2026-10-14.json'),
+    asFile(board('a', 5), 'a.json', 'B/boards/a.json'),
+    asFile(board('a', 2), 'a.json', 'B/history/2026-10-13/a.json'),
+    asFile(board('a', 4), 'a.json', 'B/history/2026-10-15/a.json'),
+    asFile(board('b', 1), 'b.json', 'B/history/2026-10-12/b.json'),
+  ];
+  assert.deepEqual(backup.backupDays(files), ['2026-10-14']);
+  written.length = 0;
+  const earlier = await backup.restoreFromFiles(files, '2026-10-14');
+  assert.equal(earlier.restoredSessions, 2);
+  assert.deepEqual(written[0].sessions.map((s) => [s.id, s.updatedAt]), [['a', 2], ['b', 1]]);
+  written.length = 0;
+  await backup.restoreFromFiles(files);
+  assert.deepEqual(written[0].sessions.map((s) => [s.id, s.updatedAt]), [['a', 5]]);
 });
 
 test('a version 1 backup (boards inside backup.json) still restores', async () => {
