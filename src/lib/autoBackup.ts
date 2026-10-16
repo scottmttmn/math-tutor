@@ -1,4 +1,4 @@
-import { getSetting, hasSavedWork, listSessions, listShelf, loadProfile, onDataChange, setSetting } from '@/lib/db';
+import { getSetting, hasSavedWork, listSessions, listInk, listShelf, loadProfile, onDataChange, setSetting } from '@/lib/db';
 import { MANIFEST_NAME, PDF_FOLDER, backupFingerprint, buildBackup } from '@/lib/backup';
 import type { BackupStatus } from '@/types';
 
@@ -111,12 +111,12 @@ async function writeFile(directory: FileSystemDirectoryHandle, name: string, con
 async function writeBackup(force: boolean) {
   if (!folder || status.state === 'paused' || status.state === 'off') return;
   try {
-    const [sessions, shelf, profile] = await Promise.all([listSessions(), listShelf(), loadProfile()]);
-    const fingerprint = backupFingerprint(sessions, shelf, profile);
+    const [sessions, shelf, profile, ink] = await Promise.all([listSessions(), listShelf(), loadProfile(), listInk()]);
+    const fingerprint = backupFingerprint(sessions, shelf, profile, ink);
     if (!force && fingerprint === saved.fingerprint) { if (status.state !== 'ok') update({ state: 'ok', error: null }); return; }
     update({ state: 'writing' });
     const target = folder.name === BACKUP_FOLDER_NAME ? folder : await folder.getDirectoryHandle(BACKUP_FOLDER_NAME, { create: true });
-    const { manifest, pdfs } = await buildBackup(sessions, shelf, profile);
+    const { manifest, pdfs } = await buildBackup(sessions, shelf, profile, ink);
     const json = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
 
     // PDFs first, so backup.json never lists one that isn't there yet. They never change, so only new ones are written.

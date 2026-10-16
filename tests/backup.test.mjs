@@ -8,9 +8,9 @@ const { crc32, writeZip, readZip } = load('src/lib/zip.ts');
 const written = [];
 const db = {
   listSessions: async () => [], listShelf: async () => [],
-  restoreRecords: async (sessions, shelf, profile) => {
-    written.push({ sessions, shelf, profile });
-    return { sessions: sessions.map((s) => s.id), shelf: shelf.filter((d) => d.file).map((d) => d.id), profile: Boolean(profile), skipped: 0, missingPdfs: shelf.filter((d) => !d.file).map((d) => d.title) };
+  restoreRecords: async (sessions, shelf, profile, ink) => {
+    written.push({ sessions, shelf, profile, ink });
+    return { sessions: sessions.map((s) => s.id), shelf: shelf.filter((d) => d.file).map((d) => d.id), profile: Boolean(profile), ink: ink.map((p) => p.id), skipped: 0, missingPdfs: shelf.filter((d) => !d.file).map((d) => d.title) };
   },
 };
 const backup = load('src/lib/backup.ts', { '@/lib/db': db });
@@ -70,7 +70,7 @@ test('a backup carries every board and Shelf PDF, and restores them as they were
   const zip = await writeZip(new Map([['backup.json', new Blob([JSON.stringify(manifest)])], ...pdfs]));
   written.length = 0;
   const result = await backup.restoreFromFiles([asFile(zip, 'math-tutor-backup-2026-10-14.zip')]);
-  assert.deepEqual(result, { restoredSessions: 2, restoredShelf: 1, restoredProfile: false, skipped: 0, missingPdfs: [] });
+  assert.deepEqual(result, { restoredSessions: 2, restoredShelf: 1, restoredProfile: false, restoredInk: 0, skipped: 0, missingPdfs: [] });
   const [{ sessions, shelf }] = written;
   assert.equal(sessions[0].customTitle, 'Named');
   assert.deepEqual(new Uint8Array(await sessions[0].canvasImageBlob.arrayBuffer()), new Uint8Array(await thumbnail.arrayBuffer()));
@@ -123,6 +123,25 @@ test('the tutor memory goes into the backup and comes back; a malformed one is l
   assert.deepEqual(written[0].profile.topics, [noted.topics[0], { id: 'calculus/derivatives', name: 'Derivatives', area: 'Calculus', rating: null }]);
   assert.notEqual(backup.backupFingerprint([], [], profile), backup.backupFingerprint([], [], { updatedAt: 8 }));
   assert.notEqual(backup.backupFingerprint([], [], profile), backup.backupFingerprint([], []));
+});
+
+test('ink on Shelf pages goes into the backup and comes back; damaged strokes are left out', async () => {
+  const page = { id: 'doc1:2', documentId: 'doc1', page: 2, strokes: [{ tool: 'pen', points: [0.1, 0.2, 0.5, 0.3, 0.2, 0.6] }, { tool: 'highlighter', points: [0.1, 0.4, 0.5] }], updatedAt: 11 };
+  const { manifest } = await backup.buildBackup([], [shelfDocument({})], undefined, [page]);
+  assert.deepEqual(manifest.ink, [page]);
+  assert.equal((await backup.buildBackup([], [])).manifest.ink, undefined);
+  written.length = 0;
+  const result = await backup.restoreFromFiles([asFile(new Blob([JSON.stringify(manifest)]), 'backup.json')]);
+  assert.equal(result.restoredInk, 1);
+  assert.deepEqual(written[0].ink, [page]);
+  // A stroke with a bad tool or broken points is dropped; a page left with none is too.
+  written.length = 0;
+  const damaged = [{ ...page, strokes: [...page.strokes, { tool: 'marker', points: [0.1, 0.1, 0.5] }, { tool: 'pen', points: [0.1, 0.1] }, { tool: 'pen', points: [0.1, 'x', 0.5] }] },
+    { ...page, id: 'doc1:3', page: 3, strokes: [] }, { page: 'one' }, null];
+  await backup.restoreFromFiles([asFile(new Blob([JSON.stringify({ ...manifest, ink: damaged })]), 'backup.json')]);
+  assert.deepEqual(written[0].ink, [page]);
+  assert.notEqual(backup.backupFingerprint([], [], undefined, [page]), backup.backupFingerprint([], [], undefined, [{ ...page, updatedAt: 12 }]));
+  assert.notEqual(backup.backupFingerprint([], [], undefined, [page]), backup.backupFingerprint([], []));
 });
 
 test('restore refuses files that are not a backup', async () => {

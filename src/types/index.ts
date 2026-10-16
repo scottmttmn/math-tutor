@@ -139,6 +139,28 @@ export interface ShelfDocument {
   updatedAt: number;
 }
 
+/** What writes on a Shelf page: the pen, the highlighter, or the eraser (which removes whole strokes). */
+export type InkTool = 'pen' | 'highlighter' | 'eraser';
+
+/**
+ * One stroke on a Shelf page. `points` is flat: x, y (fractions of the whole page, as marks are)
+ * and the pen's pressure (0 to 1), for each sample.
+ */
+export interface InkStroke {
+  tool: 'pen' | 'highlighter';
+  points: number[];
+}
+
+/** The ink written on one page of a Shelf PDF; its id is `<document id>:<page>`. The PDF is never changed. */
+export interface PageInk {
+  id: string;
+  documentId: string;
+  /** 1-based page number. */
+  page: number;
+  strokes: InkStroke[];
+  updatedAt: number;
+}
+
 /** Main-page autosave: nothing to save yet, writing, written, or the last write failed. */
 export type AutosaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -307,6 +329,8 @@ export interface BackupManifest {
   shelf: BackupShelfDocument[];
   /** Tutor memory; missing in backups made before it existed. */
   profile?: LearnerProfile;
+  /** Ink on Shelf pages; missing in backups made before it existed. */
+  ink?: PageInk[];
 }
 
 /** What a restore did: records added or updated, and those left alone because this device's copy is as new. */
@@ -315,6 +339,8 @@ export interface RestoreResult {
   restoredShelf: number;
   /** The tutor memory was newer in the backup and replaced this device's. */
   restoredProfile: boolean;
+  /** Pages of Shelf ink added or updated. */
+  restoredInk: number;
   skipped: number;
   /** Shelf PDFs listed in the backup whose file wasn't with it (and isn't on this device). */
   missingPdfs: string[];
