@@ -2,17 +2,23 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { listInk, listSessions, listShelf, loadProfile, restoreRecords } from '@/lib/db';
 import { readZip, writeZip } from '@/lib/zip';
 import { RATINGS } from '@/lib/learnerProfile';
-import type { BackupManifest, InkStroke, LearnerProfile, PageInk, ProfileTopic, RestoreResult, SaveFilePlugin, Session, ShelfDocument, TopicRating, TutorNote } from '@/types';
+import type { BackupManifest, BackupSession, InkStroke, LearnerProfile, PageInk, ProfileTopic, RestoreResult, SaveFilePlugin, Session, ShelfDocument, TopicRating, TutorNote } from '@/types';
 
 const TOPIC_RATINGS: (TopicRating | null)[] = RATINGS.map((option) => option.rating);
 
-// A backup is backup.json (every board, with its thumbnail and problem picture, and every Shelf
-// entry with its cover, marks and the ink on its pages) plus each Shelf PDF as pdfs/<id>.pdf. The download is all of it
-// in one ZIP; a backup folder holds the same files side by side (see autoBackup.ts), so restoring
-// a folder is restoring its files.
+// A backup is backup.json (every Shelf entry with its cover, marks and the ink on its pages, the
+// tutor memory, and a list of the boards), each board as boards/<id>.json (with its thumbnail and
+// problem picture), and each Shelf PDF as pdfs/<id>.pdf. Boards are files of their own so that a
+// folder backup rewrites only the boards that changed (see autoBackup.ts), however many there are.
+// The download is all of it in one ZIP; a backup folder holds the same files side by side, so
+// restoring a folder is restoring its files. Version 1 backups (boards inline in backup.json) still restore.
 export const MANIFEST_NAME = 'backup.json';
 export const PDF_FOLDER = 'pdfs';
+export const BOARD_FOLDER = 'boards';
 export const pdfPath = (id: string) => `${PDF_FOLDER}/${id}.pdf`;
+// Board ids hold ':' (Shelf boards), which Windows doesn't allow in a file name.
+const fileSafe = (id: string) => encodeURIComponent(id).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+export const boardPath = (id: string) => `${BOARD_FOLDER}/${fileSafe(id)}.json`;
 
 export async function blobToDataUrl(blob: Blob): Promise<string> {
   const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -31,15 +37,20 @@ export function dataUrlToBlob(url: string): Blob {
   return new Blob([bytes], { type: match[1] });
 }
 
-/** The backup of these records: backup.json's contents, and the PDFs by path. */
-export async function buildBackup(sessions: Session[], shelf: ShelfDocument[], profile?: LearnerProfile, ink: PageInk[] = [], now = Date.now()) {
-  const manifest: BackupManifest = {
+/** A board as it goes in a backup: the thumbnail Blob as a data URL. */
+export async function boardRecord({ canvasImageBlob, ...session }: Session): Promise<BackupSession> {
+  return { ...session, canvasImage: canvasImageBlob ? await blobToDataUrl(canvasImageBlob) : null };
+}
+
+export const boardFile = async (session: Session) => new Blob([JSON.stringify(await boardRecord(session))], { type: 'application/json' });
+
+/** backup.json for these records; the boards' own files are made with boardFile. */
+export async function backupIndex(sessions: Pick<Session, 'id'>[], shelf: ShelfDocument[], profile?: LearnerProfile, ink: PageInk[] = [], now = Date.now()): Promise<BackupManifest> {
+  return {
     app: 'math-tutor',
-    version: 1,
+    version: 2,
     createdAt: now,
-    sessions: await Promise.all(sessions.map(async ({ canvasImageBlob, ...session }) => ({
-      ...session, canvasImage: canvasImageBlob ? await blobToDataUrl(canvasImageBlob) : null,
-    }))),
+    boards: sessions.map(({ id }) => ({ id, file: boardPath(id) })),
     shelf: await Promise.all(shelf.map(async (document) => {
       const { file, cover, ...rest } = document;
       void file; // The PDF goes beside backup.json, not in it.
@@ -48,8 +59,14 @@ export async function buildBackup(sessions: Session[], shelf: ShelfDocument[], p
     ...(profile ? { profile } : {}),
     ...(ink.length ? { ink } : {}),
   };
+}
+
+/** The backup of these records: backup.json's contents, and the boards' and PDFs' files by path. */
+export async function buildBackup(sessions: Session[], shelf: ShelfDocument[], profile?: LearnerProfile, ink: PageInk[] = [], now = Date.now()) {
+  const manifest = await backupIndex(sessions, shelf, profile, ink, now);
+  const boards = new Map(await Promise.all(sessions.map(async (session) => [boardPath(session.id), await boardFile(session)] as const)));
   const pdfs = new Map(shelf.map((document) => [pdfPath(document.id), document.file] as const));
-  return { manifest, pdfs };
+  return { manifest, boards, pdfs };
 }
 
 /** Everything saved on this device. */
@@ -76,37 +93,55 @@ export function backupFingerprint(
 export const backupFileName = (date = new Date()) =>
   `math-tutor-backup-${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}.zip`;
 
-/** One ZIP of everything: backup.json and the Shelf's PDFs. */
+/** One ZIP of everything: backup.json, the boards and the Shelf's PDFs. */
 export async function backupZip(): Promise<Blob> {
-  const { manifest, pdfs } = await collectBackup();
-  const files = new Map<string, Blob>([[MANIFEST_NAME, new Blob([JSON.stringify(manifest)], { type: 'application/json' })], ...pdfs]);
+  const { manifest, boards, pdfs } = await collectBackup();
+  const files = new Map<string, Blob>([[MANIFEST_NAME, new Blob([JSON.stringify(manifest)], { type: 'application/json' })], ...boards, ...pdfs]);
   return writeZip(files);
 }
 
 export function parseManifest(text: string): BackupManifest {
   let manifest: BackupManifest;
   try { manifest = JSON.parse(text); } catch { throw new Error('The backup file is damaged.'); }
-  if (manifest?.app !== 'math-tutor' || !Array.isArray(manifest.sessions) || !Array.isArray(manifest.shelf)) {
+  if (manifest?.app !== 'math-tutor' || !(Array.isArray(manifest.sessions) || Array.isArray(manifest.boards)) || !Array.isArray(manifest.shelf)) {
     throw new Error('This is not a Math Tutor backup.');
   }
-  if (manifest.version > 1) throw new Error('This backup is from a newer version of the app. Update it, then restore.');
+  if (manifest.version > 2) throw new Error('This backup is from a newer version of the app. Update it, then restore.');
   return manifest;
 }
 
+/** The backup's boards: inline (version 1) or read from their files, which `files` holds by path. */
+async function backupBoards(manifest: BackupManifest, files: Map<string, Blob>) {
+  if (!manifest.boards) return { boards: manifest.sessions ?? [], missing: 0 };
+  const boards: BackupSession[] = [];
+  let missing = 0;
+  for (const entry of manifest.boards) {
+    const file = entry && typeof entry.id === 'string' ? files.get(boardPath(entry.id)) : undefined;
+    let board: BackupSession | undefined;
+    try { board = file ? JSON.parse(await file.text()) : undefined; } catch { board = undefined; }
+    // A damaged board file is left out, not the whole restore.
+    if (board?.id === entry?.id && Number.isFinite(board.updatedAt)) boards.push(board);
+    else missing += 1;
+  }
+  return { boards, missing };
+}
+
 /** Puts a backup's records on this device; newer copies already here are kept. */
-export async function restoreManifest(manifest: BackupManifest, pdfs: Map<string, Blob>): Promise<RestoreResult> {
-  const sessions = manifest.sessions.map(({ canvasImage, ...session }) => ({
+export async function restoreManifest(manifest: BackupManifest, files: Map<string, Blob>): Promise<RestoreResult> {
+  const { boards, missing } = await backupBoards(manifest, files);
+  if (boards.length === 0 && missing > 0) throw new Error('The boards weren’t with backup.json. Pick the whole backup folder, or the backup ZIP.');
+  const sessions = boards.map(({ canvasImage, ...session }) => ({
     ...session, canvasImageBlob: canvasImage ? dataUrlToBlob(canvasImage) : null,
   }));
   const shelf = manifest.shelf.map(({ cover, ...document }) => {
-    const file = pdfs.get(pdfPath(document.id));
+    const file = files.get(pdfPath(document.id));
     return { ...document, cover: cover ? dataUrlToBlob(cover) : null, file: file ? new Blob([file], { type: 'application/pdf' }) : null };
   });
   const ink = Array.isArray(manifest.ink) ? manifest.ink.map(validPageInk).filter((page): page is PageInk => page !== undefined) : [];
   const written = await restoreRecords(sessions, shelf, validProfile(manifest.profile), ink);
   return {
     restoredSessions: written.sessions.length, restoredShelf: written.shelf.length, restoredProfile: written.profile, restoredInk: written.ink.length,
-    skipped: written.skipped, missingPdfs: written.missingPdfs,
+    skipped: written.skipped, missingPdfs: written.missingPdfs, missingBoards: missing,
   };
 }
 
@@ -150,7 +185,8 @@ const relativeName = (file: File) => (file as File & { webkitRelativePath?: stri
 
 /**
  * Restores from what the student picked: the downloaded ZIP, a backup folder's files, or just its
- * backup.json (then only PDFs already on this device come back).
+ * backup.json (then only PDFs already on this device come back; boards need their files, except
+ * in a version 1 backup.json, which holds them).
  */
 export async function restoreFromFiles(files: File[]): Promise<RestoreResult> {
   const zip = files.find((file) => /\.zip$/i.test(file.name));
@@ -161,14 +197,15 @@ export async function restoreFromFiles(files: File[]): Promise<RestoreResult> {
     return restoreManifest(parseManifest(await manifest.text()), entries);
   }
   // The folder's own backup.json, not a dated copy beside it, unless that is all there is.
-  const manifests = files.filter((file) => /\.json$/i.test(file.name)).sort((a, b) => Number(b.name === MANIFEST_NAME) - Number(a.name === MANIFEST_NAME) || b.name.localeCompare(a.name));
+  const manifests = files.filter((file) => /\.json$/i.test(file.name) && !/(?:^|\/)(boards|history)\//.test(relativeName(file))).sort((a, b) => Number(b.name === MANIFEST_NAME) - Number(a.name === MANIFEST_NAME) || b.name.localeCompare(a.name));
   if (!manifests[0]) throw new Error('Pick the backup ZIP, or the backup folder.');
-  const pdfs = new Map<string, Blob>();
+  // Each file by its path in the backup (pdfs/<id>.pdf, boards/<id>.json), as the backup wrote it.
+  const byPath = new Map<string, Blob>();
   for (const file of files) {
-    const match = /(?:^|\/)pdfs\/([^/]+\.pdf)$/i.exec(relativeName(file));
-    if (match) pdfs.set(`${PDF_FOLDER}/${match[1]}`, file);
+    const match = /(?:^|\/)((?:pdfs\/[^/]+\.pdf)|(?:boards\/[^/]+\.json))$/.exec(relativeName(file));
+    if (match) byPath.set(match[1], file);
   }
-  return restoreManifest(parseManifest(await manifests[0].text()), pdfs);
+  return restoreManifest(parseManifest(await manifests[0].text()), byPath);
 }
 
 /** Saves a file through the browser's download. */

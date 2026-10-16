@@ -33,6 +33,7 @@ function describeRestore(result: RestoreResult) {
   } else parts.push('Nothing to restore: this device already has everything in the backup.');
   if (result.skipped && restored.length) parts.push(`${result.skipped} already up to date here.`);
   if (result.missingPdfs.length) parts.push(`Not restored, because the PDF wasn't with the backup: ${result.missingPdfs.join(', ')}.`);
+  if (result.missingBoards) parts.push(`${result.missingBoards} board${result.missingBoards === 1 ? '' : 's'} not restored, because ${result.missingBoards === 1 ? 'its file wasn’t' : 'their files weren’t'} with the backup.`);
   return parts.join(' ');
 }
 

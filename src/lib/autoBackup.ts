@@ -1,6 +1,6 @@
 import { getSetting, hasSavedWork, listSessions, listInk, listShelf, loadProfile, onDataChange, setSetting } from '@/lib/db';
-import { MANIFEST_NAME, PDF_FOLDER, backupFingerprint, buildBackup } from '@/lib/backup';
-import type { BackupStatus } from '@/types';
+import { BOARD_FOLDER, MANIFEST_NAME, PDF_FOLDER, backupFingerprint, backupIndex, boardFile, boardPath } from '@/lib/backup';
+import type { BackupStatus, Session } from '@/types';
 
 // Automatic backup to a folder the student picks (say, in Dropbox): the backup's files are written
 // into a "Math Tutor backup" folder there shortly after each change. Chromium only; elsewhere the
@@ -12,9 +12,12 @@ const STATE_KEY = 'backupState';
 export const BACKUP_FOLDER_NAME = 'Math Tutor backup';
 // Wait for a pause in the writing before backing up; autosave already ran.
 const BACKUP_DELAY_MS = 30_000;
-// One dated copy of backup.json per day, for going back to an earlier day.
+// For going back to an earlier day: one dated copy of backup.json per day, and in history/<day>/
+// the boards changed that day as they were at its last backup. Kept for this many days.
 const DAILY_COPIES = 7;
 const DAILY_COPY = /^backup-\d{4}-\d{2}-\d{2}\.json$/;
+const HISTORY_FOLDER = 'history';
+const HISTORY_DAY = /^\d{4}-\d{2}-\d{2}$/;
 /** After this long without a backup, the top bar suggests one. */
 export const BACKUP_DUE_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -23,7 +26,16 @@ interface SavedState {
   lastDownloadAt: number | null;
   /** What the last folder backup held (see backupFingerprint), so an unchanged app isn't written again. */
   fingerprint: string | null;
+  /** Each board's boardStamp as last written to the folder, so only changed boards are written again. */
+  boards?: Record<string, string>;
 }
+
+const boardStamp = (session: Pick<Session, 'updatedAt' | 'customTitle'>) => `${session.updatedAt} ${session.customTitle ?? ''}`;
+const dayName = (at: number) => {
+  const day = new Date(at);
+  return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+};
+const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1);
 
 let status: BackupStatus = {
   folderSupported: false, folderName: null, state: 'off', lastBackupAt: null, lastDownloadAt: null,
@@ -95,7 +107,7 @@ function schedule(delay: number) {
   timer = setTimeout(() => { timer = undefined; void backUpNow(); }, delay);
 }
 
-/** Writes the backup to the folder if anything changed since the last one (or always, when forced). */
+/** Writes the backup to the folder if anything changed since the last one (or always, when forced); either way only changed boards are rewritten. */
 export function backUpNow(force = false): Promise<void> {
   running = running.then(() => writeBackup(force));
   return running;
@@ -116,24 +128,50 @@ async function writeBackup(force: boolean) {
     if (!force && fingerprint === saved.fingerprint) { if (status.state !== 'ok') update({ state: 'ok', error: null }); return; }
     update({ state: 'writing' });
     const target = folder.name === BACKUP_FOLDER_NAME ? folder : await folder.getDirectoryHandle(BACKUP_FOLDER_NAME, { create: true });
-    const { manifest, pdfs } = await buildBackup(sessions, shelf, profile, ink);
-    const json = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+    const now = Date.now();
+    const day = dayName(now);
 
-    // PDFs first, so backup.json never lists one that isn't there yet. They never change, so only new ones are written.
-    const pdfFolder = await target.getDirectoryHandle(PDF_FOLDER, { create: true });
-    for (const [path, file] of pdfs) {
-      const name = path.slice(PDF_FOLDER.length + 1);
-      const existing = await pdfFolder.getFileHandle(name).then((handle) => handle.getFile()).catch(() => null);
-      if (existing?.size !== file.size) await writeFile(pdfFolder, name, file);
+    // Boards first, then PDFs, so backup.json never lists a file that isn't there yet. Only boards
+    // that changed since the last backup (or whose file is gone) are written.
+    const boardFolder = await target.getDirectoryHandle(BOARD_FOLDER, { create: true });
+    const present = new Set<string>();
+    for await (const name of boardFolder.keys()) present.add(name);
+    let dayFolder: FileSystemDirectoryHandle | undefined;
+    const stamps: Record<string, string> = {};
+    for (const session of sessions) {
+      const name = fileName(boardPath(session.id));
+      const stamp = boardStamp(session);
+      stamps[session.id] = stamp;
+      if (saved.boards?.[session.id] === stamp && present.has(name)) continue;
+      const file = await boardFile(session);
+      await writeFile(boardFolder, name, file);
+      dayFolder ??= await (await target.getDirectoryHandle(HISTORY_FOLDER, { create: true })).getDirectoryHandle(day, { create: true });
+      await writeFile(dayFolder, name, file);
     }
+    // A board deleted here leaves the backup too (its earlier days stay in history/).
+    const kept = new Set(sessions.map((session) => fileName(boardPath(session.id))));
+    for (const name of present) if (!kept.has(name)) await boardFolder.removeEntry(name).catch(() => undefined);
+
+    // PDFs never change, so only new ones are written.
+    const pdfFolder = await target.getDirectoryHandle(PDF_FOLDER, { create: true });
+    for (const document of shelf) {
+      const name = `${document.id}.pdf`;
+      const existing = await pdfFolder.getFileHandle(name).then((handle) => handle.getFile()).catch(() => null);
+      if (existing?.size !== document.file.size) await writeFile(pdfFolder, name, document.file);
+    }
+    const manifest = await backupIndex(sessions, shelf, profile, ink, now);
+    const json = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
     await writeFile(target, MANIFEST_NAME, json);
-    const day = new Date(manifest.createdAt);
-    await writeFile(target, `backup-${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}.json`, json);
+    await writeFile(target, `backup-${day}.json`, json);
     const copies: string[] = [];
     for await (const name of target.keys()) if (DAILY_COPY.test(name)) copies.push(name);
     for (const old of copies.sort().reverse().slice(DAILY_COPIES)) await target.removeEntry(old).catch(() => undefined);
+    const history = await target.getDirectoryHandle(HISTORY_FOLDER, { create: true });
+    const days: string[] = [];
+    for await (const name of history.keys()) if (HISTORY_DAY.test(name)) days.push(name);
+    for (const old of days.sort().reverse().slice(DAILY_COPIES)) await history.removeEntry(old, { recursive: true }).catch(() => undefined);
 
-    await saveState({ lastBackupAt: manifest.createdAt, fingerprint });
+    await saveState({ lastBackupAt: manifest.createdAt, fingerprint, boards: stamps });
     update({ state: 'ok', error: null, lastBackupAt: manifest.createdAt });
   } catch (error) {
     // Permission was taken back (or expired): wait for the student to allow it again.
@@ -149,6 +187,8 @@ export async function chooseBackupFolder(): Promise<boolean> {
   try { picked = await window.showDirectoryPicker({ id: 'math-tutor-backup', mode: 'readwrite', startIn: 'documents' }); } catch { return false; }
   folder = picked;
   await setSetting(FOLDER_KEY, picked);
+  // A new folder gets every board, even one that holds an older backup's files.
+  await saveState({ boards: {} });
   update({ folderName: picked.name, state: 'ok', error: null });
   await backUpNow(true);
   return true;
@@ -168,7 +208,7 @@ export async function stopBackup() {
   clearTimeout(timer);
   folder = null;
   await setSetting(FOLDER_KEY, undefined);
-  await saveState({ fingerprint: null });
+  await saveState({ fingerprint: null, boards: {} });
   update({ folderName: null, state: 'off', error: null });
 }
 
