@@ -106,6 +106,7 @@ src/
 │   ├── tutorRequestGate.ts    # Server-side five-second / one-at-a-time tutor request gate
 │   ├── geminiFallback.ts      # Gemini Flash quota fallback chain
 │   ├── tutorContent.ts        # Splits tutor replies into text and LaTeX for KaTeX rendering
+│   ├── tutorAsk.ts            # Ask tutor's choices (Hint, Check my work, Feedback, Ask…; notes: Explain this, Check my notes) and the question each sends
 │   └── legacyStrokes.ts       # Converts pre-tldraw saved strokes into tldraw draw shapes
 └── types/
     ├── index.ts               # All shared TypeScript types
@@ -268,7 +269,7 @@ ESLint uses the Next.js core web vitals config. Run `npm run lint` before commit
 
 ### Help Request (primary user flow)
 1. User writes the problem in `ProblemStatement` (or a topic in `NoteHeader`), draws on `DrawingCanvas`.
-2. Clicks **Ask tutor** (both modes); the tutor drawer opens.
+2. Clicks **Ask tutor** (both modes) and picks what they want from its menu (`askChoices` in `src/lib/tutorAsk.ts`): **Hint**, **Check my work**, **Feedback** or **Ask…** (notes: **Explain this**, **Check my notes**, **Ask…**). Each choice sends its question (`askQuestion`) as `userQuestion`; the prompt answers what was asked, so there are no per-choice rules. **Ask…** opens the drawer with the cursor in the chat box (`focusTutorQuestion`), and a question typed there can open the conversation, always with the board. A check-in board's Ask tutor has no menu: it hands in an answer.
 3. `AppShell.handleAskForHelp()` calls `canvasHandle.current.captureImage()` → base64 PNG of the selected shapes, or of the whole drawing trimmed to its bounds.
 4. `useTutorChat.sendHelp(canvasImage, question)` POSTs to `/api/tutor` with the request body above, including `sessionType`.
 5. API selects the system prompt from `sessionType` and streams an SSE response; client appends `text_delta` events to chat in real time via `APPEND_TO_LAST_MESSAGE` dispatch.

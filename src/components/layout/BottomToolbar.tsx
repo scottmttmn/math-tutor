@@ -4,12 +4,16 @@ import { useCanvasState } from '@/context/CanvasContext';
 import { useRateLimit } from '@/hooks/useRateLimit';
 import { RATE_LIMIT_MS } from '@/lib/constants';
 import type { SessionType } from '@/types';
+import { askChoices, askQuestion } from '@/lib/tutorAsk';
 import MoreMenu from '@/components/common/MoreMenu';
 import { FullScreenIcon, SolvedCheck, TutorIcon, UnsolvedCheck } from '@/components/common/Icons';
 
 // Drawing tools, colors and undo live in tldraw's own toolbar on the canvas.
 interface Props {
-  onAskForHelp: () => void;
+  /** Asks the tutor about the board; `question` is the choice picked under Ask tutor, if any. */
+  onAskForHelp: (question?: string) => void;
+  /** Makes Ask tutor a menu (Hint, Check my work, Feedback, Ask…); Ask… calls this to open the chat box. */
+  onAskOwn?: () => void;
   onClear: () => void;
   isStreaming: boolean;
   isSolved: boolean;
@@ -27,10 +31,11 @@ interface Props {
   onWriteUp?: () => void;
 }
 
-export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp }: Props) {
+export default function BottomToolbar({ onAskForHelp, onAskOwn, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp }: Props) {
   const { hasContent } = useCanvasState();
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
   const helpDisabled = isLimited || isStreaming;
+  const askClass = 'flex items-center gap-1.5 min-h-11 px-4 text-sm font-semibold text-white bg-indigo-700 rounded-lg hover:bg-indigo-800 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed';
   const plain = 'flex items-center gap-1.5 min-h-11 px-3 text-sm text-gray-800 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40';
 
   return (
@@ -117,15 +122,31 @@ export default function BottomToolbar({ onAskForHelp, onClear, isStreaming, isSo
         </button>
       )}
 
-      <button
-        onClick={onAskForHelp}
-        disabled={helpDisabled}
-        title={isLimited ? 'Please wait a moment before asking again.' : sessionType === 'note' ? 'Ask the tutor about these notes' : 'Ask the tutor for a hint'}
-        className="flex items-center gap-1.5 min-h-11 px-4 text-sm font-semibold text-white bg-indigo-700 rounded-lg hover:bg-indigo-800 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed"
-      >
-        <TutorIcon />
-        Ask tutor
-      </button>
+      {/* Ask tutor says what is wanted: a hint, a check, feedback, or a question of your own. */}
+      {onAskOwn ? (
+        <MoreMenu
+          label="Ask tutor"
+          button={<><TutorIcon />Ask tutor</>}
+          above
+          disabled={helpDisabled}
+          title={isLimited ? 'Please wait a moment before asking again.' : 'Ask the tutor about your board'}
+          buttonClassName={askClass}
+          items={askChoices(sessionType).map((choice) => ({
+            label: choice.label,
+            onSelect: () => (choice.intent === 'own' ? onAskOwn() : onAskForHelp(askQuestion(choice.intent, sessionType))),
+          }))}
+        />
+      ) : (
+        <button
+          onClick={() => onAskForHelp()}
+          disabled={helpDisabled}
+          title={isLimited ? 'Please wait a moment before asking again.' : 'Ask the tutor about your board'}
+          className={askClass}
+        >
+          <TutorIcon />
+          Ask tutor
+        </button>
+      )}
     </div>
   );
 }

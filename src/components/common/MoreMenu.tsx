@@ -16,10 +16,13 @@ interface Props {
   button?: ReactNode;
   /** Opens upward, for a menu at the foot of the screen. */
   above?: boolean;
+  /** Replaces the button's own look (for a menu that is a screen's main action, such as Ask tutor). */
+  buttonClassName?: string;
+  title?: string;
 }
 
 /** A "⋯" button holding a card's or board's less common actions, such as Rename and Delete. */
-export default function MoreMenu({ label, items, disabled = false, button, above = false }: Props) {
+export default function MoreMenu({ label, items, disabled = false, button, above = false, buttonClassName, title }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -45,12 +48,13 @@ export default function MoreMenu({ label, items, disabled = false, button, above
         aria-label={label}
         aria-expanded={open}
         aria-haspopup="menu"
-        className={`flex items-center justify-center min-h-11 min-w-11 ${button ? 'gap-1.5 px-3 text-sm text-gray-800' : 'text-lg leading-none text-gray-700'} border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50`}
+        title={title}
+        className={buttonClassName ?? `flex items-center justify-center min-h-11 min-w-11 ${button ? 'gap-1.5 px-3 text-sm text-gray-800' : 'text-lg leading-none text-gray-700'} border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50`}
       >
         {button ?? <span aria-hidden="true">⋯</span>}
       </button>
       {open && (
-        <div role="menu" className={`absolute right-0 ${above ? 'bottom-full mb-1' : 'top-full mt-1'} w-40 py-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50`}>
+        <div role="menu" className={`absolute right-0 ${above ? 'bottom-full mb-1' : 'top-full mt-1'} w-44 py-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50`}>
           {items.map((item) => (
             <button
               key={item.label}

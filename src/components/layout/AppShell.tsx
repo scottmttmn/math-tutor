@@ -18,7 +18,7 @@ import NoteHeader from '../workspace/NoteHeader';
 import CheckInHeader from '../workspace/CheckInHeader';
 import { checkInStarted, checkInTitle } from '@/lib/checkIn';
 import DrawingCanvas, { type DrawingCanvasHandle } from '../workspace/DrawingCanvas';
-import ChatPanel from '../chat/ChatPanel';
+import ChatPanel, { focusTutorQuestion } from '../chat/ChatPanel';
 import BoardFrame from './BoardFrame';
 import WriteUpPanel from '../workspace/WriteUpPanel';
 import { KindIcon } from '@/components/common/Icons';
@@ -57,7 +57,7 @@ function AppContent() {
     void startNew(type);
   }, [startNew]);
 
-  const handleAskForHelp = useCallback(async () => {
+  const handleAskForHelp = useCallback(async (picked?: string) => {
     if (getTutorWaitMs() > 0) return;
     // Read the editor directly: the context mirror lags a just-finished stroke.
     const handle = canvasHandle.current;
@@ -67,13 +67,20 @@ function AppContent() {
     leaveFullScreen();
     setTutorOpen(true);
     // A check-in starts with the tutor's first problem; after that, Ask tutor hands in an answer.
-    const question = checkIn ? (checkInStarted(chatHistory) ? 'Here is my answer.' : 'Start the check-in.') : undefined;
+    const question = checkIn ? (checkInStarted(chatHistory) ? 'Here is my answer.' : 'Start the check-in.') : picked;
     await sendHelp(image, question);
   }, [sendHelp, leaveFullScreen, checkIn, chatHistory]);
 
-  const getFollowUpImage = useCallback(async (): Promise<string> => {
+  // Ask… under Ask tutor: the question is typed or spoken in the tutor's chat box.
+  const handleAskOwn = useCallback(() => {
+    leaveFullScreen();
+    setTutorOpen(true);
+    focusTutorQuestion();
+  }, [leaveFullScreen]);
+
+  const getFollowUpImage = useCallback(async (fresh = false): Promise<string> => {
     const handle = canvasHandle.current;
-    if (!handle || handle.getRevision() === sentRevision.current) return '';
+    if (!handle || (!fresh && handle.getRevision() === sentRevision.current)) return '';
     sentRevision.current = handle.getRevision();
     return handle.captureImage();
   }, []);
@@ -139,7 +146,9 @@ function AppContent() {
         canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} />}
         toolbar={(
           <BottomToolbar
-            onAskForHelp={handleAskForHelp}
+            onAskForHelp={(question) => void handleAskForHelp(question)}
+            // A check-in's Ask tutor hands in an answer, so it has no choices.
+            onAskOwn={checkIn ? undefined : handleAskOwn}
             onClear={() => canvasHandle.current?.clear()}
             isStreaming={isStreaming}
             isSolved={isSolved}

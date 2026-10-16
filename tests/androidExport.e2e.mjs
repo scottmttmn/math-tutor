@@ -49,6 +49,7 @@ try {
   assert.equal(new URL(page.url()).pathname, '/board');
   // There is no server in the bundle yet, so the tutor says so rather than failing oddly.
   await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  await page.getByRole('menuitem').first().click(); // Hint, or Explain this on notes
   await page.getByText("The tutor isn't connected in the tablet app yet.").waitFor();
   await page.goto(`${origin}/pen-test`);
   await page.getByTestId('pen-test-canvas').waitFor();

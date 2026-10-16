@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "npm run test:unit",
     "test:e2e": "npm run test:board:e2e && npm run test:tutor:e2e && npm run test:shelf:e2e && npm run test:reader:e2e && npm run test:backup:e2e && npm run test:memory:e2e && npm run test:checkin:e2e && npm run test:writeup:e2e && npm run test:pen:e2e",
-    "test:unit": "node --test tests/tutor.test.mjs tests/bookContext.test.mjs tests/history.test.mjs tests/tutorContent.test.mjs tests/handwritingScore.test.mjs tests/backup.test.mjs tests/learnerProfile.test.mjs tests/checkIn.test.mjs tests/texWriteUp.test.mjs tests/reader.test.mjs",
+    "test:unit": "node --test tests/tutor.test.mjs tests/bookContext.test.mjs tests/history.test.mjs tests/tutorContent.test.mjs tests/handwritingScore.test.mjs tests/backup.test.mjs tests/learnerProfile.test.mjs tests/checkIn.test.mjs tests/texWriteUp.test.mjs tests/reader.test.mjs tests/tutorAsk.test.mjs",
     "test:board:e2e": "node tests/board.e2e.mjs",
     "test:tutor:e2e": "node tests/tutorChat.e2e.mjs",
     "test:shelf:e2e": "node tests/shelf.e2e.mjs",

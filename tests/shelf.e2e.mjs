@@ -78,6 +78,7 @@ try {
 
   // Ask for help: the marked region goes to the tutor as the problem image, the board as the work.
   await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  await page.getByRole('menuitem').first().click(); // Hint, or Explain this on notes
   await page.getByText('Shelf hint.').waitFor();
   const content = requests.at(-1).messages.at(-1).content;
   assert.equal(content.filter((part) => part.type === 'image_url').length, 2, 'problem image and board');
@@ -177,6 +178,7 @@ try {
   await page.getByRole('button', { name: 'Full screen' }).click();
   await page.waitForTimeout(5000);
   await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  await page.getByRole('menuitem').first().click(); // Hint, or Explain this on notes
   await page.getByRole('button', { name: 'Full screen' }).waitFor();
   await page.getByText('Shelf hint.').last().waitFor();
   // Hiding the tools leaves the pen writing; the choice survives a reload.

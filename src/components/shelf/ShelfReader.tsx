@@ -18,7 +18,7 @@ import type { BookContext, PageRect, ShelfDocument, ShelfExercise } from '@/type
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
 import AppBar from '@/components/layout/AppBar';
-import ChatPanel from '@/components/chat/ChatPanel';
+import ChatPanel, { focusTutorQuestion } from '@/components/chat/ChatPanel';
 import MoreMenu from '@/components/common/MoreMenu';
 import { ProblemIcon, SolvedCheck } from '@/components/common/Icons';
 import BoardFrame from '@/components/layout/BoardFrame';
@@ -305,7 +305,7 @@ export default function ShelfReader() {
     return () => { active = false; };
   }, [pdf, rangeKey]);
 
-  const askForHelp = async () => {
+  const askForHelp = async (question?: string) => {
     if (getTutorWaitMs() > 0) return;
     const handle = canvasHandle.current;
     sentRevision.current = handle?.getRevision() ?? null;
@@ -313,12 +313,19 @@ export default function ShelfReader() {
     // The reply shows beside the board.
     leaveFullScreen();
     setTutorOpen(true);
-    await sendHelp(image);
+    await sendHelp(image, question);
   };
 
-  const followUpImage = useCallback(async (): Promise<string> => {
+  // Ask… under Ask tutor: the question is typed or spoken in the tutor's chat box.
+  const askOwn = () => {
+    leaveFullScreen();
+    setTutorOpen(true);
+    focusTutorQuestion();
+  };
+
+  const followUpImage = useCallback(async (fresh = false): Promise<string> => {
     const handle = canvasHandle.current;
-    if (!handle || handle.getRevision() === sentRevision.current) return '';
+    if (!handle || (!fresh && handle.getRevision() === sentRevision.current)) return '';
     sentRevision.current = handle.getRevision();
     return handle.captureImage();
   }, []);
@@ -531,7 +538,8 @@ export default function ShelfReader() {
           canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} />}
           toolbar={(
             <BottomToolbar
-              onAskForHelp={() => void askForHelp()}
+              onAskForHelp={(question) => void askForHelp(question)}
+              onAskOwn={askOwn}
               onClear={() => canvasHandle.current?.clear()}
               isStreaming={isStreaming}
               isSolved={isSolved}

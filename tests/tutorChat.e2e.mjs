@@ -20,6 +20,7 @@ try {
   await page.goto(`${origin}/board?new=note`);
   await page.locator('.tl-canvas').waitFor();
   await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  await page.getByRole('menuitem').first().click(); // Hint, or Explain this on notes
   const chat = () => page.locator('.tutor-content').last();
   await chat().locator('.katex').nth(3).waitFor();
   assert.equal(await chat().locator('.katex').count(), 4);
@@ -83,6 +84,7 @@ try {
     await wide.mouse.up();
   }
   await wide.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  await wide.getByRole('menuitem').first().click(); // Hint, or Explain this on notes
   await wide.locator('.tutor-content').last().locator('.katex').first().waitFor();
   const png = Buffer.from(wideRequests.at(-1).canvasImage, 'base64');
   const [width, height] = [png.readUInt32BE(16), png.readUInt32BE(20)];

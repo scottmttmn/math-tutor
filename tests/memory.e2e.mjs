@@ -50,6 +50,7 @@ async function waitForProfile(check, timeout = 10_000) {
 async function ask() {
   const before = requests.length;
   await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  await page.getByRole('menuitem').first().click(); // Hint, or Explain this on notes
   // The board's earlier reply shows as soon as the drawer opens, so wait for the request itself.
   for (const deadline = Date.now() + 15_000; requests.length === before && Date.now() < deadline;) await page.waitForTimeout(100);
   assert.equal(requests.length, before + 1);

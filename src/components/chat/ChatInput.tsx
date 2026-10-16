@@ -9,20 +9,23 @@ import ChatTextarea from '@/components/chat/ChatTextarea';
 
 interface ChatInputProps {
   /** Returns a snapshot to attach to the follow-up, or '' when the tutor has already seen the drawing. */
-  getCanvasImage?: () => Promise<string>;
+  getCanvasImage?: (fresh?: boolean) => Promise<string>;
   /** The Shelf pages the tutor reads with the follow-up, if any. */
   getBookContext?: () => Promise<BookContext | null>;
+  /** The chat box's id (see focusTutorQuestion). */
+  id?: string;
 }
 
-export default function ChatInput({ getCanvasImage, getBookContext }: ChatInputProps) {
+export default function ChatInput({ id, getCanvasImage, getBookContext }: ChatInputProps) {
   const [text, setText] = useState('');
   const { chatHistory, isStreaming } = useSessionState();
   const { sendFollowUp, isLimited } = useTutorChat(getBookContext);
   const { isListening, isSupported, error, startListening, stopListening, resetTranscript } =
     useSpeechRecognition(setText);
 
-  const canSend = text.trim().length > 0 && !isStreaming && !isLimited && chatHistory.length > 0;
-  const inputDisabled = isStreaming || chatHistory.length === 0;
+  // A question can open the conversation too (Ask… under Ask tutor); it then always takes the board.
+  const canSend = text.trim().length > 0 && !isStreaming && !isLimited;
+  const inputDisabled = isStreaming;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,7 +34,7 @@ export default function ChatInput({ getCanvasImage, getBookContext }: ChatInputP
     const msg = text;
     setText('');
     resetTranscript();
-    await sendFollowUp(msg, await getCanvasImage?.() ?? '');
+    await sendFollowUp(msg, await getCanvasImage?.(chatHistory.length === 0) ?? '');
   };
 
   const handleMicClick = () => {
@@ -47,9 +50,10 @@ export default function ChatInput({ getCanvasImage, getBookContext }: ChatInputP
     <form onSubmit={handleSubmit} className="px-3 py-2 border-t border-gray-200">
       <div className="flex items-end gap-2">
         <ChatTextarea
+          id={id}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={chatHistory.length === 0 ? 'Ask the tutor first...' : 'Type or speak a follow-up...'}
+          placeholder={chatHistory.length === 0 ? 'Type or speak a question about your board...' : 'Type or speak a follow-up...'}
           disabled={inputDisabled}
           className="flex-1 min-w-0 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent disabled:opacity-50 disabled:bg-gray-50"
         />
