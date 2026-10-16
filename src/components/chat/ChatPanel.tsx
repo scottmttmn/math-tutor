@@ -6,8 +6,17 @@ import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import type { BookContext } from '@/types';
 
+/** The chat box's id, so Ask… under Ask tutor can put the cursor in it. */
+const QUESTION_ID = 'tutor-question';
+
+/** Puts the cursor in the tutor's chat box once the drawer has opened. */
+export function focusTutorQuestion() {
+  requestAnimationFrame(() => requestAnimationFrame(() => document.getElementById(QUESTION_ID)?.focus()));
+}
+
 interface ChatPanelProps {
-  getCanvasImage?: () => Promise<string>;
+  /** A snapshot of the board for the message, or '' when the tutor has seen it; `fresh` always takes one. */
+  getCanvasImage?: (fresh?: boolean) => Promise<string>;
   getBookContext?: () => Promise<BookContext | null>;
 }
 
@@ -30,8 +39,8 @@ export default function ChatPanel({ getCanvasImage, getBookContext }: ChatPanelP
           <div className="flex items-center justify-center h-full text-center text-sm text-gray-500 px-4">
             <p>
               Write on the board, then press
-              <strong className="text-indigo-700"> Ask tutor </strong>
-              for a hint.
+              <strong className="text-indigo-700"> Ask tutor</strong>
+              , or ask a question below.
             </p>
           </div>
         ) : (
@@ -41,7 +50,7 @@ export default function ChatPanel({ getCanvasImage, getBookContext }: ChatPanelP
         )}
       </div>
 
-      <ChatInput getCanvasImage={getCanvasImage} getBookContext={getBookContext} />
+      <ChatInput id={QUESTION_ID} getCanvasImage={getCanvasImage} getBookContext={getBookContext} />
     </div>
   );
 }

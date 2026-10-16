@@ -201,6 +201,9 @@ export interface TranscribeResponse {
 /** One piece of the latest help request as the tutor route builds it: a label or question, or a PNG (base64). */
 export type UserPart = { type: 'text'; text: string } | { type: 'image'; data: string };
 
+/** What a choice under Ask tutor asks for (see askChoices in src/lib/tutorAsk.ts). */
+export type TutorIntent = 'hint' | 'explain' | 'check' | 'feedback';
+
 export interface TutorRequest {
   problemStatement: string;
   chatHistory: ChatMessage[];

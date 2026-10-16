@@ -99,6 +99,7 @@ async function askTutor(reply) {
   const before = requests.length;
   await waitForTutorReady();
   await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  await page.getByRole('menuitem').first().click(); // Hint, or Explain this on notes
   // The board export is async, so wait for the request rather than the busy flag.
   while (requests.length === before) await new Promise((resolve) => setTimeout(resolve, 50));
   await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
@@ -234,6 +235,7 @@ try {
   await waitForTutorReady();
   await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: 'data: {"type":"error","error":"Simulated provider failure"}\n\n' }), { times: 1 });
   await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  await page.getByRole('menuitem').first().click(); // Hint, or Explain this on notes
   await page.getByText('Error: Simulated provider failure', { exact: true }).waitFor();
   assert.ok(await page.evaluate(() => Number(localStorage.getItem('lastHelpTimestamp')) > 0));
   await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: 'data: {"type":"text_delta","content":"Partial reply"}\n\n' }), { times: 1 });
@@ -246,6 +248,35 @@ try {
   await page.getByText('The tutor response was interrupted. Ask again to continue.', { exact: true }).last().waitFor();
   assert.equal(await page.locator('.animate-bounce').count(), 0);
   console.log('PASS SSE failures and reload during streaming recover without a stuck typing indicator');
+
+  // Ask tutor says what is wanted: Check my work asks for a verdict; Ask… opens the chat box first.
+  await newBoard('problem');
+  await problemBox().fill('Show that the sum of two odd numbers is even.');
+  await draw();
+  await waitForTutorReady();
+  let asked = requests.length;
+  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['Hint', 'Check my work', 'Feedback', 'Ask…']);
+  await page.getByRole('menuitem', { name: 'Check my work' }).click();
+  while (requests.length === asked) await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.match(JSON.stringify(requests.at(-1).messages.at(-1)), /Is my work right\? Please check it\./);
+  await page.getByText('Problem hint.', { exact: true }).last().waitFor();
+  await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
+  await newBoard('problem');
+  await problemBox().fill('Factor x^2 - 1.');
+  await draw();
+  await waitForTutorReady();
+  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Ask…' }).click();
+  await page.waitForFunction(() => document.activeElement?.id === 'tutor-question');
+  asked = requests.length;
+  await page.getByPlaceholder('Type or speak a question about your board...').fill('Is difference of squares the right idea?');
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  while (requests.length === asked) await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.ok(imageOf(requests.at(-1)), 'a question that opens the conversation takes the board');
+  await page.getByText('Problem hint.', { exact: true }).last().waitFor();
+  await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
+  console.log('PASS Ask tutor offers Hint, Check my work, Feedback and Ask…');
 
   // A Notes board explains directly; dictated follow-ups land in the box.
   await newBoard('note');
