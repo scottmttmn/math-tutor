@@ -118,7 +118,7 @@ try {
   await problemBox().fill('Find a strategy for a quadratic.');
   await draw();
   let request = await askTutor('Problem hint.');
-  assert.match(request.messages[0].content, /NEVER give the full solution/);
+  assert.match(request.messages[0].content, /The answer is theirs to find/);
   assert.match(JSON.stringify(request.messages), /Find a strategy for a quadratic/);
   console.log('PASS a problem board gets hints with its problem and board');
 

@@ -51,7 +51,7 @@ try {
   assert.equal(requests.length, 1);
   const [system, ...rest] = requests[0].messages;
   assert.match(system.content, /Transcribe, don't solve/);
-  assert.doesNotMatch(system.content, /NEVER give the full solution|TOPIC NOTES/);
+  assert.doesNotMatch(system.content, /The answer is theirs to find|TOPIC NOTES/);
   assert.match(JSON.stringify(rest), /Write up the handwritten work on my board in LaTeX/);
   assert.match(JSON.stringify(rest), /image_url/);
   const editor = dialog().getByRole('textbox', { name: 'LaTeX' });
