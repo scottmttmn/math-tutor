@@ -53,7 +53,7 @@ try {
   assert.equal(new URL(page.url()).pathname, '/pen-test');
   // A book's page keeps its query through the redirect to book.html.
   await page.goto(`${origin}/book?doc=missing`);
-  await page.getByText('This book isn’t in your library.', { exact: false }).waitFor();
+  await page.getByText('This text isn’t in your library.', { exact: false }).waitFor();
   assert.equal(new URL(page.url()).pathname + new URL(page.url()).search, '/book?doc=missing');
   console.log('PASS reloading or opening a page directly shows that page');
 
