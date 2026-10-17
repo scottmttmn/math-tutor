@@ -133,15 +133,14 @@ export default function Home({ folderId = null }: { folderId?: string | null }) 
 
   const removeBook = async (book: ShelfDocument) => {
     await run(() => removeFromShelf(book));
-    // A book's own folder left empty goes with it.
-    if (folderId && folderId === bookFolderId(book.id)) {
-      const after = await loadLibrary().catch(() => null);
-      const summary = after && folderSummaries(after.items, after.books, after.folders).get(folderId);
-      if (summary && !summary.folders && !summary.books && !summary.problems && !summary.notes) {
-        await deleteFolder(folderId);
-        router.push(folderHref(index.parent.get(folderId)));
-      }
-    }
+    // A book's own folder left empty goes with it, wherever the book was removed from.
+    const own = bookFolderId(book.id);
+    if (book.folderId !== own) return;
+    const after = await loadLibrary().catch(() => null);
+    const summary = after && folderSummaries(after.items, after.books, after.folders).get(own);
+    if (!summary || summary.folders || summary.books || summary.problems || summary.notes) return;
+    await run(() => deleteFolder(own));
+    if (folderId === own) router.push(folderHref(index.parent.get(own)));
   };
 
   const changeKind = (book: ShelfDocument, kind: ShelfKind) => run(() => setShelfKind(book, kind));

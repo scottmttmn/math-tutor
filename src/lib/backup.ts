@@ -78,7 +78,7 @@ export async function collectBackup() {
 
 /** Changes whenever a board, Shelf entry, folder or page of ink is added, changed, renamed, moved or removed. */
 export function backupFingerprint(
-  sessions: Pick<Session, 'id' | 'updatedAt' | 'customTitle' | 'folderId'>[],
+  sessions: Pick<Session, 'id' | 'updatedAt' | 'customTitle' | 'folderId' | 'filedAt'>[],
   shelf: Pick<ShelfDocument, 'id' | 'updatedAt' | 'folderId'>[],
   profile?: Pick<LearnerProfile, 'updatedAt'>,
   ink: Pick<PageInk, 'id' | 'updatedAt'>[] = [],
@@ -94,8 +94,8 @@ export function backupFingerprint(
 }
 
 /** Changes when a board's file would: it was saved, renamed or moved. */
-export const boardStamp = (session: Pick<Session, 'updatedAt' | 'customTitle' | 'folderId'>) =>
-  `${session.updatedAt} ${session.customTitle ?? ''} ${session.folderId === undefined ? '' : session.folderId ?? '/'}`;
+export const boardStamp = (session: Pick<Session, 'updatedAt' | 'customTitle' | 'folderId' | 'filedAt'>) =>
+  `${session.updatedAt} ${session.customTitle ?? ''} ${session.folderId === undefined ? '' : session.folderId ?? '/'} ${session.filedAt ?? ''}`;
 
 export const backupFileName = (date = new Date()) =>
   `math-tutor-backup-${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}.zip`;

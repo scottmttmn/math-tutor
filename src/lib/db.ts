@@ -19,6 +19,7 @@ interface MathTutorDB extends DBSchema {
       sessionType?: SessionType;
       customTitle?: string;
       folderId?: string | null;
+      filedAt?: number;
     };
     indexes: {
       'by-updated': number;
@@ -97,10 +98,11 @@ export async function saveSession(session: MathTutorDB['sessions']['value']) {
   const tx = db.transaction('sessions', 'readwrite');
   // Names are given in History, and folders chosen by Move, not by the page that autosaves, so a
   // save without one keeps it.
-  if (session.customTitle === undefined || session.folderId === undefined) {
+  if (session.customTitle === undefined || session.folderId === undefined || session.filedAt === undefined) {
     const existing = await tx.store.get(session.id);
     if (session.customTitle === undefined && existing?.customTitle) session = { ...session, customTitle: existing.customTitle };
     if (session.folderId === undefined && existing?.folderId !== undefined) session = { ...session, folderId: existing.folderId };
+    if (session.filedAt === undefined && existing?.filedAt !== undefined) session = { ...session, filedAt: existing.filedAt };
   }
   await tx.store.put(session);
   await tx.done;
@@ -127,7 +129,8 @@ export async function moveSession(id: string, folderId: string | null | undefine
   const tx = db.transaction('sessions', 'readwrite');
   const existing = await tx.store.get(id);
   if (existing) {
-    const moved: MathTutorDB['sessions']['value'] = { ...existing, folderId };
+    // filedAt, not updatedAt: a move isn't work on the board, but a restore must still see it as newer.
+    const moved: MathTutorDB['sessions']['value'] = { ...existing, folderId, filedAt: Date.now() };
     if (folderId === undefined) delete moved.folderId;
     await tx.store.put(moved);
   }
@@ -225,7 +228,7 @@ export async function deleteFolder(id: string) {
   const sessions = tx.objectStore('sessions');
   let cursor = await sessions.openCursor();
   while (cursor) {
-    if (cursor.value.folderId === id) await cursor.update({ ...cursor.value, folderId: parent });
+    if (cursor.value.folderId === id) await cursor.update({ ...cursor.value, folderId: parent, filedAt: now });
     cursor = await cursor.continue();
   }
   await folders.delete(id);
@@ -263,6 +266,23 @@ export async function savePageInk(documentId: string, page: number, strokes: Ink
 type StoredSession = MathTutorDB['sessions']['value'];
 
 /**
+ * What a restore writes for a board this device may already have: the board from whichever copy was
+ * worked on last, and where it is filed from whichever was moved last (a move leaves updatedAt alone).
+ * Undefined when this device's copy is as new on both.
+ */
+export function restoredBoard(existing: StoredSession | undefined, incoming: StoredSession): StoredSession | undefined {
+  if (!existing) return incoming;
+  const newerWork = incoming.updatedAt > existing.updatedAt;
+  const newerFiling = (incoming.filedAt ?? 0) > (existing.filedAt ?? 0);
+  if (!newerWork && !newerFiling) return undefined;
+  const filedBy = newerFiling ? incoming : existing;
+  const record: StoredSession = { ...(newerWork ? incoming : existing), folderId: filedBy.folderId, filedAt: filedBy.filedAt };
+  if (record.folderId === undefined) delete record.folderId;
+  if (record.filedAt === undefined) delete record.filedAt;
+  return record;
+}
+
+/**
  * Writes restored records, each only where this device has none or an older one (by updatedAt).
  * A Shelf PDF without its file keeps this device's file, or is skipped when there is none.
  * Returns the ids written.
@@ -284,9 +304,9 @@ export async function restoreRecords(
     written.folders.push(folder.id);
   }
   for (const session of sessions) {
-    const existing = await tx.objectStore('sessions').get(session.id);
-    if (existing && existing.updatedAt >= session.updatedAt) { written.skipped += 1; continue; }
-    await tx.objectStore('sessions').put(session);
+    const record = restoredBoard(await tx.objectStore('sessions').get(session.id), session);
+    if (!record) { written.skipped += 1; continue; }
+    await tx.objectStore('sessions').put(record);
     written.sessions.push(session.id);
   }
   for (const document of shelf) {

@@ -106,6 +106,12 @@ test('the library lists what is in each folder; a search or filter reaches every
   // In a folder, only inside it.
   assert.deepEqual(view({ folderId: 'ch4', search: 'exercise' }).boards, ['shelf:doc1:ex3']);
   assert.deepEqual(view({ folderId: 'fall', show: 'notes' }).boards, ['board-2']);
+  // A folder was last worked on when anything inside it was, a book read in it included.
+  const reading = books.map((entry) => (entry.id === 'doc1' ? { ...entry, updatedAt: 50 } : entry));
+  const art = { id: 'art', name: 'Art', parentId: null, createdAt: 9, updatedAt: 20 };
+  const order = (list) => libraryView(items, list, [...folders, art], { folderId: null, search: '', show: 'all', sort: 'updated' }).folders.map((entry) => entry.id);
+  assert.deepEqual(order(books), ['art', 'fall']);
+  assert.deepEqual(order(reading), ['fall', 'art']);
   // A folder's counts take in everything inside it.
   assert.deepEqual(folderSummaries(items, books, folders).get('fall'), { folders: 2, books: 1, problems: 3, notes: 1, solved: 1 });
   assert.deepEqual(folderSummaries(items, books, folders).get('ch4'), { folders: 0, books: 0, problems: 1, notes: 0, solved: 0 });

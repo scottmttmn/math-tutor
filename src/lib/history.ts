@@ -126,7 +126,8 @@ export function libraryView(items: HistoryItem[], books: ShelfDocument[], folder
   // A book or folder was last worked on when it or something in it last changed.
   const lastWorked = (book: ShelfDocument) => Math.max(book.updatedAt, ...items.filter((item) => item.bookId === book.id).map((item) => item.updatedAt));
   const folderWorked = (folder: Folder) => Math.max(folder.updatedAt,
-    ...items.filter((item) => isWithin(index, itemFolder(index, item), folder.id)).map((item) => item.updatedAt));
+    ...items.filter((item) => isWithin(index, itemFolder(index, item), folder.id)).map((item) => item.updatedAt),
+    ...books.filter((book) => isWithin(index, bookLocation(index, book), folder.id)).map((book) => book.updatedAt));
   const bookSort: Record<HistorySort, (a: ShelfDocument, b: ShelfDocument) => number> = {
     updated: (a, b) => lastWorked(b) - lastWorked(a),
     created: (a, b) => b.createdAt - a.createdAt,

@@ -74,6 +74,8 @@ export interface Session {
    * Unset: where it belongs by default, a Shelf board in its book's folder, a free board at the top.
    */
   folderId?: string | null;
+  /** When Move last filed it: a move isn't work on the board (updatedAt), but a restore keeps the later filing. */
+  filedAt?: number;
 }
 
 /** A folder in the library, inside another (`parentId`) or at the top level (null). */
