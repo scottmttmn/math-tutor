@@ -119,6 +119,11 @@ try {
         id: 'tall-work', title: 'Tall work', problemStatement: 'Check these lines', problemImage: null,
         canvasStrokes, canvasImageBlob: null, chatHistory: [], createdAt: Date.now(), updatedAt: Date.now(),
       });
+      transaction.objectStore('sessions').put({
+        id: 'diagonal-work', title: 'Long diagonal', problemStatement: 'Check the long diagonal', problemImage: null,
+        canvasStrokes: [{ points: [{ x: 0, y: 0 }, { x: 3000, y: 3000 }], color: '#000000', thickness: 2, tool: 'pen' }],
+        canvasImageBlob: null, chatHistory: [], createdAt: Date.now(), updatedAt: Date.now(),
+      });
       transaction.oncomplete = resolve;
       transaction.onerror = () => reject(transaction.error);
     });
@@ -187,6 +192,18 @@ try {
   await tall.locator('.tutor-content').filter({ has: tall.locator('.katex') }).nth(2).waitFor();
   assert.ok(tallRequests.at(-1).canvasImage);
   console.log('PASS capture failures are visible, keep the question, send no incomplete request, and allow retry');
+
+  // A sparse diagonal spans 16 grid cells by bounds, but only its actual ink needs close-ups.
+  await tall.evaluate(() => localStorage.setItem('math-tutor:currentSession', 'diagonal-work'));
+  await tall.reload();
+  await tall.locator('.tl-canvas').waitFor();
+  await tall.waitForFunction(() => document.querySelector('textarea')?.value === 'Check the long diagonal' && document.querySelectorAll('.tl-shape[data-shape-type="draw"]').length === 1);
+  await tall.getByRole('button', { name: 'Ask tutor', exact: true }).and(tall.locator(':enabled')).waitFor({ timeout: 10_000 });
+  await tall.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  await tall.getByRole('menuitem').first().click();
+  await tall.locator('.tutor-content .katex').first().waitFor();
+  assert.ok(tallRequests.at(-1).canvasDetails.length > 0 && tallRequests.at(-1).canvasDetails.length <= 12);
+  console.log('PASS a long diagonal uses shape geometry to skip empty cells and reaches the tutor');
 
   assert.deepEqual(errors, []);
   console.log('PASS no browser exceptions');

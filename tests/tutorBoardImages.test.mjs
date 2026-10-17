@@ -39,3 +39,12 @@ test('work ending on a tile boundary needs no extra crop', () => {
   const work = { x: 0, y: 0, w: 12 * (2048 / 2 - 16 * 2), h: 100 };
   assert.equal(tutorDetailBounds(work, [work]).length, 12);
 });
+
+test('a long diagonal stroke skips empty cells within its bounds', () => {
+  const work = { x: 0, y: 0, w: 3000, h: 3000 };
+  const tiles = tutorDetailBounds(work, [work], (_index, cell) => cell.x <= cell.y + cell.h && cell.y <= cell.x + cell.w);
+  assert.ok(tiles.length > 0 && tiles.length <= 12, `only occupied cells: ${tiles.length}`);
+  for (let distance = 0; distance <= 3000; distance += 50) {
+    assert.ok(tiles.some((tile) => distance >= tile.x && distance <= tile.x + tile.w && distance >= tile.y && distance <= tile.y + tile.h), `covers stroke at ${distance}`);
+  }
+});

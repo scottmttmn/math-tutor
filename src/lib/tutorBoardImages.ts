@@ -7,12 +7,16 @@ export const TUTOR_MAX_DETAILS = 12;
 const TILE_SIDE = TUTOR_IMAGE_SIDE / 2 - TUTOR_IMAGE_PADDING * 2;
 
 /** Sparse tiles: a distant picture or empty space must not cost the writing its resolution. */
-export function tutorDetailBounds(overview: TutorImageBounds, work: TutorImageBounds[]): TutorImageBounds[] {
+export function tutorDetailBounds(
+  overview: TutorImageBounds,
+  work: TutorImageBounds[],
+  intersects: (workIndex: number, cell: TutorImageBounds) => boolean = () => true,
+): TutorImageBounds[] {
   if (Math.max(overview.w, overview.h) + TUTOR_IMAGE_PADDING * 2 <= TUTOR_IMAGE_SIDE / 2 || work.length === 0) return [];
   const x = Math.min(...work.map((box) => box.x));
   const y = Math.min(...work.map((box) => box.y));
   const tiles = new Map<string, TutorImageBounds>();
-  for (const box of work) {
+  for (const [index, box] of work.entries()) {
     const firstCol = Math.floor((box.x - x) / TILE_SIDE);
     const lastCol = Math.max(firstCol, Math.ceil((box.x + box.w - x) / TILE_SIDE) - 1);
     const firstRow = Math.floor((box.y - y) / TILE_SIDE);
@@ -21,6 +25,7 @@ export function tutorDetailBounds(overview: TutorImageBounds, work: TutorImageBo
       for (let col = firstCol; col <= lastCol; col += 1) {
         const key = `${row}:${col}`;
         const cellX = x + col * TILE_SIDE, cellY = y + row * TILE_SIDE;
+        if (!intersects(index, { x: cellX - TUTOR_IMAGE_PADDING, y: cellY - TUTOR_IMAGE_PADDING, w: TILE_SIDE + TUTOR_IMAGE_PADDING * 2, h: TILE_SIDE + TUTOR_IMAGE_PADDING * 2 })) continue;
         const previous = tiles.get(key);
         const left = Math.min(previous?.x ?? Infinity, Math.max(cellX, box.x));
         const top = Math.min(previous?.y ?? Infinity, Math.max(cellY, box.y));

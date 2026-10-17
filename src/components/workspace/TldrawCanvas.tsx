@@ -235,9 +235,12 @@ export default function TldrawCanvas({ handleRef, toolsHidden, paper }: { handle
         const shape = editor.getShape(id);
         if (!shape || shape.meta[PROBLEM_META] || shape.type === 'group') return [];
         const box = editor.getShapePageBounds(shape);
-        return box ? [box] : [];
+        return box ? [{ bounds: box, geometry: editor.getShapeGeometry(shape), toLocal: editor.getShapePageTransform(shape).clone().invert() }] : [];
       });
-      const tiles = tutorDetailBounds(bounds, work);
+      const tiles = tutorDetailBounds(bounds, work.map((shape) => shape.bounds), (index, cell) => {
+        const { geometry, toLocal } = work[index];
+        return geometry.overlapsPolygon(toLocal.applyToPoints(new Box(cell.x, cell.y, cell.w, cell.h).corners));
+      });
       try {
         const { url } = await editor.toImageDataUrl(ids, {
           format: 'png', background: true, padding: IMAGE_PADDING, pixelRatio: imagePixelRatio(editor, ids),
