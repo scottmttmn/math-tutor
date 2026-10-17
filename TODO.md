@@ -12,6 +12,8 @@ Done: the handwriting test, autosave on the main page, the 5-second request limi
 
 ### 1. Handwriting test set
 
+- Done (2026-10-17): tutor board images keep a capped overview plus readable close-ups of large boards, skip empty gaps, and accompany every follow-up even without new ink. Problem pictures remain behind annotations; capture failures are visible and keep typed drafts.
+
 - Pages of real handwriting (written on a Wacom in the app) with a LaTeX answer key, in `tests/handwriting/`. Done (2026-10-09): Claude Sonnet 5.5, Claude Opus 5.5 and ChatGPT-plan Sol 6.1 each read 99%; their misreads are lookalikes (O/θ, q/9, S/5) and the odd dropped sign or row. Luna (91%) invented a whole page of work, so it isn't used for reading handwriting. Gemini 3.8 Flash's free tier was rate limited before it could finish.
 - A script (`npm run handwriting`) sends each page to every configured model and scores the transcription against the key, so we know which models read handwritten math well enough before building on recognition.
 

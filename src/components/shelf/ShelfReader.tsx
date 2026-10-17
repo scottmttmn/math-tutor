@@ -123,7 +123,6 @@ export default function ShelfReader() {
   const book = useRef<{ pdf: PDFDocumentProxy; document: ShelfDocument; range: ReadingRange } | null>(null);
 
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
-  const sentRevision = useRef<number | null>(null);
   const { isStreaming, isSolved, currentSessionId, problemImage, paper: chosenPaper, problems } = useSessionState();
   const sessionDispatch = useSessionDispatch();
   // An exercise opened on an empty board is put on it, once it has loaded (so the tutor also reads
@@ -465,13 +464,16 @@ export default function ShelfReader() {
 
   const askForHelp = async (question?: string) => {
     if (getTutorWaitMs() > 0) return;
-    const handle = canvasHandle.current;
-    sentRevision.current = handle?.getRevision() ?? null;
-    const image = await handle?.captureImage() ?? '';
     // The reply shows beside the board.
     leaveFullScreen();
     setTutorOpen(true);
-    await sendHelp(image, question);
+    setError('');
+    try {
+      if (!canvasHandle.current) throw new Error('The board is still loading. Please try again.');
+      await sendHelp(await canvasHandle.current.captureForTutor(), question);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'The board image could not be captured. Please try again.');
+    }
   };
 
   // Ask… under Ask tutor: the question is typed or spoken in the tutor's chat box.
@@ -481,11 +483,9 @@ export default function ShelfReader() {
     focusTutorQuestion();
   };
 
-  const followUpImage = useCallback(async (fresh = false): Promise<string> => {
-    const handle = canvasHandle.current;
-    if (!handle || (!fresh && handle.getRevision() === sentRevision.current)) return '';
-    sentRevision.current = handle.getRevision();
-    return handle.captureImage();
+  const getBoardImages = useCallback(async () => {
+    if (!canvasHandle.current) throw new Error('The board is still loading. Please try again.');
+    return canvasHandle.current.captureForTutor();
   }, []);
 
   if (loadError) {
@@ -835,7 +835,7 @@ export default function ShelfReader() {
               favorite={<FavoriteButton favorite={favorite.favorite} failed={favorite.failed} onStar={(reason) => void favorite.star(reason)} onUnstar={() => void favorite.unstar()} />}
             />
           )}
-          tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel getCanvasImage={followUpImage} getBookContext={getBookContext} /> }}
+          tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel getBoardImages={getBoardImages} getBookContext={getBookContext} /> }}
         />
       ) : readingFullScreen ? (
         // Reading full screen: the page, with its bars until a tap in the middle hides them.

@@ -9,7 +9,7 @@ import { RATE_LIMIT_MS, TUTOR_UNAVAILABLE } from '@/lib/constants';
 import { loadProfile, updateProfile } from '@/lib/db';
 import { requestTutor } from '@/lib/tutorRequest';
 import { emptyProfile, noteTopic, profileForTutor, splitTutorNotes, writeNotebook, type TopicObservation } from '@/lib/learnerProfile';
-import type { BookContext, ChatMessage, TutorStreamEvent } from '@/types';
+import type { BookContext, ChatMessage, TutorBoardImages, TutorStreamEvent } from '@/types';
 
 /** Writes the tutor's topic notes and notebook into the tutor memory, unless the student turned sharing off meanwhile. */
 async function keepNotes(notes: TopicObservation[], notebook: string | null) {
@@ -33,7 +33,7 @@ export function useTutorChat(getBookContext?: () => Promise<BookContext | null>)
 
   useEffect(() => () => { pendingRequest.current?.abort(); }, []);
 
-  const sendHelp = useCallback(async (canvasImage: string, question?: string): Promise<boolean> => {
+  const sendHelp = useCallback(async ({ canvasImage, canvasDetails }: TutorBoardImages, question?: string): Promise<boolean> => {
     if (isStreaming || pendingRequest.current || !tryStartTutorRequest()) return false;
     const abort = new AbortController();
     pendingRequest.current = abort;
@@ -65,7 +65,7 @@ export function useTutorChat(getBookContext?: () => Promise<BookContext | null>)
       const takeNotes = profile?.shareWithTutor === true;
       const response = await requestTutor({
         problemStatement, chatHistory: chatHistory.filter((message) => message.content.trim()),
-        canvasImage, modelConfig: getModelConfig(), userQuestion: userContent,
+        canvasImage, canvasDetails, modelConfig: getModelConfig(), userQuestion: userContent,
         problemImage: problemImage ?? undefined, sessionType, bookContext, learnerProfile, takeNotes,
         checkIn: checkIn ?? undefined,
         otherProblems: problems && problems.length > 1 ? problems.filter((problem) => problem.id !== currentProblem).map((problem) => problem.label) : undefined,
@@ -123,9 +123,9 @@ export function useTutorChat(getBookContext?: () => Promise<BookContext | null>)
     }
   }, [problemStatement, problemImage, chatHistory, isStreaming, sessionType, checkIn, problems, currentProblem, getBookContext, dispatch]);
 
-  const sendFollowUp = useCallback(async (text: string, canvasImage = ''): Promise<boolean> => {
+  const sendFollowUp = useCallback(async (text: string, images: TutorBoardImages = { canvasImage: '' }): Promise<boolean> => {
     if (!text.trim()) return false;
-    return sendHelp(canvasImage, text.trim());
+    return sendHelp(images, text.trim());
   }, [sendHelp]);
 
   return { sendHelp, sendFollowUp, isStreaming, isLimited };

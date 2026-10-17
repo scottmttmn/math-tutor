@@ -1,40 +1,54 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useSessionState } from '@/context/SessionContext';
 import { useTutorChat } from '@/hooks/useTutorChat';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
-import type { BookContext } from '@/types';
+import type { BookContext, TutorBoardImages } from '@/types';
 import ChatTextarea from '@/components/chat/ChatTextarea';
 
 interface ChatInputProps {
-  /** Returns a snapshot to attach to the follow-up, or '' when the tutor has already seen the drawing. */
-  getCanvasImage?: (fresh?: boolean) => Promise<string>;
+  /** Current board images for every question, including a follow-up without new ink. */
+  getBoardImages?: () => Promise<TutorBoardImages>;
   /** The Shelf pages the tutor reads with the follow-up, if any. */
   getBookContext?: () => Promise<BookContext | null>;
   /** The chat box's id (see focusTutorQuestion). */
   id?: string;
 }
 
-export default function ChatInput({ id, getCanvasImage, getBookContext }: ChatInputProps) {
+export default function ChatInput({ id, getBoardImages, getBookContext }: ChatInputProps) {
   const [text, setText] = useState('');
+  const [sendError, setSendError] = useState('');
+  const [capturing, setCapturing] = useState(false);
+  const submitting = useRef(false);
   const { chatHistory, isStreaming } = useSessionState();
   const { sendFollowUp, isLimited } = useTutorChat(getBookContext);
   const { isListening, isSupported, error, startListening, stopListening, resetTranscript } =
     useSpeechRecognition(setText);
 
   // A question can open the conversation too (Ask… under Ask tutor); it then always takes the board.
-  const canSend = text.trim().length > 0 && !isStreaming && !isLimited;
-  const inputDisabled = isStreaming;
+  const canSend = text.trim().length > 0 && !isStreaming && !isLimited && !capturing;
+  const inputDisabled = isStreaming || capturing;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSend) return;
+    if (!canSend || submitting.current) return;
+    submitting.current = true;
     if (isListening) stopListening();
     const msg = text;
-    setText('');
-    resetTranscript();
-    await sendFollowUp(msg, await getCanvasImage?.(chatHistory.length === 0) ?? '');
+    setSendError('');
+    setCapturing(true);
+    try {
+      const images = await getBoardImages?.() ?? { canvasImage: '' };
+      setText('');
+      resetTranscript();
+      await sendFollowUp(msg, images);
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : 'The board image could not be captured. Please try again.');
+    } finally {
+      setCapturing(false);
+      submitting.current = false;
+    }
   };
 
   const handleMicClick = () => {
@@ -86,6 +100,7 @@ export default function ChatInput({ id, getCanvasImage, getBookContext }: ChatIn
       {error && (
         <p className="mt-1 text-xs text-red-700">{error}</p>
       )}
+      {sendError && <p role="alert" className="mt-1 text-xs text-red-700">{sendError}</p>}
     </form>
   );
 }

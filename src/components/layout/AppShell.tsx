@@ -11,7 +11,7 @@ import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
 import { useToolsHidden } from '@/hooks/useToolsHidden';
 import { useWriteUp } from '@/hooks/useWriteUp';
 
-import type { SessionType } from '@/types';
+import type { SessionType, TutorBoardImages } from '@/types';
 import TopBar from './TopBar';
 import BottomToolbar from './BottomToolbar';
 import FavoriteButton from './FavoriteButton';
@@ -29,8 +29,7 @@ import { saveBoardAs } from '@/lib/exportBoard';
 
 function AppContent() {
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
-  // The board revision the tutor last saw, so follow-ups only attach a snapshot when it changed.
-  const sentRevision = useRef<number | null>(null);
+  const [captureError, setCaptureError] = useState('');
   const [tutorOpen, setTutorOpen] = useState(false);
   const [writeUpOpen, setWriteUpOpen] = useState(false);
   const { fullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
@@ -52,6 +51,7 @@ function AppContent() {
   // A new board opens with its tutor closed, so the problem or topic is in view.
   const { cancel: cancelWriteUp } = writeUp;
   const handleNew = useCallback((type: SessionType = 'problem') => {
+    setCaptureError('');
     setTutorOpen(false);
     setWriteUpOpen(false);
     cancelWriteUp();
@@ -71,15 +71,18 @@ function AppContent() {
   const handleAskForHelp = useCallback(async (picked?: string) => {
     if (getTutorWaitMs() > 0) return;
     // Read the editor directly: the context mirror lags a just-finished stroke.
-    const handle = canvasHandle.current;
-    sentRevision.current = handle?.getRevision() ?? null;
-    const image = await handle?.captureImage() ?? '';
     // The reply shows in the chat beside the board.
     leaveFullScreen();
     setTutorOpen(true);
     // A check-in starts with the tutor's first problem; after that, Ask tutor hands in an answer.
     const question = checkIn ? (checkInStarted(chatHistory) ? 'Here is my answer.' : 'Start the check-in.') : picked;
-    await sendHelp(image, question);
+    setCaptureError('');
+    try {
+      if (!canvasHandle.current) throw new Error('The board is still loading. Please try again.');
+      await sendHelp(await canvasHandle.current.captureForTutor(), question);
+    } catch (error) {
+      setCaptureError(error instanceof Error ? error.message : 'The board image could not be captured. Please try again.');
+    }
   }, [sendHelp, leaveFullScreen, checkIn, chatHistory]);
 
   // Ask… under Ask tutor: the question is typed or spoken in the tutor's chat box.
@@ -89,11 +92,9 @@ function AppContent() {
     focusTutorQuestion();
   }, [leaveFullScreen]);
 
-  const getFollowUpImage = useCallback(async (fresh = false): Promise<string> => {
-    const handle = canvasHandle.current;
-    if (!handle || (!fresh && handle.getRevision() === sentRevision.current)) return '';
-    sentRevision.current = handle.getRevision();
-    return handle.captureImage();
+  const getBoardImages = useCallback(async (): Promise<TutorBoardImages> => {
+    if (!canvasHandle.current) throw new Error('The board is still loading. Please try again.');
+    return canvasHandle.current.captureForTutor();
   }, []);
 
   const handleSetProblemImage = useCallback(async () => {
@@ -132,6 +133,8 @@ function AppContent() {
         onSave={saveNow}
         isStreaming={isStreaming}
       />}
+
+      {captureError && <p role="alert" className="px-4 py-2 text-sm text-red-700 bg-red-50">{captureError}</p>}
 
       <BoardFrame
         fullScreen={fullScreen}
@@ -177,7 +180,7 @@ function AppContent() {
             )}
           />
         )}
-        tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel getCanvasImage={getFollowUpImage} /> }}
+        tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel getBoardImages={getBoardImages} /> }}
       />
 
       {writeUpOpen && (

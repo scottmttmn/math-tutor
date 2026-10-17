@@ -229,11 +229,16 @@ try {
   assert.ok(Number(rejected.retryAfter) > 0);
   assert.equal(requests.length, beforeBurst);
   request = await ask('Does this approach make sense?', 'Problem hint.');
-  assert.equal(imageOf(request), undefined);
+  assert.ok(imageOf(request)?.startsWith('data:image/png;base64,'), 'unchanged follow-up still carries the selected work');
+  // Selecting more work changes no document records, but the next image must reflect it.
+  await page.locator('[data-testid="tools.select"]').first().click();
+  await page.keyboard.press('ControlOrMeta+a');
+  request = await ask('Check everything selected now.', 'Problem hint.');
+  assert.notEqual(imageOf(request), image, 'a changed selection changes the capture without new ink');
   await draw(120);
   request = await ask('What about now?', 'Problem hint.');
   assert.ok(imageOf(request)?.startsWith('data:image/png;base64,'));
-  console.log('PASS selected shapes reach the provider trimmed; follow-ups attach the board only after it changes; five-second limit rejects bursts');
+  console.log('PASS selected shapes reach the provider trimmed; every follow-up attaches the board; five-second limit rejects bursts');
 
   // Full screen hides the bar, problem and tutor; the board keeps its strokes.
   await page.getByRole('button', { name: 'Full screen' }).click();

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
@@ -90,6 +91,102 @@ try {
   const [width, height] = [png.readUInt32BE(16), png.readUInt32BE(20)];
   assert.ok(Math.max(width, height) <= 2048 && width > 1000, `snapshot ${width}x${height}`);
   console.log(`PASS zoomed-out board snapshot is ${width}x${height}`);
+
+  // Widely separated lines used to become a ~29px-wide strip, even with no problem picture.
+  // Load legacy strokes to give the regression a deterministic 6000-unit board on every viewport.
+  const tall = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+  tall.on('pageerror', (error) => errors.push(error.message));
+  const tallRequests = [];
+  await tall.route('**/api/tutor', (route) => {
+    tallRequests.push(route.request().postDataJSON());
+    return route.fulfill({ contentType: 'text/event-stream', body: frames });
+  });
+  await tall.goto(`${origin}/board`);
+  await tall.locator('.tl-canvas').waitFor();
+  await tall.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('math-tutor');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const canvasStrokes = [0, 6000].flatMap((y) => [0, 30, 60].map((dy) => ({
+      points: [{ x: 100, y: y + dy + 100 }, { x: 112, y: y + dy + 120 }, { x: 135, y: y + dy + 100 }, { x: 155, y: y + dy + 120 }],
+      color: '#000000', thickness: 2, tool: 'pen',
+    })));
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction('sessions', 'readwrite');
+      transaction.objectStore('sessions').put({
+        id: 'tall-work', title: 'Tall work', problemStatement: 'Check these lines', problemImage: null,
+        canvasStrokes, canvasImageBlob: null, chatHistory: [], createdAt: Date.now(), updatedAt: Date.now(),
+      });
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+    });
+    db.close();
+    localStorage.setItem('math-tutor:currentSession', 'tall-work');
+  });
+  await tall.reload();
+  await tall.locator('.tl-canvas').waitFor();
+  await tall.getByPlaceholder("Type the math problem you're working on...").fill('Check these lines');
+  await tall.waitForFunction(() => document.querySelectorAll('.tl-shape[data-shape-type="draw"]').length === 6);
+  await tall.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  await tall.getByRole('menuitem').first().click();
+  await tall.locator('.tutor-content .katex').first().waitFor();
+  const first = tallRequests.at(-1);
+  assert.ok(first.canvasImage);
+  assert.equal(first.canvasDetails.length, 2, 'tile the ink, skipping the empty gap');
+  const inkWidth = async (data) => tall.evaluate(async (data) => {
+    const image = new Image(); image.src = `data:image/png;base64,${data}`; await image.decode();
+    const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+    const ctx = canvas.getContext('2d'); ctx.drawImage(image, 0, 0);
+    const { data: pixels } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let left = canvas.width, right = -1;
+    for (let y = 0; y < canvas.height; y += 1) for (let x = 0; x < canvas.width; x += 1) {
+      if (pixels[(y * canvas.width + x) * 4] < 120) { left = Math.min(left, x); right = Math.max(right, x); }
+    }
+    return { ink: right - left + 1, width: canvas.width, height: canvas.height };
+  }, data);
+  const overview = await inkWidth(first.canvasImage);
+  assert.ok(overview.ink < 30, `reproduces tiny overview ink: ${overview.ink}px`);
+  for (const detail of first.canvasDetails) {
+    const size = await inkWidth(detail);
+    assert.ok(size.ink > 100 && Math.max(size.width, size.height) <= 2048, JSON.stringify(size));
+  }
+  await writeFile(join(tmpdir(), 'tutor-board-close-up.png'), Buffer.from(first.canvasDetails[0], 'base64'));
+  const follow = tall.getByPlaceholder('Type or speak a follow-up...');
+  await follow.fill('What about the same work?');
+  await tall.getByRole('button', { name: 'Send', exact: true }).and(tall.locator(':enabled')).waitFor({ timeout: 10_000 });
+  await follow.press('Enter');
+  await tall.locator('.tutor-content').filter({ has: tall.locator('.katex') }).nth(1).waitFor();
+  assert.equal(tallRequests.at(-1).canvasImage, first.canvasImage);
+  assert.deepEqual(tallRequests.at(-1).canvasDetails, first.canvasDetails, 'unchanged follow-up resends all readable work');
+  console.log('PASS tall board has readable close-ups, empty space is skipped, and unchanged follow-ups resend the images');
+
+  // A failed export must be visible, preserve a typed question, and never reach the provider.
+  await tall.evaluate(() => {
+    window.originalToBlob = HTMLCanvasElement.prototype.toBlob;
+    window.captureFailures = 0;
+    HTMLCanvasElement.prototype.toBlob = () => { window.captureFailures += 1; throw new Error('Simulated capture failure'); };
+  });
+  const beforeFailure = tallRequests.length;
+  await tall.getByRole('button', { name: 'Ask tutor', exact: true }).and(tall.locator(':enabled')).waitFor({ timeout: 10_000 });
+  await tall.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  await tall.getByRole('menuitem').first().click();
+  await tall.getByRole('alert').filter({ hasText: 'could not be captured' }).waitFor({ timeout: 10_000 }).catch(async (error) => {
+    throw new Error(`${error.message}; requests=${tallRequests.length}; failures=${await tall.evaluate(() => window.captureFailures)}; alerts=${await tall.getByRole('alert').allTextContents()}; browserErrors=${errors}`);
+  });
+  assert.equal(tallRequests.length, beforeFailure);
+  await follow.fill('Keep this question if capture fails.');
+  await follow.press('Enter');
+  await tall.locator('form').getByRole('alert').filter({ hasText: 'could not be captured' }).waitFor();
+  assert.equal(await follow.inputValue(), 'Keep this question if capture fails.');
+  assert.equal(tallRequests.length, beforeFailure);
+  await tall.evaluate(() => { HTMLCanvasElement.prototype.toBlob = window.originalToBlob; });
+  await tall.getByRole('button', { name: 'Send', exact: true }).and(tall.locator(':enabled')).waitFor();
+  await follow.press('Enter');
+  await tall.locator('.tutor-content').filter({ has: tall.locator('.katex') }).nth(2).waitFor();
+  assert.ok(tallRequests.at(-1).canvasImage);
+  console.log('PASS capture failures are visible, keep the question, send no incomplete request, and allow retry');
 
   assert.deepEqual(errors, []);
   console.log('PASS no browser exceptions');
