@@ -29,8 +29,10 @@ const canvasRatio = async () => {
 };
 // Taps a point on the page, as fractions of its shown part.
 const tapPage = async (x, y) => {
-  const box = await page.getByTestId('page-overlay').boundingBox();
-  await page.mouse.click(box.x + box.width * x, box.y + box.height * y);
+  const overlay = page.getByTestId('page-overlay');
+  const box = await overlay.boundingBox();
+  // Locator clicks wait for the page to settle after full-screen and bar layout changes.
+  await overlay.click({ position: { x: box.width * x, y: box.height * y } });
 };
 
 try {
@@ -190,7 +192,10 @@ try {
 
   // Your list: what was made in the book, by section; a highlight across a line of print quotes it.
   // The rows of print on the page, as fractions of its height (from the rendered page's dark pixels).
-  const printRows = await page.getByLabel(/^Page \d+$/).evaluate((canvas) => {
+  // The page label and saved ink can update before PDF.js finishes painting the new canvas.
+  const printed = await page.waitForFunction(() => {
+    const canvas = document.querySelector('canvas[aria-label^="Page "]');
+    if (!canvas) return false;
     const { width, height } = canvas;
     const data = canvas.getContext('2d').getImageData(0, 0, width, height).data;
     const rows = [];
@@ -201,8 +206,10 @@ try {
       if (dark && from < 0) from = y;
       if (!dark && from >= 0) { rows.push((from + y) / 2 / height); from = -1; }
     }
-    return rows;
+    return rows.length >= 3 ? rows : false;
   });
+  const printRows = await printed.jsonValue();
+  await printed.dispose();
   assert.ok(printRows.length >= 3, `found the lines of print (${printRows})`);
   await page.getByRole('button', { name: 'Highlight', exact: true }).click();
   await stroke([0.02, printRows[1]], [0.3, printRows[1]]);
