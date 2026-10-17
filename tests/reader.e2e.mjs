@@ -124,10 +124,14 @@ try {
   await page.getByRole('button', { name: 'Full screen' }).click();
   await page.getByRole('link', { name: 'Home' }).waitFor({ state: 'hidden' });
   await page.getByRole('tab', { name: 'Contents' }).waitFor({ state: 'hidden' });
+  // Entering full screen remounts the PDF, which first has its canvas's default size.
+  await page.waitForFunction(() => document.fullscreenElement && document.querySelector('[data-testid="page-overlay"]')?.getBoundingClientRect().width > innerWidth * 0.8);
   await tapPage(0.5, 0.4);
   await page.getByRole('button', { name: 'Exit full screen' }).waitFor({ state: 'hidden' });
   await tapPage(0.9, 0.4);
+  await page.getByLabel('Page 5', { exact: true }).waitFor();
   await page.keyboard.press('ArrowLeft');
+  await page.getByLabel('Page 4', { exact: true }).waitFor();
   await tapPage(0.5, 0.4);
   await at('p. 2 (4 of 5)');
   // The book's lists open as a panel over the page; choosing a section closes it.
