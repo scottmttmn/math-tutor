@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSessionState } from '@/context/SessionContext';
 import { useTutorChat } from '@/hooks/useTutorChat';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
@@ -11,6 +11,7 @@ import { askChoices, askQuestion } from '@/lib/tutorAsk';
 import type { TutorIntent } from '@/types';
 
 interface ChatInputProps {
+  visible?: boolean;
   /** Current board images for every question, including a follow-up without new ink. */
   getBoardImages?: () => Promise<TutorBoardImages>;
   /** The Shelf pages the tutor reads with the follow-up, if any. */
@@ -20,7 +21,7 @@ interface ChatInputProps {
   onAskForHelp?: (question: string) => Promise<void>;
 }
 
-export default function ChatInput({ id, getBoardImages, getBookContext, onAskForHelp }: ChatInputProps) {
+export default function ChatInput({ visible = true, id, getBoardImages, getBookContext, onAskForHelp }: ChatInputProps) {
   const [text, setText] = useState('');
   const [sendError, setSendError] = useState('');
   const [capturing, setCapturing] = useState(false);
@@ -29,6 +30,10 @@ export default function ChatInput({ id, getBoardImages, getBookContext, onAskFor
   const { sendFollowUp, isLimited } = useTutorChat(getBookContext);
   const { isListening, isSupported, error, startListening, stopListening, resetTranscript } =
     useSpeechRecognition(setText);
+
+  useEffect(() => {
+    if (!visible) stopListening();
+  }, [visible, stopListening]);
 
   // A custom question can open the conversation too; it always takes the board.
   const canSend = text.trim().length > 0 && !isStreaming && !isLimited && !capturing;

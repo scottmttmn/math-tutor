@@ -345,7 +345,7 @@ ESLint uses the Next.js core web vitals config. Run `npm run lint` before commit
 
 ### Board frame
 - Every board (free board, Shelf exercise) renders `BoardFrame`: the **source** it works from (typed problem or topic, PDF page with its page toolbar; `wide` for the page), then the board with a header (title, actions, a **Hide/Show {source}** toggle) and the `BottomToolbar`, then the **tutor**.
-- The tutor is a drawer, closed until asked: the single **Ask tutor** button opens/closes it without sending, and **Close** in its header shuts it. While open, Ask tutor has indigo-50 fill, a 2px indigo-700 border and `aria-pressed`. A new or switched board opens with it closed. The hidden drawer stays mounted so drafts and active replies survive toggling; `SessionContext.conversationKey` resets transient chat input on New/Load, without resetting it on the first autosave.
+- The tutor is a drawer, closed until asked: the single **Ask tutor** button opens/closes it without sending, and **Close** in its header shuts it. While open, Ask tutor has indigo-50 fill, a 2px indigo-700 border and `aria-pressed`. A new or switched board opens with it closed. The hidden drawer stays mounted so drafts and active replies survive toggling; hiding it stops speech input, and reopening scrolls to the latest reply. `SessionContext.conversationKey` resets transient chat input on New/Load, without resetting it on the first autosave.
 - Below 2xl (96rem) the open tutor takes the source's place (above the board on narrow screens), so the board keeps its room; the header toggle then reads **Show {source}** and closes the tutor. On 2xl screens all three sit side by side.
 
 ### Full screen and tools

@@ -827,7 +827,7 @@ export default function ShelfReader() {
               favorite={<FavoriteButton favorite={favorite.favorite} failed={favorite.failed} onStar={(reason) => void favorite.star(reason)} onUnstar={() => void favorite.unstar()} />}
             />
           )}
-          tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel getBoardImages={getBoardImages} getBookContext={getBookContext} onAskForHelp={askForHelp} /> }}
+          tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel visible={tutorOpen && !fullScreen} getBoardImages={getBoardImages} getBookContext={getBookContext} onAskForHelp={askForHelp} /> }}
         />
       ) : readingFullScreen ? (
         // Reading full screen: the page, with its bars until a tap in the middle hides them.

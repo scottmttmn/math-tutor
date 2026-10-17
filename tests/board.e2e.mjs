@@ -20,7 +20,7 @@ const provider = createServer(async (req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
   if (JSON.stringify(body.messages.at(-1)).includes('Long response safety check')) {
     setTimeout(() => {
-      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: reply } }] })}\n\n`);
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: Array.from({ length: 60 }, (_, index) => `Long reply line ${index + 1}.`).join('\n\n') } }] })}\n\n`);
       res.end('data: [DONE]\n\n');
     }, 7000);
     return;
@@ -43,8 +43,9 @@ async function openBrowser() {
   await context.addInitScript(() => {
     window.SpeechRecognition = class {
       constructor() { window.__testRecognition = this; }
-      start() {}
+      start() { this.listening = true; }
       stop() {
+        this.listening = false;
         this.onend?.();
         this.onresult?.({ results: [[{ transcript: 'Late transcript after sending' }]] });
       }
@@ -169,6 +170,7 @@ try {
   await openTutor(page);
   assert.equal(requests.length, beforeToggle, 'toggling during a reply sends nothing');
   assert.ok(await page.getByRole('group', { name: 'Tutor choices' }).getByRole('button').first().isDisabled());
+  await page.getByRole('button', { name: 'Close tutor' }).click();
   await page.waitForTimeout(5500); // Exercise the active-request lock after the five-second interval expires.
   const duringStream = await page.evaluate(async (modelConfig) => {
     const response = await fetch('/api/tutor', {
@@ -181,6 +183,11 @@ try {
   assert.match(duringStream.message, /already answering/);
   await (await longResponseReady).finished();
   await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
+  await openTutor(page);
+  await page.waitForFunction(() => {
+    const chat = document.querySelector('[aria-busy]');
+    return chat.scrollHeight > chat.clientHeight && chat.scrollHeight - chat.clientHeight - chat.scrollTop < 2;
+  });
   await followUp().fill('Follow up immediately after the long reply');
   assert.ok(await page.getByRole('button', { name: 'Send', exact: true }).isEnabled());
   await ask('Follow up immediately after the long reply', 'Problem hint.');
@@ -341,6 +348,15 @@ try {
   await page.getByTitle('Speak a question', { exact: true }).click();
   await page.evaluate(() => window.__testRecognition.onresult({ results: [[{ transcript: 'Explain conjugation' }]] }));
   await page.waitForFunction(() => document.querySelector('textarea[placeholder="Ask your own question…"]').value === 'Explain conjugation');
+  for (const close of ['Close tutor', 'Ask tutor']) {
+    await page.getByRole('button', { name: close, exact: true }).click();
+    await page.waitForFunction(() => window.__testRecognition.listening === false);
+    await openTutor(page);
+    assert.equal(await followUp().inputValue(), 'Explain conjugation', 'closing stops the microphone and keeps the draft');
+    assert.equal(await page.getByTitle('Stop recording', { exact: true }).count(), 0);
+    if (close === 'Close tutor') await page.getByTitle('Speak a question', { exact: true }).click();
+  }
+  await page.getByTitle('Speak a question', { exact: true }).click();
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.getByText('Notes explanation.', { exact: true }).last().waitFor();
   assert.equal(await followUp().inputValue(), '');

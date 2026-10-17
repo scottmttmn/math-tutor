@@ -9,21 +9,22 @@ import type { BookContext, TutorBoardImages } from '@/types';
 const QUESTION_ID = 'tutor-question';
 
 interface ChatPanelProps {
+  visible: boolean;
   /** Current board images, attached to every question because history contains text only. */
   getBoardImages?: () => Promise<TutorBoardImages>;
   getBookContext?: () => Promise<BookContext | null>;
   onAskForHelp?: (question: string) => Promise<void>;
 }
 
-export default function ChatPanel({ getBoardImages, getBookContext, onAskForHelp }: ChatPanelProps) {
+export default function ChatPanel({ visible, getBoardImages, getBookContext, onAskForHelp }: ChatPanelProps) {
   const { chatHistory, isStreaming, conversationKey } = useSessionState();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (scrollRef.current) {
+    if (visible && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [chatHistory]);
+  }, [chatHistory, visible]);
 
   return (
     // Sits in the board's tutor column, which carries the heading.
@@ -43,7 +44,7 @@ export default function ChatPanel({ getBoardImages, getBookContext, onAskForHelp
         )}
       </div>
 
-      <ChatInput key={conversationKey} id={QUESTION_ID} getBoardImages={getBoardImages} getBookContext={getBookContext} onAskForHelp={onAskForHelp} />
+      <ChatInput key={conversationKey} visible={visible} id={QUESTION_ID} getBoardImages={getBoardImages} getBookContext={getBookContext} onAskForHelp={onAskForHelp} />
     </div>
   );
 }

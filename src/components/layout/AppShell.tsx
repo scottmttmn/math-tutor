@@ -172,7 +172,7 @@ function AppContent() {
             )}
           />
         )}
-        tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel getBoardImages={getBoardImages} onAskForHelp={handleAskForHelp} /> }}
+        tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel visible={tutorOpen && !fullScreen} getBoardImages={getBoardImages} onAskForHelp={handleAskForHelp} /> }}
       />
 
       {writeUpOpen && (
