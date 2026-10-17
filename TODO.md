@@ -33,6 +33,8 @@ Done: one look across the app: ink on paper, with only the tutor in color (**Ask
 
 Every board has the same layout: what it works from beside it (the problem or topic, the PDF page), which can be hidden, and the tutor as a drawer that opens when you ask. Every board has **Full screen** (in its toolbar), and a problem picture can be **put on the board**. **Hide tools** collapses the drawing tools, and the Shelf's list can be hidden so the page gets the full width.
 
+Done: pen styles collapse behind a color/size chip at the top right; the native controls open on tap, stay open for multiple changes, and collapse on a stroke or Esc. Open/collapsed is remembered on the device. Later: decide on fewer colors and no opacity after testing the BOOX.
+
 Done (reading, step 1 of the [Shelf design](https://claude.ai/artifact/TXw8zCKZbwQ9ohM2Fk9nC8)): tap a page's edge, swipe sideways or use the arrow keys to turn it; tap the page number to go to a page by its printed number ("47", "xii"); **Contents** beside the page from the PDF's bookmarks; blank margins trimmed so the print is bigger (**Trim margins**, kept per book); **Full screen** for reading, where a tap in the middle hides and brings back the bars and **Lists** opens the lists over the page.
 
 - Done: ink on the page (pen, highlighter, eraser, undo), saved per page and in backups.

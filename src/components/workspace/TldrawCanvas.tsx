@@ -10,6 +10,7 @@ import { GRID_SPACING, LINE_SPACING, paperLines } from '@/lib/paper';
 import { TUTOR_IMAGE_SIDE, TUTOR_IMAGE_PADDING, tutorDetailBounds } from '@/lib/tutorBoardImages';
 import type { Paper } from '@/types';
 import type { DrawingCanvasHandle } from './DrawingCanvas';
+import PenStylePanel from '@/components/workspace/PenStylePanel';
 
 const PaperContext = createContext<Paper>('blank');
 
@@ -42,7 +43,10 @@ const components: TLComponents = {
   MainMenu: null,
   PageMenu: null,
   HelpMenu: null,
-  SharePanel: null,
+  // The StylePanel slot moves into a toolbar popover below 640px. Use the unused top-right
+  // SharePanel slot so the pen chip stays in the same place at every canvas width.
+  StylePanel: null,
+  SharePanel: PenStylePanel,
   DebugMenu: null,
   DebugPanel: null,
 };

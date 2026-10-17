@@ -40,8 +40,10 @@ try {
   await controls.getByRole('button', { name: 'Board menu' }).click();
   await page.getByRole('menuitemcheckbox', { name: 'Hide drawing tools' }).click();
   await page.locator('.tlui-layout').waitFor({ state: 'detached' });
+  assert.equal(await page.getByRole('button', { name: /^Pen: / }).count(), 0, 'Hide drawing tools hides the pen chip too');
   await page.getByRole('button', { name: 'Show tools', exact: true }).click();
   await page.locator('.tlui-layout').waitFor();
+  await page.getByRole('button', { name: /^Pen: / }).waitFor();
   await controls.getByRole('button', { name: 'Favorite', exact: true }).and(page.locator(':enabled')).waitFor();
 
   const ask = controls.getByRole('button', { name: 'Ask tutor', exact: true });
