@@ -10,11 +10,13 @@ import { useTutorChat } from '@/hooks/useTutorChat';
 import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
 import { useToolsHidden } from '@/hooks/useToolsHidden';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
+import { loadRecoveredSession } from '@/lib/sessionRecovery';
 import { listFolders, loadInk, loadProfile, loadShelfDocument, savePageInk, saveShelfDocument, shelfSessionId } from '@/lib/db';
 import { folderHref, folderIndex, folderPath, folderTree, isWithin } from '@/lib/folders';
-import { openPdf, trimmedArea } from '@/lib/pdf';
+import { cropPage, openPdf, trimmedArea } from '@/lib/pdf';
 import { findPage, pageName } from '@/lib/reader';
-import { ensureExerciseBoard, isNote, markExercise, nextLabel, setReadFrom, solvedExercises, unmarkExercise } from '@/lib/shelf';
+import { ensureExerciseBoard, exerciseStatement, isNote, markBoardId, markExercise, nextLabel, setReadFrom, solvedExercises, unmarkExercise } from '@/lib/shelf';
+import { boardMarkOf, pictureKey, sameBoard } from '@/lib/boardProblems';
 import { paperFor } from '@/lib/paper';
 import { MAX_BOOK_PAGES, loadContents, loadSectionStarts, readBookPages, readingRange, type ContentsEntry, type ReadingRange, type SectionStart } from '@/lib/bookContext';
 import type { BookContext, ChatMessage, Folder, InkStroke, InkTool, PageRect, ShelfDocument, ShelfExercise, ShelfMarkKind } from '@/types';
@@ -24,7 +26,7 @@ import BottomToolbar from '@/components/layout/BottomToolbar';
 import AppBar from '@/components/layout/AppBar';
 import ChatPanel, { focusTutorQuestion } from '@/components/chat/ChatPanel';
 import MoreMenu from '@/components/common/MoreMenu';
-import { KindIcon } from '@/components/common/Icons';
+import { KindIcon, SolvedCheck } from '@/components/common/Icons';
 import BoardFrame from '@/components/layout/BoardFrame';
 import { saveBoardAs } from '@/lib/exportBoard';
 import PdfPage from './PdfPage';
@@ -86,6 +88,8 @@ export default function ShelfReader() {
   const [pendingMark, setPendingMark] = useState<PageRect | null>(null);
   const [markLabel, setMarkLabel] = useState('');
   const [markKind, setMarkKind] = useState<ShelfMarkKind>('exercise');
+  // An exercise marked while a problem board is open goes on that board, not one of its own.
+  const [markOnBoard, setMarkOnBoard] = useState(false);
   // The library's folders: where the book is (the breadcrumb) and where a new mark's board is filed.
   const [folders, setFolders] = useState<Folder[]>([]);
   const [markFolder, setMarkFolder] = useState('');
@@ -120,18 +124,18 @@ export default function ShelfReader() {
 
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
   const sentRevision = useRef<number | null>(null);
-  const { isStreaming, isSolved, currentSessionId, problemImage, paper: chosenPaper } = useSessionState();
+  const { isStreaming, isSolved, currentSessionId, problemImage, paper: chosenPaper, problems } = useSessionState();
   const sessionDispatch = useSessionDispatch();
   // An exercise opened on an empty board is put on it, once it has loaded (so the tutor also reads
   // anything written on the figure). A board with work keeps it as it is.
-  const [placeOn, setPlaceOn] = useState<string | null>(null);
+  const [placeOn, setPlaceOn] = useState<{ board: string; key: string | true } | null>(null);
   // Counts openings, so opening an exercise (even the open one, from its mark) shows its board.
   const [openings, setOpenings] = useState(0);
   const { pendingLoad, hasContent } = useCanvasState();
   useEffect(() => {
-    if (!placeOn || placeOn !== currentSessionId || pendingLoad) return;
+    if (!placeOn || placeOn.board !== currentSessionId || pendingLoad) return;
     setPlaceOn(null);
-    if (!hasContent && problemImage) void canvasHandle.current?.placeProblemImage(problemImage);
+    if (!hasContent && problemImage) void canvasHandle.current?.placeProblemImage(problemImage, placeOn.key);
   }, [placeOn, currentSessionId, pendingLoad, hasContent, problemImage]);
   // The pages before the open exercise, read when a question is sent (each page's text is kept).
   // A note page sends none: the tutor explains directly there, and book pages would make it hold back.
@@ -167,21 +171,35 @@ export default function ShelfReader() {
     setError('');
     try {
       const id = await ensureExerciseBoard(source.pdf, source.document, exercise);
-      if (!await openSession(id)) throw new Error('Not opened');
-      setPlaceOn(id);
+      const onOpenBoard = id === currentSessionId;
+      const listed = onOpenBoard ? problems : (await loadRecoveredSession(id).catch(() => undefined))?.problems;
+      if (!onOpenBoard && !await openSession(id)) throw new Error('Not opened');
+      // An added exercise the board never saved (its save failed after the mark was kept) joins it again.
+      let image = listed?.find((problem) => problem.id === exercise.id)?.problemImage ?? null;
+      if (exercise.boardOf && !listed?.some((problem) => problem.id === exercise.id)) {
+        image = await cropPage(source.pdf, exercise.page, exercise.rect);
+        const own = source.document.exercises.find((item) => item.id === exercise.boardOf);
+        sessionDispatch({
+          type: 'ADD_PROBLEM', first: { id: exercise.boardOf, label: own?.label ?? 'Exercise' },
+          problem: { id: exercise.id, label: exercise.label, problemStatement: exerciseStatement(source.document, exercise), problemImage: image, isSolved: false },
+        });
+      } else sessionDispatch({ type: 'SELECT_PROBLEM', id: exercise.id });
+      // Another exercise on the open board: go to its picture there (put on the board if it isn't).
+      if (onOpenBoard) { if (image) void canvasHandle.current?.placeProblemImage(image, pictureKey(exercise)); }
+      else setPlaceOn({ board: id, key: pictureKey(exercise) });
       setOpenings((count) => count + 1);
       setOpenId(exercise.id);
       setPage(exercise.page);
-      setMarking(false);
       setAskBox(false);
       setAskDraft(null);
       setPageAsk(null);
-      setTutorOpen(false);
+      // Moving between a board's exercises keeps the tutor and Mark as they were.
+      if (!onOpenBoard) { setMarking(false); setTutorOpen(false); }
       writeUrl(source.document.id, exercise.id);
     } catch {
       setError(`That ${isNote(exercise) ? 'note page' : 'exercise'} could not be opened. Try again.`);
     } finally { switching.current = false; }
-  }, [pdf, isStreaming, openSession]);
+  }, [pdf, isStreaming, openSession, currentSessionId, problems, sessionDispatch]);
 
   // Load the PDF named in the URL, and the exercise if one is named.
   useEffect(() => {
@@ -246,7 +264,8 @@ export default function ShelfReader() {
 
   // Keep the marks' ✓ in step with the open board's Mark Solved.
   useEffect(() => {
-    if (!openId || !shelfDocument || currentSessionId !== shelfSessionId(shelfDocument.id, openId)) return;
+    const open = shelfDocument?.exercises.find((item) => item.id === openId);
+    if (!openId || !shelfDocument || !open || currentSessionId !== markBoardId(shelfDocument, open)) return;
     setSolvedIds((current) => {
       const has = current.includes(openId);
       if (isSolved === has) return current;
@@ -298,6 +317,8 @@ export default function ShelfReader() {
     const rect = pendingMark;
     const markPage = page;
     setPendingMark(null);
+    const board = openExerciseForBook;
+    if (board && addsToBoard) { await addToBoard(board, markPage, rect); return; }
     try {
       const { document: next, exercise } = await writeDocument(async (current) => {
         const marked = await markExercise(pdf, current, markPage, rect, markLabel, markKind, [], markFolder || undefined);
@@ -310,10 +331,42 @@ export default function ShelfReader() {
     }
   };
 
+  // Marks an exercise on the open board: it joins the board's problems and is worked on next, its picture
+  // below the work; Mark stays on for the next one.
+  const addToBoard = async (board: ShelfExercise, markPage: number, rect: PageRect) => {
+    if (!pdf) return;
+    try {
+      const image = await cropPage(pdf, markPage, rect);
+      const { document: next, exercise: added } = await writeDocument(async (current) => {
+        const marked = await markExercise(pdf, current, markPage, rect, markLabel, 'exercise', [], undefined, boardMarkOf(board));
+        updateDocument(marked.document);
+        return marked;
+      });
+      sessionDispatch({
+        type: 'ADD_PROBLEM', first: { id: board.id, label: board.label },
+        problem: { id: added.id, label: added.label, problemStatement: exerciseStatement(next, added), problemImage: image, isSolved: false },
+      });
+      setOpenId(added.id);
+      writeUrl(next.id, added.id);
+      void canvasHandle.current?.placeProblemImage(image, pictureKey(added));
+    } catch {
+      setError('The exercise could not be added to the board. Try again.');
+    }
+  };
+
   const removeMark = async (exercise: ShelfExercise) => {
     const current = documentRef.current;
     if (!current || isStreaming) return;
-    if (exercise.id === openId) {
+    const open = current.exercises.find((item) => item.id === openId);
+    const onOpenBoard = open && sameBoard(open, exercise);
+    if (onOpenBoard && current.exercises.some((item) => item.id !== exercise.id && sameBoard(item, exercise))) {
+      // The board stays with its other exercises and drops this one from its list (its work stays). A save
+      // under way lands first, so it can't bring the entry back once the stored board drops it too.
+      await saveNow();
+      sessionDispatch({ type: 'REMOVE_PROBLEM', id: exercise.id });
+      const next = (problems ?? []).find((problem) => problem.id !== exercise.id);
+      if (exercise.id === openId && next) { setOpenId(next.id); writeUrl(current.id, next.id); }
+    } else if (onOpenBoard) {
       // Let any save already under way land first, so it can't bring the board back after removal.
       await saveNow();
       if (!await startNew('problem', { discardCurrent: true })) return;
@@ -374,14 +427,18 @@ export default function ShelfReader() {
   };
 
   const openExerciseForBook = shelfDocument?.exercises.find((item) => item.id === openId) ?? null;
+  // Mark → This board: an exercise marked beside an open problem board can go on it.
+  const canAddToBoard = Boolean(openExerciseForBook && !isNote(openExerciseForBook));
+  const addsToBoard = canAddToBoard && markOnBoard && markKind === 'exercise';
   const range = shelfDocument && openExerciseForBook && !isNote(openExerciseForBook) ? readingRange(shelfDocument, openExerciseForBook, sectionStarts) : null;
   book.current = pdf && shelfDocument && range ? { pdf, document: shelfDocument, range } : null;
 
-  // The open exercise's star, and which of the book's exercises are starred (for Your list).
+  // The open board's star, and which of the book's boards are starred (by the mark each is named for; for Your list).
+  // A board of several is starred as a whole, under its exercises' names.
   const favoriteSubject = shelfDocument && openExerciseForBook
-    ? { title: `${openExerciseForBook.label} · ${shelfDocument.title}, p. ${pageName(labels, openExerciseForBook.page)}`, problem: '' }
+    ? { title: `${problems && problems.length > 1 ? problems.map((problem) => problem.label).join(', ') : openExerciseForBook.label} · ${shelfDocument.title}, p. ${pageName(labels, openExerciseForBook.page)}`, problem: '' }
     : { title: '', problem: '' };
-  const favorite = useFavorite(shelfDocument && openExerciseForBook ? shelfSessionId(shelfDocument.id, openExerciseForBook.id) : null, favoriteSubject);
+  const favorite = useFavorite(shelfDocument && openExerciseForBook ? markBoardId(shelfDocument, openExerciseForBook) : null, favoriteSubject);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const bookId = shelfDocument?.id;
   useEffect(() => {
@@ -567,7 +624,7 @@ export default function ShelfReader() {
   const pageView = (
     <div ref={pageArea} className="p-3">
       {askBox && <p className="mb-2 text-sm font-medium text-gray-900">{askDraft?.page === page ? 'Ask your question, or drag again to redraw the box.' : 'Drag a box around what you want to ask about.'}</p>}
-      {marking && <p className="mb-2 text-sm font-medium text-gray-900">{pendingMark ? 'Choose Exercise or Note, name it and save, or drag again to redraw the box.' : 'Drag a box around an exercise, or around a passage to take notes on.'}</p>}
+      {marking && <p className="mb-2 text-sm font-medium text-gray-900">{pendingMark ? 'Choose Exercise or Note, name it and save, or drag again to redraw the box.' : canAddToBoard && markOnBoard ? 'Drag a box around the next exercise to add it to this board.' : 'Drag a box around an exercise, or around a passage to take notes on.'}</p>}
       <PdfPage
         pdf={pdf} pageNumber={page} marks={marksOnPage} solvedIds={solvedIds} activeId={openId} marking={marking || askBox}
         pending={askBox ? (askDraft?.page === page ? askDraft.rect : null) : marking ? pendingMark : pageAsk && pageAsk.page === page ? pageAsk.rect : null}
@@ -586,10 +643,18 @@ export default function ShelfReader() {
                   className={`flex-1 min-h-11 px-3 text-sm rounded-lg border border-gray-900 ${markKind === kind ? 'bg-gray-900 text-white font-medium' : 'bg-white text-gray-900 hover:bg-gray-100'}`}>{label}</button>
               ))}
             </div>
+            {canAddToBoard && markKind === 'exercise' && (
+              <div role="radiogroup" aria-label="Work it on" className="flex w-full gap-1">
+                {[{ on: true, label: 'This board' }, { on: false, label: 'Own board' }].map(({ on, label }) => (
+                  <button key={label} type="button" role="radio" aria-checked={markOnBoard === on} onClick={() => setMarkOnBoard(on)}
+                    className={`flex-1 min-h-11 px-3 text-sm rounded-lg border border-gray-900 ${markOnBoard === on ? 'bg-gray-900 text-white font-medium' : 'bg-white text-gray-900 hover:bg-gray-100'}`}>{label}</button>
+                ))}
+              </div>
+            )}
             <label className="text-sm text-gray-900" htmlFor="mark-label">Name</label>
             <input id="mark-label" value={markLabel} onChange={(event) => setMarkLabel(event.target.value)}
               className="w-36 min-h-11 px-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
-            {markFolders.length > 1 && (
+            {markFolders.length > 1 && !addsToBoard && (
               <>
                 <label className="text-sm text-gray-900" htmlFor="mark-folder">Folder</label>
                 <select id="mark-folder" value={markFolder} onChange={(event) => setMarkFolder(event.target.value)}
@@ -600,7 +665,7 @@ export default function ShelfReader() {
                 </select>
               </>
             )}
-            <button type="submit" className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Save and open</button>
+            <button type="submit" className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">{addsToBoard ? 'Add to board' : 'Save and open'}</button>
             <button type="button" onClick={() => setPendingMark(null)} className="min-h-11 px-3 text-sm text-gray-600 border border-gray-300 bg-white rounded-lg hover:bg-gray-50">Cancel</button>
           </form>
         )}
@@ -660,7 +725,8 @@ export default function ShelfReader() {
         ) : listTab === 'search' ? (
           <BookSearch search={search} pageCount={pageCount} contents={contents} labels={labels} onGoTo={goToEntry} />
         ) : (
-          <BookList pdf={pdf} marks={shelfDocument.exercises} solvedIds={solvedIds} favoriteIds={favoriteIds} ink={ink} contents={contents} labels={labels}
+          <BookList pdf={pdf} marks={shelfDocument.exercises} solvedIds={solvedIds}
+            favoriteIds={shelfDocument.exercises.filter((mark) => favoriteIds.includes(boardMarkOf(mark))).map((mark) => mark.id)} ink={ink} contents={contents} labels={labels}
             onOpen={(mark) => { setPanelOpen(false); void openExercise(mark); }} onGoTo={goToEntry} disabled={isStreaming} />
         )}
       </div>
@@ -718,12 +784,26 @@ export default function ShelfReader() {
                 </label></>}
                 {range && !bookHasText && <span className="font-medium text-gray-900"> · no text in this PDF to read</span>}
               </p>
+              {problems && problems.length > 1 && (
+                <div role="group" aria-label="Exercises on this board" className="mt-1 flex flex-wrap gap-1">
+                  {problems.map((problem) => {
+                    const mark = shelfDocument.exercises.find((item) => item.id === problem.id);
+                    return (
+                      <button key={problem.id} aria-pressed={problem.id === exercise.id} disabled={!mark || isStreaming}
+                        onClick={() => { if (mark) void openExercise(mark); }}
+                        className={`min-h-11 px-3 flex items-center gap-1.5 text-sm rounded-lg border ${problem.id === exercise.id ? 'border-gray-900 bg-gray-100 font-semibold text-gray-900' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'} disabled:opacity-50`}>
+                        {problem.isSolved && <SolvedCheck size={14} />}{problem.label}{problem.isSolved && <span className="sr-only"> (solved)</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </>
           )}
           actions={(
             <>
               {problemImage && (
-                <button onClick={() => void canvasHandle.current?.placeProblemImage(problemImage)}
+                <button onClick={() => void canvasHandle.current?.placeProblemImage(problemImage, pictureKey(exercise))}
                   title="Put the marked problem on the board to write on and around it"
                   className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Put on board</button>
               )}

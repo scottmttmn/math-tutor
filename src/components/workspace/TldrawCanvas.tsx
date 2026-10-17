@@ -66,15 +66,16 @@ function startDrawing(editor: Editor) {
   editor.setCurrentTool('draw');
 }
 
-// The problem picture placed on the board is marked so it is placed only once.
+// The problem picture placed on the board is marked so it is placed only once: `true` for the board's
+// own problem, an exercise's id for each one added to a board of several.
 const PROBLEM_META = 'problemImage';
 // Gap between the picture and the edge of the view or the work already on the board.
 const PROBLEM_MARGIN = 32;
 // Clears tldraw's undo/redo bar in the top-left corner of the view.
 const PROBLEM_TOP = 64;
 
-function findProblemShape(editor: Editor): TLShape | undefined {
-  return editor.getCurrentPageShapes().find((shape) => shape.meta[PROBLEM_META] === true);
+function findProblemShape(editor: Editor, key: string | true): TLShape | undefined {
+  return editor.getCurrentPageShapes().find((shape) => shape.meta[PROBLEM_META] === key);
 }
 
 function imageSize(src: string): Promise<{ w: number; h: number }> {
@@ -87,10 +88,11 @@ function imageSize(src: string): Promise<{ w: number; h: number }> {
 }
 
 // The picture goes in the top-left of the view on an empty board, or above the work already
-// there; it is locked so the pen and eraser leave it alone (unlock it from its menu to move it).
+// there (an added exercise's below it, the next problem down the board); it is locked so the pen
+// and eraser leave it alone (unlock it from its menu to move it).
 // `stillCurrent` says whether the same board is still loaded once the picture has been read.
-async function placeProblemImage(editor: Editor, base64: string, stillCurrent: () => boolean): Promise<boolean> {
-  const existing = findProblemShape(editor);
+async function placeProblemImage(editor: Editor, base64: string, key: string | true, stillCurrent: () => boolean): Promise<boolean> {
+  const existing = findProblemShape(editor, key);
   if (existing) {
     const bounds = editor.getShapePageBounds(existing);
     if (bounds) editor.zoomToBounds(bounds, { animation: { duration: 200 }, targetZoom: 1 });
@@ -100,7 +102,7 @@ async function placeProblemImage(editor: Editor, base64: string, stillCurrent: (
   const natural = await imageSize(src);
   // A second tap while the picture loaded may have placed it already, or another board may have
   // been opened meanwhile (this picture isn't its problem).
-  if (findProblemShape(editor) || !stillCurrent()) return false;
+  if (findProblemShape(editor, key) || !stillCurrent()) return false;
   const viewport = editor.getViewportPageBounds();
   // Crops are rendered at twice their page size; never wider than most of the view.
   const scale = Math.min(0.5, (viewport.w * 0.8) / natural.w);
@@ -108,7 +110,8 @@ async function placeProblemImage(editor: Editor, base64: string, stillCurrent: (
   const h = natural.h * scale;
   const content = editor.getCurrentPageBounds();
   const x = content ? content.minX : viewport.minX + PROBLEM_MARGIN / editor.getZoomLevel();
-  const y = content ? content.minY - h - PROBLEM_MARGIN : viewport.minY + PROBLEM_TOP / editor.getZoomLevel();
+  const y = !content ? viewport.minY + PROBLEM_TOP / editor.getZoomLevel()
+    : key === true ? content.minY - h - PROBLEM_MARGIN : content.maxY + PROBLEM_MARGIN * 2;
   const assetId = AssetRecordType.createId();
   editor.markHistoryStoppingPoint('problem image');
   editor.run(() => {
@@ -117,7 +120,7 @@ async function placeProblemImage(editor: Editor, base64: string, stillCurrent: (
       props: { name: 'problem.png', src, w: natural.w, h: natural.h, mimeType: 'image/png', isAnimated: false },
     })]);
     editor.createShape({
-      id: createShapeId(), type: 'image', x, y, isLocked: true, meta: { [PROBLEM_META]: true },
+      id: createShapeId(), type: 'image', x, y, isLocked: true, meta: { [PROBLEM_META]: key },
       props: { assetId, w, h },
     });
   });
@@ -240,10 +243,10 @@ export default function TldrawCanvas({ handleRef, toolsHidden, paper }: { handle
       const { blob } = await editor.toImage(ids, { format, background: true, padding: EXPORT_PADDING, pixelRatio, quality: 0.92 });
       return { blob, pixelRatio };
     },
-    placeProblemImage: async (base64) => {
+    placeProblemImage: async (base64, key = true) => {
       if (!editor || loadPending.current) return false;
       const board = loads.current;
-      return placeProblemImage(editor, base64, () => loads.current === board && !loadPending.current);
+      return placeProblemImage(editor, base64, key, () => loads.current === board && !loadPending.current);
     },
     getRevision: () => documentRevision,
     getDocument: () => (editor && !loadPending.current ? editor.getSnapshot().document : null),

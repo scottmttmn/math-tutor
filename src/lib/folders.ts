@@ -78,6 +78,7 @@ export function folderSummary(index: FolderIndex, id: string, items: HistoryItem
   for (const item of items) {
     if (!isWithin(index, itemFolder(index, item), id)) continue;
     if (item.sessionType === 'note') summary.notes += 1;
+    else if (item.problems) { summary.problems += item.problems.total; summary.solved += item.problems.solved; }
     else { summary.problems += 1; if (item.isSolved) summary.solved += 1; }
   }
   return summary;

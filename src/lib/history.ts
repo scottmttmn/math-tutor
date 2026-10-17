@@ -24,13 +24,17 @@ export function toHistoryItem(session: Session, favoriteIds: ReadonlySet<string>
   if (session.id.startsWith('workbook:')) return null;
   if (session.id.startsWith('shelf:')) {
     // The reader saves every exercise it opens; only ones with work in them belong in the list.
-    hasWork = session.chatHistory.length > 0 || hasDrawing(session) || Boolean(session.isSolved) || favorite;
+    hasWork = session.chatHistory.length > 0 || hasDrawing(session) || Boolean(session.isSolved)
+      || Boolean(session.problems?.some((problem) => problem.isSolved)) || favorite;
     if (!untouched && !hasWork) return null;
     const shelf = SHELF_ENTRY.exec(session.id);
     if (!shelf) return null;
     source = 'shelf';
     [, bookId, exerciseId] = shelf;
-    href = `/shelf/read?doc=${encodeURIComponent(bookId)}&open=${encodeURIComponent(exerciseId)}`;
+    // A board of several: placed by its first exercise (the one it was made for may be gone), opened on the current one.
+    exerciseId = session.problems?.[0]?.id ?? exerciseId;
+    const opens = session.problems?.find((problem) => problem.id === session.currentProblem)?.id ?? exerciseId;
+    href = `/shelf/read?doc=${encodeURIComponent(bookId)}&open=${encodeURIComponent(opens)}`;
   }
   const sessionType = session.sessionType ?? 'problem';
   return {
@@ -50,6 +54,9 @@ export function toHistoryItem(session: Session, favoriteIds: ReadonlySet<string>
     bookId,
     exerciseId,
     folderId: session.folderId,
+    ...(session.problems && session.problems.length > 1 && sessionType === 'problem'
+      ? { problems: { total: session.problems.length, solved: session.problems.filter((problem) => problem.isSolved).length } }
+      : {}),
     hasWork,
   };
 }
