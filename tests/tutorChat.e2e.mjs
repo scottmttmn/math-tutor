@@ -194,8 +194,8 @@ try {
   console.log('PASS capture failures are visible, keep the question, send no incomplete request, and allow retry');
 
   // A sparse diagonal spans 16 grid cells by bounds, but only its actual ink needs close-ups.
-  await tall.evaluate(() => localStorage.setItem('math-tutor:currentSession', 'diagonal-work'));
-  await tall.reload();
+  await tall.getByRole('link', { name: 'Home', exact: true }).click();
+  await tall.getByRole('button', { name: 'Open Long diagonal', exact: true }).click();
   await tall.locator('.tl-canvas').waitFor();
   await tall.waitForFunction(() => document.querySelector('textarea')?.value === 'Check the long diagonal' && document.querySelectorAll('.tl-shape[data-shape-type="draw"]').length === 1);
   await tall.getByRole('button', { name: 'Ask tutor', exact: true }).and(tall.locator(':enabled')).waitFor({ timeout: 10_000 });
