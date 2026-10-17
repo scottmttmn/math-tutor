@@ -59,7 +59,7 @@ for (const scenario of ['quota', 'all exhausted', 'authentication', 'partial']) 
   });
 }
 
-function routeHarness(providerError = false, openAIStream) {
+function routeHarness(providerError = false, openAIStream, anthropicStream) {
   const calls = [];
   const clients = [];
   let now = 10_000;
@@ -68,6 +68,7 @@ function routeHarness(providerError = false, openAIStream) {
   class Anthropic {
     messages = { stream: (options) => {
       calls.push({ provider: 'anthropic', ...options });
+      if (anthropicStream) return anthropicStream(options);
       return (async function* () {
         if (providerError) throw new Error('401 authentication failure');
         yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'A hint.' } };
@@ -250,7 +251,8 @@ for (const provider of ['anthropic', 'openai-compatible']) {
     const system = provider === 'anthropic' ? calls[0].system : calls[0].messages[0].content;
     assert.match(system, /Transcribe, don't solve/);
     assert.doesNotMatch(system, /The answer is theirs to find|LEARNER PROFILE|TOPIC NOTES|SKILL CHECK-IN/);
-    assert.equal(calls[0].max_tokens, 4096);
+    // Claude thinks before it answers, out of the same budget.
+    assert.equal(calls[0].max_tokens, provider === 'anthropic' ? 16384 : 4096);
     const text = JSON.stringify(calls[0].messages);
     assert.match(text, /Write up the handwritten work on my board in LaTeX/);
     assert.match(text, /Show that 1\+1=2/);
@@ -488,4 +490,21 @@ test('a cancelled ChatGPT-plan stream releases the server gate right away', asyn
   const next = gate.acquire();
   assert.equal(next.accepted, true);
   next.release();
+});
+
+test('anthropic: room to think before answering, and a reply cut off by max_tokens says so', async () => {
+  const { request, calls, advanceTime } = routeHarness(false, undefined, () => (async function* () {
+    yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Not quite. There is' } };
+    yield { type: 'message_delta', delta: { stop_reason: 'max_tokens' } };
+  })());
+  const body = await (await request()).text();
+  assert.equal(calls[0].max_tokens, 16000);
+  assert.match(body, /ran out of room/);
+  assert.doesNotMatch(body, /message_stop/);
+  advanceTime();
+  const { request: again } = routeHarness(false, undefined, () => (async function* () {
+    yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'A hint.' } };
+    yield { type: 'message_delta', delta: { stop_reason: 'end_turn' } };
+  })());
+  assert.match(await (await again()).text(), /message_stop/);
 });

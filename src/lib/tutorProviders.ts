@@ -76,6 +76,9 @@ function cleanMessages(messages: Anthropic.MessageParam[]): Anthropic.MessagePar
   return cleaned;
 }
 
+/** Room for the thinking current Claude models do before the visible reply. */
+const ANTHROPIC_MIN_MAX_TOKENS = 16_000;
+
 export function streamAnthropicResponse(modelConfig: ModelConfig, plan: TutorPlan, { apiKey, source, onFinish = () => {} }: ProviderOptions): ReadableStream {
   // The profile and book pages open the conversation, so every question on the board shares them as a cached prefix.
   const messages: Anthropic.MessageParam[] = plan.preface
@@ -96,7 +99,9 @@ export function streamAnthropicResponse(modelConfig: ModelConfig, plan: TutorPla
   const anthropic = new Anthropic({ apiKey, ...(source === 'device' ? { dangerouslyAllowBrowser: true } : {}) });
   const stream = anthropic.messages.stream({
     model: modelConfig.model,
-    max_tokens: plan.maxTokens,
+    // Current Claude models think before they answer, and the thinking counts against max_tokens:
+    // at 1024 Sonnet 5.5 spent it all thinking and sent a half sentence or nothing.
+    max_tokens: Math.max(ANTHROPIC_MIN_MAX_TOKENS, plan.maxTokens * 4),
     system: plan.systemPrompt,
     messages: cleanMessages(messages),
   });
@@ -105,13 +110,19 @@ export function streamAnthropicResponse(modelConfig: ModelConfig, plan: TutorPla
   return new ReadableStream({
     async start(controller) {
       try {
+        let stopReason: string | null | undefined;
         for await (const event of stream) {
           if (cancelled) break;
           if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
             controller.enqueue(sse({ type: 'text_delta', content: event.delta.text }));
+          } else if (event.type === 'message_delta') {
+            stopReason = event.delta.stop_reason;
           }
         }
-        if (!cancelled) controller.enqueue(sse({ type: 'message_stop' }));
+        if (cancelled) return;
+        if (stopReason === 'max_tokens') controller.enqueue(sse({ type: 'error', error: 'The tutor ran out of room before finishing its reply. Please ask again.' }));
+        else if (stopReason === 'refusal') controller.enqueue(sse({ type: 'error', error: 'The model declined to answer this one. Try rephrasing, or another model in Settings.' }));
+        else controller.enqueue(sse({ type: 'message_stop' }));
       } catch (err) {
         if (!cancelled) controller.enqueue(sse({ type: 'error', error: friendlyError(err, source) }));
       } finally {
