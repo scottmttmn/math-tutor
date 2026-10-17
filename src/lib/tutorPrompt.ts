@@ -1,4 +1,5 @@
 import type { BookContext, TutorPlan, TutorRequest, UserPart } from '@/types';
+import { TUTOR_MAX_DETAILS } from '@/lib/tutorBoardImages';
 import { MAX_NOTEBOOK, TOPIC_AREAS } from '@/lib/learnerProfile';
 
 // What the tutor is told and what it reads, shared by the server route (/api/tutor) and the Android
@@ -213,7 +214,7 @@ export function planTutorRequest(body: TutorRequest): TutorPlan {
     history: isWriteUp ? [] : chatHistory,
     latest: latestUserParts(checkInTopics ? '' : problemStatement, canvasImage, isWriteUp ? 'Write up the handwritten work on my board in LaTeX.' : userQuestion, problemImage,
       isWriteUp || !Array.isArray(otherProblems) ? [] : otherProblems.filter((name): name is string => typeof name === 'string').slice(0, 50).map((name) => name.slice(0, 100)),
-      Array.isArray(canvasDetails) ? canvasDetails.filter((image): image is string => typeof image === 'string' && Boolean(image)).slice(0, 12) : []),
+      Array.isArray(canvasDetails) ? canvasDetails.filter((image): image is string => typeof image === 'string' && Boolean(image)).slice(0, TUTOR_MAX_DETAILS) : []),
     // A whole page of LaTeX needs more room than a short hint.
     maxTokens: isWriteUp ? 4096 : 1024,
     isWriteUp,

@@ -19,7 +19,7 @@ import { ensureExerciseBoard, exerciseStatement, isNote, markBoardId, markExerci
 import { boardMarkOf, pictureKey, sameBoard } from '@/lib/boardProblems';
 import { paperFor } from '@/lib/paper';
 import { MAX_BOOK_PAGES, loadContents, loadSectionStarts, readBookPages, readingRange, type ContentsEntry, type ReadingRange, type SectionStart } from '@/lib/bookContext';
-import type { BookContext, ChatMessage, Folder, InkStroke, InkTool, PageRect, ShelfDocument, ShelfExercise, ShelfMarkKind } from '@/types';
+import type { BookContext, ChatMessage, Folder, InkStroke, InkTool, PageRect, ShelfDocument, ShelfExercise, ShelfMarkKind, TutorBoardImages } from '@/types';
 import { askQuestion } from '@/lib/tutorAsk';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
@@ -483,7 +483,7 @@ export default function ShelfReader() {
     focusTutorQuestion();
   };
 
-  const getBoardImages = useCallback(async () => {
+  const getBoardImages = useCallback(async (): Promise<TutorBoardImages> => {
     if (!canvasHandle.current) throw new Error('The board is still loading. Please try again.');
     return canvasHandle.current.captureForTutor();
   }, []);

@@ -2,9 +2,9 @@ import type { TutorImageBounds } from '@/types';
 
 export const TUTOR_IMAGE_SIDE = 2048;
 export const TUTOR_IMAGE_PADDING = 16;
+export const TUTOR_MAX_DETAILS = 12;
 // Each close-up keeps ink at 2x, with overlapping edges so boundary strokes stay readable.
 const TILE_SIDE = TUTOR_IMAGE_SIDE / 2 - TUTOR_IMAGE_PADDING * 2;
-const MAX_DETAILS = 12;
 
 /** Sparse tiles: a distant picture or empty space must not cost the writing its resolution. */
 export function tutorDetailBounds(overview: TutorImageBounds, work: TutorImageBounds[]): TutorImageBounds[] {
@@ -14,9 +14,9 @@ export function tutorDetailBounds(overview: TutorImageBounds, work: TutorImageBo
   const tiles = new Map<string, TutorImageBounds>();
   for (const box of work) {
     const firstCol = Math.floor((box.x - x) / TILE_SIDE);
-    const lastCol = Math.floor((box.x + box.w - x) / TILE_SIDE);
+    const lastCol = Math.max(firstCol, Math.ceil((box.x + box.w - x) / TILE_SIDE) - 1);
     const firstRow = Math.floor((box.y - y) / TILE_SIDE);
-    const lastRow = Math.floor((box.y + box.h - y) / TILE_SIDE);
+    const lastRow = Math.max(firstRow, Math.ceil((box.y + box.h - y) / TILE_SIDE) - 1);
     for (let row = firstRow; row <= lastRow; row += 1) {
       for (let col = firstCol; col <= lastCol; col += 1) {
         const key = `${row}:${col}`;
@@ -28,7 +28,7 @@ export function tutorDetailBounds(overview: TutorImageBounds, work: TutorImageBo
         const bottom = Math.max(previous ? previous.y + previous.h : -Infinity, Math.min(cellY + TILE_SIDE, box.y + box.h));
         tiles.set(key, { x: left, y: top, w: right - left, h: bottom - top });
         // Never silently omit work or send an unbounded number of images.
-        if (tiles.size > MAX_DETAILS) throw new Error('This board needs too many close-ups. Select the work you want the tutor to read, then ask again.');
+        if (tiles.size > TUTOR_MAX_DETAILS) throw new Error('This board needs too many close-ups. Select the work you want the tutor to read, then ask again.');
       }
     }
   }

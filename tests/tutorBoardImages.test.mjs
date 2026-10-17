@@ -34,3 +34,8 @@ test('oversized boards request a selection instead of dropping work or exporting
   const huge = { x: 0, y: 0, w: 100_000, h: 100_000 };
   assert.throws(() => tutorDetailBounds(huge, [huge]), /Select the work/);
 });
+
+test('work ending on a tile boundary needs no extra crop', () => {
+  const work = { x: 0, y: 0, w: 12 * (2048 / 2 - 16 * 2), h: 100 };
+  assert.equal(tutorDetailBounds(work, [work]).length, 12);
+});
