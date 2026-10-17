@@ -7,6 +7,7 @@ import { getAssetUrls } from '@tldraw/assets/selfHosted';
 import { useCanvasDispatch, useCanvasState, type CanvasLoad } from '@/context/CanvasContext';
 import { legacyStrokesToShapes } from '@/lib/legacyStrokes';
 import { GRID_SPACING, LINE_SPACING, paperLines } from '@/lib/paper';
+import { TUTOR_IMAGE_SIDE, TUTOR_IMAGE_PADDING, tutorDetailBounds } from '@/lib/tutorBoardImages';
 import type { Paper } from '@/types';
 import type { DrawingCanvasHandle } from './DrawingCanvas';
 
@@ -141,8 +142,8 @@ function shapesToExport(editor: Editor): TLShapeId[] {
 // Snapshots for the tutor: 2x for sharp ink, but never longer than this on either side. A board
 // written while zoomed out spans thousands of page units, and at 2x that made images over 6000px
 // wide, which ChatGPT rejected. Providers shrink images to about this size anyway.
-const MAX_IMAGE_SIDE = 2048;
-const IMAGE_PADDING = 16;
+const MAX_IMAGE_SIDE = TUTOR_IMAGE_SIDE;
+const IMAGE_PADDING = TUTOR_IMAGE_PADDING;
 
 function imagePixelRatio(editor: Editor, ids: TLShapeId[]): number {
   const bounds = editor.getShapesPageBounds(ids);
@@ -222,6 +223,44 @@ export default function TldrawCanvas({ handleRef, toolsHidden, paper }: { handle
   }, [editor, dispatch]);
 
   useImperativeHandle(handleRef, () => ({
+    captureForTutor: async () => {
+      if (!editor || loadPending.current) throw new Error('The board is still loading. Please try again.');
+      const board = loads.current;
+      const revision = documentRevision;
+      const ids = shapesToExport(editor);
+      const bounds = editor.getShapesPageBounds(ids);
+      if (!bounds) return { canvasImage: '' };
+      // Keep problem pictures in the overview and behind annotations, but don't tile pictures alone.
+      const work = [...editor.getShapeAndDescendantIds(ids)].flatMap((id) => {
+        const shape = editor.getShape(id);
+        if (!shape || shape.meta[PROBLEM_META] || shape.type === 'group') return [];
+        const box = editor.getShapePageBounds(shape);
+        return box ? [{ bounds: box, geometry: editor.getShapeGeometry(shape), toLocal: editor.getShapePageTransform(shape).clone().invert() }] : [];
+      });
+      const tiles = tutorDetailBounds(bounds, work.map((shape) => shape.bounds), (index, cell) => {
+        const { geometry, toLocal } = work[index];
+        return geometry.overlapsPolygon(toLocal.applyToPoints(new Box(cell.x, cell.y, cell.w, cell.h).corners));
+      });
+      try {
+        const { url } = await editor.toImageDataUrl(ids, {
+          format: 'png', background: true, padding: IMAGE_PADDING, pixelRatio: imagePixelRatio(editor, ids),
+        });
+        const canvasDetails: string[] = [];
+        // Sequential exports keep memory bounded on tablets.
+        for (const tile of tiles) {
+          const { url } = await editor.toImageDataUrl(ids, {
+            format: 'png', background: true, bounds: new Box(tile.x, tile.y, tile.w, tile.h), padding: 0, pixelRatio: 2,
+          });
+          canvasDetails.push(url.split(',')[1]);
+        }
+        if (loads.current !== board || loadPending.current || documentRevision !== revision) {
+          throw new Error('The board changed during capture');
+        }
+        return { canvasImage: url.split(',')[1], canvasDetails };
+      } catch {
+        throw new Error('The board image could not be captured. Please try again, or select a smaller part of your work.');
+      }
+    },
     captureImage: async () => {
       if (!editor) return '';
       const ids = shapesToExport(editor);

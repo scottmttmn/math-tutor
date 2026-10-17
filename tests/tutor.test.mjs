@@ -274,8 +274,10 @@ test('chatgpt: a write-up caps the plan reply; a question does not', async () =>
   assert.equal(options[0].maxOutputTokens, 16384);
   assert.match(options[0].instructions, /Transcribe, don't solve/);
   now += 5000;
-  await (await request({ userQuestion: 'Help' })).text();
+  await (await request({ userQuestion: 'Help', canvasDetails: ['ink-top', 'ink-bottom'] })).text();
   assert.equal(options[1].maxOutputTokens, undefined);
+  assert.deepEqual(options[1].input.at(-1).content.filter((part) => part.type === 'input_image').map((part) => part.image_url),
+    ['board', 'ink-top', 'ink-bottom'].map((image) => `data:image/png;base64,${image}`));
 });
 
 for (const provider of ['anthropic', 'openai-compatible']) {
@@ -284,6 +286,7 @@ for (const provider of ['anthropic', 'openai-compatible']) {
     const response = await request({
       problemStatement: 'Find the midpoint of 1 + i and 3 - i.', modelConfig: { provider, model: 'test', baseUrl: 'http://localhost/v1' },
       canvasImage: 'fake-image', chatHistory: [{ role: 'user', content: 'Earlier question' }, { role: 'assistant', content: '' }],
+      canvasDetails: ['ink-top', 'ink-bottom'],
     });
     assert.match(await response.text(), /text_delta/);
     const system = calls[0].system ?? calls[0].messages[0].content;
@@ -291,6 +294,9 @@ for (const provider of ['anthropic', 'openai-compatible']) {
     const messages = JSON.stringify(calls[0].messages);
     assert.match(messages, /midpoint of 1 \+ i/);
     assert.match(messages, /fake-image/);
+    assert.match(messages, /ink-top/);
+    assert.match(messages, /ink-bottom/);
+    assert.match(messages, /close-up 1 of 2/);
     assert.match(messages, /Earlier question/);
   });
   test(`${provider}: provider errors finish the SSE once and report failure`, async () => {

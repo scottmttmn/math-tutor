@@ -29,8 +29,10 @@ const canvasRatio = async () => {
 };
 // Taps a point on the page, as fractions of its shown part.
 const tapPage = async (x, y) => {
-  const box = await page.getByTestId('page-overlay').boundingBox();
-  await page.mouse.click(box.x + box.width * x, box.y + box.height * y);
+  const overlay = page.getByTestId('page-overlay');
+  const box = await overlay.boundingBox();
+  // Locator clicks wait for the page to settle after full-screen and bar layout changes.
+  await overlay.click({ position: { x: box.width * x, y: box.height * y } });
 };
 
 try {
@@ -122,10 +124,14 @@ try {
   await page.getByRole('button', { name: 'Full screen' }).click();
   await page.getByRole('link', { name: 'Home' }).waitFor({ state: 'hidden' });
   await page.getByRole('tab', { name: 'Contents' }).waitFor({ state: 'hidden' });
+  // Entering full screen remounts the PDF, which first has its canvas's default size.
+  await page.waitForFunction(() => document.fullscreenElement && document.querySelector('[data-testid="page-overlay"]')?.getBoundingClientRect().width > innerWidth * 0.8);
   await tapPage(0.5, 0.4);
   await page.getByRole('button', { name: 'Exit full screen' }).waitFor({ state: 'hidden' });
   await tapPage(0.9, 0.4);
+  await page.getByLabel('Page 5', { exact: true }).waitFor();
   await page.keyboard.press('ArrowLeft');
+  await page.getByLabel('Page 4', { exact: true }).waitFor();
   await tapPage(0.5, 0.4);
   await at('p. 2 (4 of 5)');
   // The book's lists open as a panel over the page; choosing a section closes it.
@@ -190,7 +196,10 @@ try {
 
   // Your list: what was made in the book, by section; a highlight across a line of print quotes it.
   // The rows of print on the page, as fractions of its height (from the rendered page's dark pixels).
-  const printRows = await page.getByLabel(/^Page \d+$/).evaluate((canvas) => {
+  // The page label and saved ink can update before PDF.js finishes painting the new canvas.
+  const printed = await page.waitForFunction(() => {
+    const canvas = document.querySelector('canvas[aria-label^="Page "]');
+    if (!canvas) return false;
     const { width, height } = canvas;
     const data = canvas.getContext('2d').getImageData(0, 0, width, height).data;
     const rows = [];
@@ -201,8 +210,10 @@ try {
       if (dark && from < 0) from = y;
       if (!dark && from >= 0) { rows.push((from + y) / 2 / height); from = -1; }
     }
-    return rows;
+    return rows.length >= 3 ? rows : false;
   });
+  const printRows = await printed.jsonValue();
+  await printed.dispose();
   assert.ok(printRows.length >= 3, `found the lines of print (${printRows})`);
   await page.getByRole('button', { name: 'Highlight', exact: true }).click();
   await stroke([0.02, printRows[1]], [0.3, printRows[1]]);

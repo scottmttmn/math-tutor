@@ -125,6 +125,14 @@ try {
   assert.match(pages.content, /<book_pages>[\s\S]*roots of unity/);
   assert.doesNotMatch(pages.content, /Compute \(1\+i\)\^8/);
 
+  // Shelf follow-ups also need the current board: previous turns contain text only.
+  const followUp = page.getByPlaceholder('Type or speak a follow-up...');
+  await followUp.fill('Check the same work again.');
+  await page.getByRole('button', { name: 'Send', exact: true }).and(page.locator(':enabled')).waitFor({ timeout: 10_000 });
+  await followUp.press('Enter');
+  await page.getByText('Shelf hint.', { exact: true }).nth(1).waitFor();
+  assert.deepEqual(requests.at(-1).messages.at(-1).content.filter((part) => part.type === 'image_url'), content.filter((part) => part.type === 'image_url'));
+
   // Solving shows on the page's mark; a reload returns to the same board with the stroke.
   // The tutor opened in its drawer; closing it leaves the page and the board.
   await page.getByRole('complementary', { name: 'Tutor' }).waitFor();

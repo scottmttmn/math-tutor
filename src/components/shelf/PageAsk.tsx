@@ -61,7 +61,7 @@ function Conversation({ pdf, where, page, rect, question, onClose, onSave }: Pro
     if (!problemImage || asked.current) return;
     const timer = setTimeout(() => {
       asked.current = true;
-      void send.current('', question).then((sent) => { if (!sent) setError('The tutor is busy. Ask again below in a moment.'); });
+      void send.current({ canvasImage: '' }, question).then((sent) => { if (!sent) setError('The tutor is busy. Ask again below in a moment.'); });
     }, getTutorWaitMs());
     return () => clearTimeout(timer);
   }, [problemImage, question]);

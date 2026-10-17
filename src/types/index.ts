@@ -316,10 +316,23 @@ export type UserPart = { type: 'text'; text: string } | { type: 'image'; data: s
 /** What a choice under Ask tutor asks for (see askChoices in src/lib/tutorAsk.ts). */
 export type TutorIntent = 'hint' | 'explain' | 'check' | 'feedback';
 
-export interface TutorRequest {
+/** Page bounds of one crop of the board. */
+export interface TutorImageBounds {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** A board overview and optional close-ups in reading order; base64 PNGs without the data: prefix. */
+export interface TutorBoardImages {
+  canvasImage: string;
+  canvasDetails?: string[];
+}
+
+export interface TutorRequest extends TutorBoardImages {
   problemStatement: string;
   chatHistory: ChatMessage[];
-  canvasImage: string;
   modelConfig: ModelConfig;
   userQuestion?: string;
   problemImage?: string;

@@ -4,7 +4,7 @@ import { useRef, useEffect } from 'react';
 import { useSessionState } from '@/context/SessionContext';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
-import type { BookContext } from '@/types';
+import type { BookContext, TutorBoardImages } from '@/types';
 
 /** The chat box's id, so Ask… under Ask tutor can put the cursor in it. */
 const QUESTION_ID = 'tutor-question';
@@ -15,12 +15,12 @@ export function focusTutorQuestion() {
 }
 
 interface ChatPanelProps {
-  /** A snapshot of the board for the message, or '' when the tutor has seen it; `fresh` always takes one. */
-  getCanvasImage?: (fresh?: boolean) => Promise<string>;
+  /** Current board images, attached to every question because history contains text only. */
+  getBoardImages?: () => Promise<TutorBoardImages>;
   getBookContext?: () => Promise<BookContext | null>;
 }
 
-export default function ChatPanel({ getCanvasImage, getBookContext }: ChatPanelProps) {
+export default function ChatPanel({ getBoardImages, getBookContext }: ChatPanelProps) {
   const { chatHistory, isStreaming } = useSessionState();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -50,7 +50,7 @@ export default function ChatPanel({ getCanvasImage, getBookContext }: ChatPanelP
         )}
       </div>
 
-      <ChatInput id={QUESTION_ID} getCanvasImage={getCanvasImage} getBookContext={getBookContext} />
+      <ChatInput id={QUESTION_ID} getBoardImages={getBoardImages} getBookContext={getBookContext} />
     </div>
   );
 }

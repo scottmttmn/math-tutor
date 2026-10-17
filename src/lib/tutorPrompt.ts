@@ -1,4 +1,5 @@
 import type { BookContext, TutorPlan, TutorRequest, UserPart } from '@/types';
+import { TUTOR_MAX_DETAILS } from '@/lib/tutorBoardImages';
 import { MAX_NOTEBOOK, TOPIC_AREAS } from '@/lib/learnerProfile';
 
 // What the tutor is told and what it reads, shared by the server route (/api/tutor) and the Android
@@ -125,6 +126,7 @@ export function latestUserParts(
   userQuestion?: string,
   problemImage?: string,
   otherProblems: string[] = [],
+  canvasDetails: string[] = [],
 ): UserPart[] {
   const parts: UserPart[] = [];
   if (problemImage) {
@@ -137,6 +139,9 @@ export function latestUserParts(
         ? 'My board, with my handwritten work (if the problem figure is on it too, I put a copy there to write on and around; the handwriting is my work):'
         : 'My board, with my handwritten work:',
     }, { type: 'image', data: canvasImage });
+    for (const [index, image] of canvasDetails.entries()) {
+      parts.push({ type: 'text', text: `My board, close-up ${index + 1} of ${canvasDetails.length} of the same handwritten work (overlapping crops, top to bottom then left to right; use these to read the ink in the overview):` }, { type: 'image', data: image });
+    }
   }
   let text = '';
   if (problemStatement) {
@@ -193,7 +198,7 @@ ${profile.slice(0, MAX_PROFILE_CHARS).replace(/<\/?learner_profile>/g, '')}
  * write-up, plus the rules for whatever it carries), the conversation preface, and the latest turn.
  */
 export function planTutorRequest(body: TutorRequest): TutorPlan {
-  const { problemStatement, chatHistory, canvasImage, userQuestion, problemImage, sessionType, bookContext, learnerProfile, takeNotes, checkIn, writeUp, otherProblems } = body;
+  const { problemStatement, chatHistory, canvasImage, canvasDetails, userQuestion, problemImage, sessionType, bookContext, learnerProfile, takeNotes, checkIn, writeUp, otherProblems } = body;
   // A write-up reads only the board (and the problem): no conversation, memory or book pages.
   const isWriteUp = writeUp === true;
   const book = isWriteUp ? '' : bookReference(bookContext);
@@ -208,7 +213,8 @@ export function planTutorRequest(body: TutorRequest): TutorPlan {
     preface: [profile, book, checkInTopics].filter(Boolean).join('\n\n'),
     history: isWriteUp ? [] : chatHistory,
     latest: latestUserParts(checkInTopics ? '' : problemStatement, canvasImage, isWriteUp ? 'Write up the handwritten work on my board in LaTeX.' : userQuestion, problemImage,
-      isWriteUp || !Array.isArray(otherProblems) ? [] : otherProblems.filter((name): name is string => typeof name === 'string').slice(0, 50).map((name) => name.slice(0, 100))),
+      isWriteUp || !Array.isArray(otherProblems) ? [] : otherProblems.filter((name): name is string => typeof name === 'string').slice(0, 50).map((name) => name.slice(0, 100)),
+      Array.isArray(canvasDetails) ? canvasDetails.filter((image): image is string => typeof image === 'string' && Boolean(image)).slice(0, TUTOR_MAX_DETAILS) : []),
     // A whole page of LaTeX needs more room than a short hint.
     maxTokens: isWriteUp ? 4096 : 1024,
     isWriteUp,
