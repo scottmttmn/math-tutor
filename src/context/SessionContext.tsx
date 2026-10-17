@@ -25,6 +25,8 @@ type SessionAction =
   | { type: 'REMOVE_PROBLEM'; id: string };
 
 interface SessionState {
+  /** Changes on opening/new board, but not on its first autosave; resets transient chat drafts. */
+  conversationKey: number;
   currentSessionId: string | null;
   problemStatement: string;
   problemImage: string | null;
@@ -48,6 +50,7 @@ interface SessionState {
 }
 
 export const initialState: SessionState = {
+  conversationKey: 0,
   currentSessionId: null,
   problemStatement: '',
   problemImage: null,
@@ -119,6 +122,7 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
     case 'LOAD_SESSION': {
       const loaded: SessionState = {
         ...state,
+        conversationKey: state.conversationKey + 1,
         currentSessionId: action.sessionId,
         problemStatement: action.problemStatement,
         problemImage: action.problemImage,
@@ -136,6 +140,7 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
     case 'NEW_SESSION':
       return {
         ...state,
+        conversationKey: state.conversationKey + 1,
         currentSessionId: null,
         problemStatement: '',
         problemImage: null,

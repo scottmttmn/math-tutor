@@ -9,6 +9,8 @@ try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
+  const requests = [];
+  await page.route('**/api/tutor', (route) => { requests.push(route.request()); return route.abort(); });
   await page.goto(`${origin}/board?new=problem`);
   await page.locator('.tl-canvas').waitFor();
   const controls = page.getByRole('group', { name: 'Board controls' });
@@ -41,6 +43,22 @@ try {
   await page.getByRole('button', { name: 'Show tools', exact: true }).click();
   await page.locator('.tlui-layout').waitFor();
   await controls.getByRole('button', { name: 'Favorite', exact: true }).and(page.locator(':enabled')).waitFor();
+
+  const ask = controls.getByRole('button', { name: 'Ask tutor', exact: true });
+  assert.equal(await ask.getAttribute('aria-pressed'), 'false');
+  await ask.click();
+  await page.getByRole('complementary', { name: 'Tutor' }).waitFor();
+  assert.equal(await ask.getAttribute('aria-pressed'), 'true');
+  assert.equal(await controls.getByRole('button', { name: 'Tutor', exact: true }).count(), 0);
+  assert.deepEqual(await page.getByRole('group', { name: 'Tutor choices' }).getByRole('button').allTextContents(), ['Hint', 'Check my work', 'Feedback']);
+  const question = page.getByPlaceholder('Ask your own question…');
+  await question.fill('Keep this draft.');
+  await ask.click();
+  assert.equal(await page.getByRole('complementary', { name: 'Tutor' }).count(), 0);
+  await ask.click();
+  assert.equal(await question.inputValue(), 'Keep this draft.');
+  assert.equal(requests.length, 0, 'opening and closing the drawer sends no tutor request');
+  await question.fill('');
 
   for (const width of [1600, 700]) {
     await page.setViewportSize({ width, height: 1000 });

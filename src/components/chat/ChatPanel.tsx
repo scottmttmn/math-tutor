@@ -6,22 +6,17 @@ import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
 import type { BookContext, TutorBoardImages } from '@/types';
 
-/** The chat box's id, so Ask… under Ask tutor can put the cursor in it. */
 const QUESTION_ID = 'tutor-question';
-
-/** Puts the cursor in the tutor's chat box once the drawer has opened. */
-export function focusTutorQuestion() {
-  requestAnimationFrame(() => requestAnimationFrame(() => document.getElementById(QUESTION_ID)?.focus()));
-}
 
 interface ChatPanelProps {
   /** Current board images, attached to every question because history contains text only. */
   getBoardImages?: () => Promise<TutorBoardImages>;
   getBookContext?: () => Promise<BookContext | null>;
+  onAskForHelp?: (question: string) => Promise<void>;
 }
 
-export default function ChatPanel({ getBoardImages, getBookContext }: ChatPanelProps) {
-  const { chatHistory, isStreaming } = useSessionState();
+export default function ChatPanel({ getBoardImages, getBookContext, onAskForHelp }: ChatPanelProps) {
+  const { chatHistory, isStreaming, conversationKey } = useSessionState();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,9 +33,7 @@ export default function ChatPanel({ getBoardImages, getBookContext }: ChatPanelP
         {chatHistory.length === 0 ? (
           <div className="flex items-center justify-center h-full text-center text-sm text-gray-500 px-4">
             <p>
-              Write on the board, then press
-              <strong className="text-indigo-700"> Ask tutor</strong>
-              , or ask a question below.
+              The tutor will look at your board or selection.
             </p>
           </div>
         ) : (
@@ -50,7 +43,7 @@ export default function ChatPanel({ getBoardImages, getBookContext }: ChatPanelP
         )}
       </div>
 
-      <ChatInput id={QUESTION_ID} getBoardImages={getBoardImages} getBookContext={getBookContext} />
+      <ChatInput key={conversationKey} id={QUESTION_ID} getBoardImages={getBoardImages} getBookContext={getBookContext} onAskForHelp={onAskForHelp} />
     </div>
   );
 }

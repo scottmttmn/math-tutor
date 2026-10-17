@@ -1,8 +1,8 @@
 import type { SessionType, TutorIntent } from '@/types';
 
-/** One line of the Ask tutor menu: a request sent with the board, or `own` to type or say a question. */
+/** A choice in the tutor drawer, sent with the board. */
 export interface AskChoice {
-  intent: TutorIntent | 'own';
+  intent: TutorIntent;
   label: string;
 }
 
@@ -12,13 +12,11 @@ export function askChoices(sessionType: SessionType): AskChoice[] {
     ? [
         { intent: 'explain', label: 'Explain this' },
         { intent: 'check', label: 'Check my notes' },
-        { intent: 'own', label: 'Ask…' },
       ]
     : [
         { intent: 'hint', label: 'Hint' },
         { intent: 'check', label: 'Check my work' },
         { intent: 'feedback', label: 'Feedback' },
-        { intent: 'own', label: 'Ask…' },
       ];
 }
 

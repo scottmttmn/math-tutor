@@ -6,33 +6,37 @@ import { useTutorChat } from '@/hooks/useTutorChat';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import type { BookContext, TutorBoardImages } from '@/types';
 import ChatTextarea from '@/components/chat/ChatTextarea';
+import { getTutorWaitMs } from '@/hooks/useRateLimit';
+import { askChoices, askQuestion } from '@/lib/tutorAsk';
+import type { TutorIntent } from '@/types';
 
 interface ChatInputProps {
   /** Current board images for every question, including a follow-up without new ink. */
   getBoardImages?: () => Promise<TutorBoardImages>;
   /** The Shelf pages the tutor reads with the follow-up, if any. */
   getBookContext?: () => Promise<BookContext | null>;
-  /** The chat box's id (see focusTutorQuestion). */
+  /** The chat box's id. */
   id?: string;
+  onAskForHelp?: (question: string) => Promise<void>;
 }
 
-export default function ChatInput({ id, getBoardImages, getBookContext }: ChatInputProps) {
+export default function ChatInput({ id, getBoardImages, getBookContext, onAskForHelp }: ChatInputProps) {
   const [text, setText] = useState('');
   const [sendError, setSendError] = useState('');
   const [capturing, setCapturing] = useState(false);
   const submitting = useRef(false);
-  const { chatHistory, isStreaming } = useSessionState();
+  const { chatHistory, isStreaming, sessionType, checkIn } = useSessionState();
   const { sendFollowUp, isLimited } = useTutorChat(getBookContext);
   const { isListening, isSupported, error, startListening, stopListening, resetTranscript } =
     useSpeechRecognition(setText);
 
-  // A question can open the conversation too (Ask… under Ask tutor); it then always takes the board.
+  // A custom question can open the conversation too; it always takes the board.
   const canSend = text.trim().length > 0 && !isStreaming && !isLimited && !capturing;
   const inputDisabled = isStreaming || capturing;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSend || submitting.current) return;
+    if (!canSend || submitting.current || getTutorWaitMs() > 0) return;
     submitting.current = true;
     if (isListening) stopListening();
     const msg = text;
@@ -43,6 +47,21 @@ export default function ChatInput({ id, getBoardImages, getBookContext }: ChatIn
       setText('');
       resetTranscript();
       await sendFollowUp(msg, images);
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : 'The board image could not be captured. Please try again.');
+    } finally {
+      setCapturing(false);
+      submitting.current = false;
+    }
+  };
+
+  const handleChoice = async (intent: TutorIntent) => {
+    if (!onAskForHelp || isStreaming || submitting.current || getTutorWaitMs() > 0) return;
+    submitting.current = true;
+    setSendError('');
+    setCapturing(true);
+    try {
+      await onAskForHelp(askQuestion(intent, sessionType));
     } catch (error) {
       setSendError(error instanceof Error ? error.message : 'The board image could not be captured. Please try again.');
     } finally {
@@ -62,12 +81,23 @@ export default function ChatInput({ id, getBoardImages, getBookContext }: ChatIn
 
   return (
     <form onSubmit={handleSubmit} className="px-3 py-2 border-t border-gray-200">
+      {onAskForHelp && !checkIn && (
+        <div role="group" aria-label="Tutor choices" className="flex flex-wrap gap-2 mb-2">
+          {askChoices(sessionType).map((choice) => (
+            <button key={choice.intent} type="button" onClick={() => void handleChoice(choice.intent)}
+              disabled={isStreaming || isLimited || capturing}
+              className={`flex-1 min-h-11 px-3 text-sm font-medium text-indigo-700 border border-indigo-700 rounded-lg hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed ${chatHistory.length === 0 ? 'py-3' : ''}`}>
+              {choice.label}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex items-end gap-2">
         <ChatTextarea
           id={id}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={chatHistory.length === 0 ? 'Type or speak a question about your board...' : 'Type or speak a follow-up...'}
+          placeholder="Ask your own question…"
           disabled={inputDisabled}
           className="flex-1 min-w-0 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent disabled:opacity-50 disabled:bg-gray-50"
         />

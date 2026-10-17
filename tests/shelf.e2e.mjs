@@ -1,3 +1,4 @@
+import { chooseTutor } from './tutor-ui.mjs';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -106,8 +107,7 @@ try {
   await page.getByText('Saved', { exact: true }).waitFor();
 
   // Ask for help: the marked region goes to the tutor as the problem image, the board as the work.
-  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
-  await page.getByRole('menuitem').first().click(); // Hint, or Explain this on notes
+  await chooseTutor(page);
   await page.getByText('Shelf hint.').waitFor();
   const content = requests.at(-1).messages.at(-1).content;
   assert.equal(content.filter((part) => part.type === 'image_url').length, 2, 'problem image and board');
@@ -126,7 +126,7 @@ try {
   assert.doesNotMatch(pages.content, /Compute \(1\+i\)\^8/);
 
   // Shelf follow-ups also need the current board: previous turns contain text only.
-  const followUp = page.getByPlaceholder('Type or speak a follow-up...');
+  const followUp = page.getByPlaceholder('Ask your own question…');
   await followUp.fill('Check the same work again.');
   await page.getByRole('button', { name: 'Send', exact: true }).and(page.locator(':enabled')).waitFor({ timeout: 10_000 });
   await followUp.press('Enter');
@@ -222,8 +222,7 @@ try {
   await page.getByText('Page 1 of 2').waitFor();
   await page.getByRole('button', { name: 'Full screen' }).click();
   await page.waitForTimeout(5000);
-  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
-  await page.getByRole('menuitem').first().click(); // Hint, or Explain this on notes
+  await chooseTutor(page);
   await page.getByRole('button', { name: 'Full screen' }).waitFor();
   await page.getByText('Shelf hint.').last().waitFor();
   // Hiding the tools leaves the pen writing; the choice survives a reload.
@@ -355,8 +354,7 @@ try {
   await page.getByRole('button', { name: 'Done marking' }).click();
   assert.deepEqual(await onBoard.getByRole('button').allInnerTexts(), ['Problem 3', 'Problem 4', 'Problem 5']);
   await page.waitForTimeout(5000);
-  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
-  await page.getByRole('menuitem').first().click();
+  await chooseTutor(page);
   await page.getByText('Shelf hint.').last().waitFor();
   const asked = JSON.stringify(requests.at(-1).messages.at(-1).content);
   assert.match(asked, /The problem I'm working on: Problem 5 · Algebra drills, p\. 2/);

@@ -72,7 +72,7 @@ Done: **Skill check-in** on the Tutor memory page offers the topics nobody is su
 ## Board toolbar simplification
 
 - Done (step 1): named icon controls for full screen, current paper and sweep Clear; paper swatches; Board menu for tools, write-up and exports; Show tools chip; compact tablet labels.
-- Next (step 2): one Ask tutor button toggles the drawer; choices live above its chat box, with direct Start check-in / Hand in answer actions.
+- Done (step 2): one Ask tutor button toggles the drawer without sending; choices stay above its chat box, with direct Start check-in / Hand in answer actions. Drafts and active replies survive closing the drawer.
 
 ## After the MVP
 
