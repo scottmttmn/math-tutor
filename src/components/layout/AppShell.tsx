@@ -132,7 +132,7 @@ function AppContent() {
       <BoardFrame
         fullScreen={fullScreen}
         source={checkIn
-          ? { label: 'Check-in', content: <CheckInHeader checkIn={checkIn} started={checkInStarted(chatHistory)} /> }
+          ? { label: 'Check-in', content: <CheckInHeader checkIn={checkIn} started={checkInStarted(chatHistory)} onShowProblem={tutorOpen ? undefined : () => setTutorOpen(true)} /> }
           : sessionType === 'note'
           ? { label: 'Topic', content: <NoteHeader /> }
           : {

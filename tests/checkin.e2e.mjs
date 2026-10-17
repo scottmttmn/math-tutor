@@ -73,6 +73,17 @@ try {
   assert.doesNotMatch(lastUserText(), /problem I'm working on/);
   console.log('PASS the first problem comes from the check-in prompt');
 
+  // Re-reading the problem after closing must not hand in an answer, even during the limit.
+  const beforeReopen = requests.length;
+  await page.getByRole('button', { name: 'Close tutor' }).click();
+  const showProblem = page.getByRole('button', { name: 'Show check-in problem', exact: true });
+  assert.ok(await showProblem.isEnabled());
+  await showProblem.click();
+  await page.getByRole('complementary', { name: 'Tutor' }).getByText('Problem 1 (Limits)', { exact: false }).waitFor();
+  assert.equal(requests.length, beforeReopen, 'showing the current problem sends no request');
+  assert.equal(await page.getByRole('group', { name: 'Tutor choices' }).count(), 0);
+  console.log('PASS a closed check-in problem reopens without submitting the board');
+
   // The answer goes in by hand; the tutor's verdict settles Limits in the memory.
   await page.waitForTimeout(5200);
   await ask('Problem 2 (Integrals)');
