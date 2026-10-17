@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
@@ -135,9 +135,49 @@ try {
   await page.evaluate((config) => localStorage.setItem('mathTutor_modelConfig', JSON.stringify(config)), model);
   await page.reload(); await waitProblem();
 
+  // The native style controls start behind a 44px pen chip, with S/solid still the defaults.
+  const penChip = () => page.getByRole('button', { name: /^Pen: / });
+  await penChip().waitFor();
+  assert.equal(await penChip().getAttribute('aria-label'), 'Pen: black, S');
+  assert.equal(await penChip().getAttribute('title'), 'Pen: black, S');
+  assert.ok((await penChip().boundingBox()).height >= 44);
+  assert.equal(await page.getByTestId('style.panel').count(), 0);
+  await penChip().click();
+  assert.equal(await page.getByTestId('style.dash.solid').getAttribute('aria-checked'), 'true');
+  await page.getByTestId('style.size.m').click();
+  await page.getByRole('button', { name: 'Pen: black, M', exact: true }).waitFor();
+  await page.getByTestId('style.color.blue').click();
+  await page.getByRole('button', { name: 'Pen: blue, M', exact: true }).waitFor();
+  assert.ok(await page.getByTestId('style.panel').isVisible(), 'two style changes leave the panel open');
+  await page.reload(); await waitProblem();
+  await page.getByTestId('style.panel').waitFor();
+  assert.equal(await penChip().getAttribute('aria-expanded'), 'true', 'open is remembered on this device');
+  assert.match(await penChip().getAttribute('aria-label'), /, S$/, 'a fresh board still starts at S');
+  await page.keyboard.press('Escape');
+  await page.getByTestId('style.panel').waitFor({ state: 'detached' });
+  await page.reload(); await waitProblem();
+  await penChip().waitFor();
+  assert.equal(await penChip().getAttribute('aria-expanded'), 'false', 'collapsed is remembered too');
+  if (process.env.STYLE_SCREENSHOT_DIR) {
+    await mkdir(process.env.STYLE_SCREENSHOT_DIR, { recursive: true });
+    for (const width of [1600, 700]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.waitForTimeout(200);
+      await page.screenshot({ path: join(process.env.STYLE_SCREENSHOT_DIR, `collapsed-${width}.png`) });
+      await penChip().click();
+      await page.getByTestId('style.panel').waitFor();
+      await page.screenshot({ path: join(process.env.STYLE_SCREENSHOT_DIR, `open-${width}.png`) });
+      await penChip().click();
+    }
+    await page.setViewportSize(launchOptions.viewport);
+  }
+  console.log('PASS pen chip defaults, native size/color controls, Escape, and remembered open/collapsed state');
+
   // A problem board asks for hints, never the answer.
   await problemBox().fill('Find a strategy for a quadratic.');
+  await penChip().click();
   await draw();
+  assert.equal(await penChip().getAttribute('aria-expanded'), 'false', 'starting a pen stroke collapses the panel');
   let request = await askTutor('Problem hint.');
   assert.match(request.messages[0].content, /The answer is theirs to find/);
   assert.match(JSON.stringify(request.messages), /Find a strategy for a quadratic/);
@@ -204,6 +244,13 @@ try {
   await page.mouse.click(drawn[0].x + drawn[0].width - 4, drawn[0].y + drawn[0].height - 2.5);
   await page.waitForFunction(() => document.querySelector('[data-testid="quick-actions.delete"]')?.disabled === false, null, { timeout: 5000 })
     .catch(async () => assert.fail(`the stroke wasn't selected (${JSON.stringify(drawn[0])}; shapes ${JSON.stringify(await shapesShown())})`));
+  assert.equal(await penChip().getAttribute('aria-expanded'), 'false', 'selecting does not open the style panel');
+  await penChip().click();
+  await page.getByTestId('style.size.m').click();
+  await page.getByTestId('style.color.blue').click();
+  await page.getByRole('button', { name: 'Pen: blue, M', exact: true }).waitFor();
+  await page.keyboard.press('Escape');
+  assert.equal(await penChip().getAttribute('aria-label'), 'Pen: blue, M', 'the collapsed chip reflects the restyled selection');
   request = await askTutor('Problem hint.');
   // Whether the stroke is still selected after asking, for the message if the size check fails.
   const stillSelected = await page.evaluate(() => document.querySelector('[data-testid="quick-actions.delete"]')?.disabled === false);

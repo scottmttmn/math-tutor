@@ -73,6 +73,7 @@ Done: **Skill check-in** on the Tutor memory page offers the topics nobody is su
 
 - Done (step 1): named icon controls for full screen, current paper and sweep Clear; paper swatches; Board menu for tools, write-up and exports; Show tools chip; compact tablet labels.
 - Next (step 2): one Ask tutor button toggles the drawer; choices live above its chat box, with direct Start check-in / Hand in answer actions.
+- Done: pen styles collapse behind a color/size chip at the top right; the native controls open on tap, stay open for multiple changes, and collapse on a stroke or Esc. Open/collapsed is remembered on the device. Later: decide on fewer colors and no opacity after testing the BOOX.
 
 ## After the MVP
 
