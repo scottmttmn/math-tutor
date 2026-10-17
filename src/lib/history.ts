@@ -24,7 +24,8 @@ export function toHistoryItem(session: Session, favoriteIds: ReadonlySet<string>
   if (session.id.startsWith('workbook:')) return null;
   if (session.id.startsWith('shelf:')) {
     // The reader saves every exercise it opens; only ones with work in them belong in the list.
-    hasWork = session.chatHistory.length > 0 || hasDrawing(session) || Boolean(session.isSolved) || favorite;
+    hasWork = session.chatHistory.length > 0 || hasDrawing(session) || Boolean(session.isSolved)
+      || Boolean(session.problems?.some((problem) => problem.isSolved)) || favorite;
     if (!untouched && !hasWork) return null;
     const shelf = SHELF_ENTRY.exec(session.id);
     if (!shelf) return null;

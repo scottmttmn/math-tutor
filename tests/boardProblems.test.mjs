@@ -77,6 +77,9 @@ test('Home lists a board of several once, with its count, opening its current pr
   assert.equal(item.href, '/shelf/read?doc=doc&open=12');
   const index = folderIndex([{ id: 'book:doc', name: 'Book', parentId: null, createdAt: 1, updatedAt: 1 }], [{ id: 'doc', folderId: 'book:doc', exercises: [] }]);
   assert.deepEqual(folderSummary(index, 'book:doc', [item]), { folders: 0, books: 1, problems: 3, notes: 0, solved: 1 });
+  // One exercise solved is work, though the board as a whole isn't solved yet.
+  assert.equal(toHistoryItem(board({ problems: [problem('11', { isSolved: true }), problem('12')] }))?.hasWork, true);
+  assert.equal(toHistoryItem(board({ problems: [problem('11'), problem('12')] })), null);
   // The mark it was made for may be gone: it is placed by its first problem.
   assert.equal(toHistoryItem(board({ problems: [problem('12')], chatHistory: session.chatHistory })).exerciseId, '12');
 });

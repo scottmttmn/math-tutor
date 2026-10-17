@@ -10,6 +10,7 @@ import { useTutorChat } from '@/hooks/useTutorChat';
 import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
 import { useToolsHidden } from '@/hooks/useToolsHidden';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
+import { loadRecoveredSession } from '@/lib/sessionRecovery';
 import { listFolders, loadInk, loadProfile, loadShelfDocument, savePageInk, saveShelfDocument, shelfSessionId } from '@/lib/db';
 import { folderHref, folderIndex, folderPath, folderTree, isWithin } from '@/lib/folders';
 import { cropPage, openPdf, trimmedArea } from '@/lib/pdf';
@@ -171,16 +172,21 @@ export default function ShelfReader() {
     try {
       const id = await ensureExerciseBoard(source.pdf, source.document, exercise);
       const onOpenBoard = id === currentSessionId;
-      if (onOpenBoard) {
-        // Another exercise on the open board: work on it there, and go to its picture (put on the board if it isn't).
-        sessionDispatch({ type: 'SELECT_PROBLEM', id: exercise.id });
-        const image = problems?.find((problem) => problem.id === exercise.id)?.problemImage;
-        if (image) void canvasHandle.current?.placeProblemImage(image, pictureKey(exercise));
-      } else {
-        if (!await openSession(id)) throw new Error('Not opened');
-        sessionDispatch({ type: 'SELECT_PROBLEM', id: exercise.id });
-        setPlaceOn({ board: id, key: pictureKey(exercise) });
-      }
+      const listed = onOpenBoard ? problems : (await loadRecoveredSession(id).catch(() => undefined))?.problems;
+      if (!onOpenBoard && !await openSession(id)) throw new Error('Not opened');
+      // An added exercise the board never saved (its save failed after the mark was kept) joins it again.
+      let image = listed?.find((problem) => problem.id === exercise.id)?.problemImage ?? null;
+      if (exercise.boardOf && !listed?.some((problem) => problem.id === exercise.id)) {
+        image = await cropPage(source.pdf, exercise.page, exercise.rect);
+        const own = source.document.exercises.find((item) => item.id === exercise.boardOf);
+        sessionDispatch({
+          type: 'ADD_PROBLEM', first: { id: exercise.boardOf, label: own?.label ?? 'Exercise' },
+          problem: { id: exercise.id, label: exercise.label, problemStatement: exerciseStatement(source.document, exercise), problemImage: image, isSolved: false },
+        });
+      } else sessionDispatch({ type: 'SELECT_PROBLEM', id: exercise.id });
+      // Another exercise on the open board: go to its picture there (put on the board if it isn't).
+      if (onOpenBoard) { if (image) void canvasHandle.current?.placeProblemImage(image, pictureKey(exercise)); }
+      else setPlaceOn({ board: id, key: pictureKey(exercise) });
       setOpenings((count) => count + 1);
       setOpenId(exercise.id);
       setPage(exercise.page);
