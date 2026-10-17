@@ -105,13 +105,19 @@ export function streamAnthropicResponse(modelConfig: ModelConfig, plan: TutorPla
   return new ReadableStream({
     async start(controller) {
       try {
+        let stopReason: string | null | undefined;
         for await (const event of stream) {
           if (cancelled) break;
           if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
             controller.enqueue(sse({ type: 'text_delta', content: event.delta.text }));
+          } else if (event.type === 'message_delta') {
+            stopReason = event.delta.stop_reason;
           }
         }
-        if (!cancelled) controller.enqueue(sse({ type: 'message_stop' }));
+        if (cancelled) return;
+        if (stopReason === 'max_tokens' || stopReason === 'model_context_window_exceeded') controller.enqueue(sse({ type: 'error', error: 'The tutor ran out of room before finishing its reply. Please ask again.' }));
+        else if (stopReason === 'refusal') controller.enqueue(sse({ type: 'error', error: 'The model declined to answer this one. Try rephrasing, or another model in Settings.' }));
+        else controller.enqueue(sse({ type: 'message_stop' }));
       } catch (err) {
         if (!cancelled) controller.enqueue(sse({ type: 'error', error: friendlyError(err, source) }));
       } finally {
@@ -173,8 +179,7 @@ export function streamOpenAIResponse(modelConfig: ModelConfig, plan: TutorPlan, 
           try {
             const stream = await openai.chat.completions.create({
               model,
-              // Gemini's thinking spends part of the budget before it answers.
-              max_tokens: isGemini ? Math.max(2048, plan.maxTokens * 2) : plan.maxTokens,
+              max_tokens: plan.maxTokens,
               ...(isGemini ? { reasoning_effort: 'low' as const } : {}),
               messages,
               stream: true,

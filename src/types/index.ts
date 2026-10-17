@@ -359,7 +359,6 @@ export interface TutorPlan {
   /** The latest user turn: labelled images and the question. */
   latest: UserPart[];
   maxTokens: number;
-  isWriteUp: boolean;
 }
 
 /** Where a provider's API key comes from, for its error messages: the server's .env.local or the tablet's Settings. */

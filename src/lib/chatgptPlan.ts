@@ -61,8 +61,6 @@ export function streamChatGPTResponse(
   plan: TutorPlan,
   onFinish: () => void = () => {},
 ): ReadableStream {
-  // Only a write-up is capped: plan models reason before they answer, and the cap counts that too.
-  const maxOutputTokens = plan.isWriteUp ? plan.maxTokens * 4 : undefined;
   const input: ResponseInputMessage[] = [
     ...(plan.preface ? [{ role: 'user' as const, content: plan.preface }] : []),
     ...plan.history
@@ -87,7 +85,7 @@ export function streamChatGPTResponse(
           model: modelConfig.model,
           instructions: plan.systemPrompt,
           input,
-          ...(maxOutputTokens ? { maxOutputTokens } : {}),
+          maxOutputTokens: plan.maxTokens,
           signal: abort.signal,
           onDelta: (delta) => {
             if (cancelled) return;
