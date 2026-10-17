@@ -33,7 +33,7 @@ const lastUserText = () => JSON.stringify(requests.at(-1).messages.at(-1).conten
 
 async function ask(text) {
   const before = requests.length;
-  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  await page.getByRole('button', { name: /^(Start check-in|Hand in answer)$/ }).click();
   for (const deadline = Date.now() + 15_000; requests.length === before && Date.now() < deadline;) await page.waitForTimeout(100);
   assert.equal(requests.length, before + 1);
   await page.getByText(text).last().waitFor();

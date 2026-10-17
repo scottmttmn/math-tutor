@@ -24,7 +24,7 @@ import { askQuestion } from '@/lib/tutorAsk';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
 import AppBar from '@/components/layout/AppBar';
-import ChatPanel, { focusTutorQuestion } from '@/components/chat/ChatPanel';
+import ChatPanel from '@/components/chat/ChatPanel';
 import MoreMenu from '@/components/common/MoreMenu';
 import { KindIcon, SolvedCheck } from '@/components/common/Icons';
 import BoardFrame from '@/components/layout/BoardFrame';
@@ -476,13 +476,6 @@ export default function ShelfReader() {
     }
   };
 
-  // Ask… under Ask tutor: the question is typed or spoken in the tutor's chat box.
-  const askOwn = () => {
-    leaveFullScreen();
-    setTutorOpen(true);
-    focusTutorQuestion();
-  };
-
   const getBoardImages = useCallback(async (): Promise<TutorBoardImages> => {
     if (!canvasHandle.current) throw new Error('The board is still loading. Please try again.');
     return canvasHandle.current.captureForTutor();
@@ -821,7 +814,6 @@ export default function ShelfReader() {
           toolbar={(
             <BottomToolbar
               onAskForHelp={(question) => void askForHelp(question)}
-              onAskOwn={askOwn}
               onClear={() => canvasHandle.current?.clear()}
               isStreaming={isStreaming}
               isSolved={isSolved}
@@ -835,7 +827,7 @@ export default function ShelfReader() {
               favorite={<FavoriteButton favorite={favorite.favorite} failed={favorite.failed} onStar={(reason) => void favorite.star(reason)} onUnstar={() => void favorite.unstar()} />}
             />
           )}
-          tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel getBoardImages={getBoardImages} getBookContext={getBookContext} /> }}
+          tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel visible={tutorOpen && !fullScreen} getBoardImages={getBoardImages} getBookContext={getBookContext} onAskForHelp={askForHelp} /> }}
         />
       ) : readingFullScreen ? (
         // Reading full screen: the page, with its bars until a tap in the middle hides them.

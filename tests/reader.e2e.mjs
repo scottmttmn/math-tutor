@@ -1,3 +1,4 @@
+import { openTutor } from './tutor-ui.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -242,9 +243,9 @@ try {
   await page.locator('.tl-image').waitFor();
   await page.locator('[data-paper="lined"]').waitFor();
   assert.equal(await page.getByText('Tutor reads').count(), 0);
+  await openTutor(page);
+  await page.getByRole('group', { name: 'Tutor choices' }).getByRole('button', { name: 'Explain this' }).waitFor();
   await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Explain this' }).waitFor();
-  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Paper: Lined' }).click();
   await page.getByRole('menuitemradio', { name: 'Grid' }).click();
   await page.locator('[data-paper="grid"]').waitFor();
@@ -313,7 +314,7 @@ try {
   assert.equal(asked[1].userQuestion, 'Can you explain this?');
   await askPanel.getByRole('button', { name: 'Save as note page' }).click();
   await page.getByRole('heading', { name: 'Note 2' }).waitFor();
-  await page.getByRole('button', { name: 'Tutor', exact: true }).click();
+  await openTutor(page);
   await page.getByText('Reply 2 about the box.').waitFor();
   assert.equal(await page.getByText('Reply 1 about the box.').count(), 0, 'a closed question is not kept');
   await page.getByRole('button', { name: 'Close board' }).click();

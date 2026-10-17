@@ -1,3 +1,4 @@
+import { openTutor, chooseTutor } from './tutor-ui.mjs';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -19,7 +20,7 @@ const provider = createServer(async (req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
   if (JSON.stringify(body.messages.at(-1)).includes('Long response safety check')) {
     setTimeout(() => {
-      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: reply } }] })}\n\n`);
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: Array.from({ length: 60 }, (_, index) => `Long reply line ${index + 1}.`).join('\n\n') } }] })}\n\n`);
       res.end('data: [DONE]\n\n');
     }, 7000);
     return;
@@ -42,8 +43,9 @@ async function openBrowser() {
   await context.addInitScript(() => {
     window.SpeechRecognition = class {
       constructor() { window.__testRecognition = this; }
-      start() {}
+      start() { this.listening = true; }
       stop() {
+        this.listening = false;
         this.onend?.();
         this.onresult?.({ results: [[{ transcript: 'Late transcript after sending' }]] });
       }
@@ -56,14 +58,10 @@ async function openBrowser() {
 const problemBox = () => page.getByPlaceholder("Type the math problem you're working on...");
 const waitProblem = () => problemBox().waitFor();
 // The tutor is a drawer on every board, closed until asked.
-async function openTutor() {
-  const closed = page.getByRole('button', { name: 'Tutor', exact: true, pressed: false });
-  if (await closed.count()) await closed.click();
-}
-const followUp = () => page.getByPlaceholder('Type or speak a follow-up...');
+const followUp = () => page.getByPlaceholder('Ask your own question…');
 async function ask(question, reply) {
   const before = requests.length;
-  await openTutor();
+  await openTutor(page);
   await followUp().fill(question);
   const responseReady = page.waitForResponse((response) => response.url() === `${origin}/api/tutor`);
   await page.getByRole('button', { name: 'Send', exact: true }).click();
@@ -95,14 +93,13 @@ const imageOf = (request) => {
   return Array.isArray(content) ? content.find((part) => part.type === 'image_url')?.image_url.url : undefined;
 };
 async function waitForTutorReady() {
-  await page.waitForFunction(() => [...document.querySelectorAll('button')].some((button) =>
-    button.textContent === 'Ask tutor' && !button.disabled));
+  await openTutor(page);
+  await page.getByRole('group', { name: 'Tutor choices' }).getByRole('button').first().and(page.locator(':enabled')).waitFor();
 }
 async function askTutor(reply) {
   const before = requests.length;
   await waitForTutorReady();
-  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
-  await page.getByRole('menuitem').first().click(); // Hint, or Explain this on notes
+  await chooseTutor(page);
   // The board export is async, so wait for the request rather than the busy flag.
   while (requests.length === before) await new Promise((resolve) => setTimeout(resolve, 50));
   await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
@@ -153,15 +150,27 @@ try {
   await page.getByRole('button', { name: 'Paper: Lined' }).click();
   await page.getByRole('menuitemradio', { name: 'Blank' }).click();
   await page.locator('[data-paper="blank"]').waitFor();
-  await page.getByRole('button', { name: 'Tutor', exact: true }).click(); // The reload closed it.
+  await openTutor(page); // The reload closed it.
   console.log('PASS board paper: blank by default, changed and kept');
 
   // One request at a time: a long reply blocks others past five seconds, then a follow-up can go at once.
   await waitForTutorReady();
+  await followUp().fill('Keep my draft while the drawer is closed.');
+  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  await openTutor(page);
+  assert.equal(await followUp().inputValue(), 'Keep my draft while the drawer is closed.');
   await followUp().fill('Long response safety check');
   const longResponseReady = page.waitForResponse((response) => response.url() === `${origin}/api/tutor`);
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.waitForFunction(() => !!document.querySelector('[aria-busy="true"]'));
+  const beforeToggle = requests.length;
+  assert.ok(await page.getByRole('button', { name: 'Ask tutor', exact: true }).isEnabled());
+  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  assert.equal(await page.getByRole('complementary', { name: 'Tutor' }).count(), 0);
+  await openTutor(page);
+  assert.equal(requests.length, beforeToggle, 'toggling during a reply sends nothing');
+  assert.ok(await page.getByRole('group', { name: 'Tutor choices' }).getByRole('button').first().isDisabled());
+  await page.getByRole('button', { name: 'Close tutor' }).click();
   await page.waitForTimeout(5500); // Exercise the active-request lock after the five-second interval expires.
   const duringStream = await page.evaluate(async (modelConfig) => {
     const response = await fetch('/api/tutor', {
@@ -174,6 +183,11 @@ try {
   assert.match(duringStream.message, /already answering/);
   await (await longResponseReady).finished();
   await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
+  await openTutor(page);
+  await page.waitForFunction(() => {
+    const chat = document.querySelector('[aria-busy]');
+    return chat.scrollHeight > chat.clientHeight && chat.scrollHeight - chat.clientHeight - chat.scrollTop < 2;
+  });
   await followUp().fill('Follow up immediately after the long reply');
   assert.ok(await page.getByRole('button', { name: 'Send', exact: true }).isEnabled());
   await ask('Follow up immediately after the long reply', 'Problem hint.');
@@ -181,7 +195,7 @@ try {
 
   // A reload straight after marking it solved keeps the board, the conversation and Solved.
   await page.getByRole('button', { name: 'Mark solved', exact: true }).click();
-  await page.reload(); await waitProblem(); await openTutor();
+  await page.reload(); await waitProblem(); await openTutor(page);
   assert.ok(await page.getByRole('button', { name: 'Solved', exact: true }).isVisible());
   assert.ok(await page.getByRole('button', { name: 'Clear board', exact: true }).isEnabled());
   assert.ok(await page.getByText('Problem hint.', { exact: true }).first().isVisible());
@@ -215,7 +229,8 @@ try {
   // One ~140x80 stroke at 2x with padding, not both strokes and not the whole board.
   assert.ok(width > 200 && width < 450 && height > 120 && height < 330, `unexpected image size ${width}x${height} (still selected after asking: ${stillSelected})`);
   // The shared five-second limit: no countdown, and direct API bursts never reach the provider.
-  assert.ok(await page.getByRole('button', { name: 'Ask tutor', exact: true }).isDisabled());
+  assert.ok(await page.getByRole('button', { name: 'Ask tutor', exact: true }).isEnabled());
+  assert.ok(await page.getByRole('group', { name: 'Tutor choices' }).getByRole('button').first().isDisabled());
   assert.equal(await page.getByRole('button', { name: /^Wait / }).count(), 0);
   const beforeBurst = requests.length;
   const rejected = await page.evaluate(async (modelConfig) => {
@@ -247,7 +262,7 @@ try {
   assert.equal(await page.getByRole('region', { name: 'Problem' }).count(), 0);
   await page.locator('.tl-shape').first().waitFor();
   // Tutor in full screen leaves it and shows the conversation.
-  await page.getByRole('button', { name: 'Tutor', exact: true }).click();
+  await openTutor(page);
   await page.getByRole('button', { name: 'Full screen' }).waitFor();
   await page.getByRole('complementary', { name: 'Tutor' }).waitFor();
   // The open tutor stands in the problem's place; Show problem closes it.
@@ -264,7 +279,7 @@ try {
   await page.getByRole('button', { name: 'Mark solved', exact: true }).waitFor();
   await page.waitForTimeout(1200); // past the autosave delay
   await page.getByRole('status').getByText('Saved', { exact: true }).waitFor();
-  await context.close(); await openBrowser(); await waitProblem(); await openTutor();
+  await context.close(); await openBrowser(); await waitProblem(); await openTutor(page);
   assert.ok(await page.getByRole('button', { name: 'Mark solved', exact: true }).isVisible());
   assert.ok(await page.getByRole('button', { name: 'Clear board', exact: true }).isEnabled());
   assert.ok(await page.getByText('Does this approach make sense?', { exact: true }).isVisible());
@@ -273,7 +288,7 @@ try {
   // A new board starts empty, with its own conversation.
   await newBoard('problem'); await waitProblem();
   await problemBox().fill('Expand (x + 1)^2.');
-  await openTutor();
+  await openTutor(page);
   assert.ok(await page.getByRole('button', { name: 'Clear board', exact: true }).isDisabled());
   assert.equal(await page.getByText('Problem hint.', { exact: true }).count(), 0);
   request = await askTutor('Problem hint.');
@@ -283,8 +298,7 @@ try {
   // Stream errors are visible and still consume the short request interval.
   await waitForTutorReady();
   await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: 'data: {"type":"error","error":"Simulated provider failure"}\n\n' }), { times: 1 });
-  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
-  await page.getByRole('menuitem').first().click(); // Hint, or Explain this on notes
+  await chooseTutor(page);
   await page.getByText('Error: Simulated provider failure', { exact: true }).waitFor();
   assert.ok(await page.evaluate(() => Number(localStorage.getItem('lastHelpTimestamp')) > 0));
   await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: 'data: {"type":"text_delta","content":"Partial reply"}\n\n' }), { times: 1 });
@@ -293,20 +307,20 @@ try {
   await followUp().fill('Hold this reply while I reload.');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.waitForFunction(() => !!document.querySelector('[aria-busy="true"]'));
-  await page.reload(); await waitProblem(); await openTutor();
+  await page.reload(); await waitProblem(); await openTutor(page);
   await page.getByText('The tutor response was interrupted. Ask again to continue.', { exact: true }).last().waitFor();
   assert.equal(await page.locator('.animate-bounce').count(), 0);
   console.log('PASS SSE failures and reload during streaming recover without a stuck typing indicator');
 
-  // Ask tutor says what is wanted: Check my work asks for a verdict; Ask… opens the chat box first.
+  // The drawer offers a verdict and a custom question, both with the board.
   await newBoard('problem');
   await problemBox().fill('Show that the sum of two odd numbers is even.');
   await draw();
   await waitForTutorReady();
   let asked = requests.length;
-  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
-  assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['Hint', 'Check my work', 'Feedback', 'Ask…']);
-  await page.getByRole('menuitem', { name: 'Check my work' }).click();
+  await openTutor(page);
+  assert.deepEqual(await page.getByRole('group', { name: 'Tutor choices' }).getByRole('button').allTextContents(), ['Hint', 'Check my work', 'Feedback']);
+  await chooseTutor(page, 'Check my work');
   while (requests.length === asked) await new Promise((resolve) => setTimeout(resolve, 50));
   assert.match(JSON.stringify(requests.at(-1).messages.at(-1)), /Is my work right\? Please check it\./);
   await page.getByText('Problem hint.', { exact: true }).last().waitFor();
@@ -315,17 +329,15 @@ try {
   await problemBox().fill('Factor x^2 - 1.');
   await draw();
   await waitForTutorReady();
-  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Ask…' }).click();
-  await page.waitForFunction(() => document.activeElement?.id === 'tutor-question');
+  await openTutor(page);
   asked = requests.length;
-  await page.getByPlaceholder('Type or speak a question about your board...').fill('Is difference of squares the right idea?');
+  await page.getByPlaceholder('Ask your own question…').fill('Is difference of squares the right idea?');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   while (requests.length === asked) await new Promise((resolve) => setTimeout(resolve, 50));
   assert.ok(imageOf(requests.at(-1)), 'a question that opens the conversation takes the board');
   await page.getByText('Problem hint.', { exact: true }).last().waitFor();
   await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
-  console.log('PASS Ask tutor offers Hint, Check my work, Feedback and Ask…');
+  console.log('PASS tutor drawer offers Hint, Check my work, Feedback and a custom question');
 
   // A Notes board explains directly; dictated follow-ups land in the box.
   await newBoard('note');
@@ -335,7 +347,16 @@ try {
   assert.match(request.messages[0].content, /Give clear, direct explanations/);
   await page.getByTitle('Speak a question', { exact: true }).click();
   await page.evaluate(() => window.__testRecognition.onresult({ results: [[{ transcript: 'Explain conjugation' }]] }));
-  await page.waitForFunction(() => document.querySelector('textarea[placeholder="Type or speak a follow-up..."]').value === 'Explain conjugation');
+  await page.waitForFunction(() => document.querySelector('textarea[placeholder="Ask your own question…"]').value === 'Explain conjugation');
+  for (const close of ['Close tutor', 'Ask tutor']) {
+    await page.getByRole('button', { name: close, exact: true }).click();
+    await page.waitForFunction(() => window.__testRecognition.listening === false);
+    await openTutor(page);
+    assert.equal(await followUp().inputValue(), 'Explain conjugation', 'closing stops the microphone and keeps the draft');
+    assert.equal(await page.getByTitle('Stop recording', { exact: true }).count(), 0);
+    if (close === 'Close tutor') await page.getByTitle('Speak a question', { exact: true }).click();
+  }
+  await page.getByTitle('Speak a question', { exact: true }).click();
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.getByText('Notes explanation.', { exact: true }).last().waitFor();
   assert.equal(await followUp().inputValue(), '');
@@ -373,7 +394,7 @@ try {
   // Opening an older board from Home brings back its conversation.
   await history.getByRole('searchbox', { name: 'Search texts, problems and notes' }).fill('quadratic');
   await history.getByRole('button', { name: 'Open Find a strategy for a quadratic.' }).click();
-  await page.waitForURL(`${origin}/board`); await waitProblem(); await openTutor();
+  await page.waitForURL(`${origin}/board`); await waitProblem(); await openTutor(page);
   assert.ok(await page.getByText('Does this approach make sense?', { exact: true }).isVisible());
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.getByRole('button', { name: 'Mark solved', exact: true }).isVisible());
