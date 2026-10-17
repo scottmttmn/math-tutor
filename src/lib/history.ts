@@ -30,7 +30,10 @@ export function toHistoryItem(session: Session, favoriteIds: ReadonlySet<string>
     if (!shelf) return null;
     source = 'shelf';
     [, bookId, exerciseId] = shelf;
-    href = `/shelf/read?doc=${encodeURIComponent(bookId)}&open=${encodeURIComponent(exerciseId)}`;
+    // A board of several: placed by its first exercise (the one it was made for may be gone), opened on the current one.
+    exerciseId = session.problems?.[0]?.id ?? exerciseId;
+    const opens = session.problems?.find((problem) => problem.id === session.currentProblem)?.id ?? exerciseId;
+    href = `/shelf/read?doc=${encodeURIComponent(bookId)}&open=${encodeURIComponent(opens)}`;
   }
   const sessionType = session.sessionType ?? 'problem';
   return {
@@ -50,6 +53,9 @@ export function toHistoryItem(session: Session, favoriteIds: ReadonlySet<string>
     bookId,
     exerciseId,
     folderId: session.folderId,
+    ...(session.problems && session.problems.length > 1 && sessionType === 'problem'
+      ? { problems: { total: session.problems.length, solved: session.problems.filter((problem) => problem.isSolved).length } }
+      : {}),
     hasWork,
   };
 }

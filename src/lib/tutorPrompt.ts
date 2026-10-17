@@ -124,6 +124,7 @@ export function latestUserParts(
   canvasImage: string,
   userQuestion?: string,
   problemImage?: string,
+  otherProblems: string[] = [],
 ): UserPart[] {
   const parts: UserPart[] = [];
   if (problemImage) {
@@ -140,6 +141,8 @@ export function latestUserParts(
   let text = '';
   if (problemStatement) {
     text += `The problem I'm working on: ${problemStatement}\n\n`;
+    // A board holding several of the book's exercises: the board image shows them all, and earlier turns may be about the others.
+    if (otherProblems.length > 0) text += `My board also holds ${otherProblems.join(', ')}; earlier messages may be about them.\n\n`;
   }
   if (userQuestion) {
     text += userQuestion;
@@ -190,7 +193,7 @@ ${profile.slice(0, MAX_PROFILE_CHARS).replace(/<\/?learner_profile>/g, '')}
  * write-up, plus the rules for whatever it carries), the conversation preface, and the latest turn.
  */
 export function planTutorRequest(body: TutorRequest): TutorPlan {
-  const { problemStatement, chatHistory, canvasImage, userQuestion, problemImage, sessionType, bookContext, learnerProfile, takeNotes, checkIn, writeUp } = body;
+  const { problemStatement, chatHistory, canvasImage, userQuestion, problemImage, sessionType, bookContext, learnerProfile, takeNotes, checkIn, writeUp, otherProblems } = body;
   // A write-up reads only the board (and the problem): no conversation, memory or book pages.
   const isWriteUp = writeUp === true;
   const book = isWriteUp ? '' : bookReference(bookContext);
@@ -204,7 +207,8 @@ export function planTutorRequest(body: TutorRequest): TutorPlan {
     // What opens the conversation: the profile, then the book pages (both stable across a board's questions).
     preface: [profile, book, checkInTopics].filter(Boolean).join('\n\n'),
     history: isWriteUp ? [] : chatHistory,
-    latest: latestUserParts(checkInTopics ? '' : problemStatement, canvasImage, isWriteUp ? 'Write up the handwritten work on my board in LaTeX.' : userQuestion, problemImage),
+    latest: latestUserParts(checkInTopics ? '' : problemStatement, canvasImage, isWriteUp ? 'Write up the handwritten work on my board in LaTeX.' : userQuestion, problemImage,
+      isWriteUp || !Array.isArray(otherProblems) ? [] : otherProblems.filter((name): name is string => typeof name === 'string').slice(0, 50).map((name) => name.slice(0, 100))),
     // A whole page of LaTeX needs more room than a short hint.
     maxTokens: isWriteUp ? 4096 : 1024,
     isWriteUp,

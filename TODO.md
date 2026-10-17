@@ -21,7 +21,7 @@ Done: **Home** is the page the app opens on: a Continue card for the last board,
 
 - Done (library step 2): Home and the Shelf are one page. Home lists **Books** (every PDF) and free boards; a search or filter also finds the boards made in books. Each book has its own page with its boards; **+ New → Add a PDF…** adds one; a new problem takes a picture (**Add picture**), which replaces Single problem. The Shelf tab is gone.
 - Done (library step 3): nested folders ([design](https://claude.ai/artifact/HwasY4HpAiE6Y5qNts1X6k), option B). A PDF comes in a folder of its own, named after it, which holds the book (read it from the top of the folder) and the boards marked in it; folders can hold folders, books and boards, filed by hand with **Move to…**; **+ New → New folder**; Mark can file a board in a folder inside the book's, starting on the last one picked; counts on a folder's card take in everything inside; deleting a folder moves its contents up a level. Books saved before folders were each given their own.
-- Next (library step 4): several exercises on one board.
+- Done (library step 4): several exercises on one board. With a problem board open, **Mark** offers **This board** or **Own board**; This board adds the boxed exercise to the open board (its picture below the work, Mark stays on for the next one). The board's header lists its exercises to switch between; each is solved on its own, the tutor works on the current one (and is told the others are there), and Home lists the board once with "N of M solved". Removing one keeps the board for the others. Shelf boards only for now.
 
 ### 3. PDF Shelf
 

@@ -76,6 +76,23 @@ export interface Session {
   folderId?: string | null;
   /** When Move last filed it: a move isn't work on the board (updatedAt), but a restore keeps the later filing. */
   filedAt?: number;
+  /**
+   * A Shelf board holding several marked exercises (Mark → This board), in the order added. Set once a
+   * second one joins; the session's problemStatement, problemImage and isSolved are the current one's
+   * while open, and isSolved is saved as all of them solved. Unset: the board's one problem is the session's own.
+   */
+  problems?: BoardProblem[];
+  /** Which of `problems` is being worked on (its id). */
+  currentProblem?: string;
+}
+
+/** One of the exercises on a board that holds several: its mark's id and label, its text and crop, and whether it is solved. */
+export interface BoardProblem {
+  id: string;
+  label: string;
+  problemStatement: string;
+  problemImage: string | null;
+  isSolved?: boolean;
 }
 
 /** A folder in the library, inside another (`parentId`) or at the top level (null). */
@@ -131,6 +148,8 @@ export interface HistoryItem {
   exerciseId: string | null;
   /** Session.folderId as saved (see there for unset). */
   folderId: string | null | undefined;
+  /** A board holding several exercises: how many, and how many are solved. Unset: one problem. */
+  problems?: { total: number; solved: number };
   /** Something was done on it; false for a Shelf exercise only opened (listed only where its book is). */
   hasWork: boolean;
 }
@@ -168,6 +187,11 @@ export interface ShelfExercise {
   createdAt: number;
   /** First page the tutor reads for this exercise, chosen by the student; 0 = none. Unset: worked out from the bookmarks. */
   readFrom?: number;
+  /**
+   * Added to another mark's board (Mark → This board): that mark's id, so its board is the session
+   * `shelf:<document id>:<boardOf>` (which stays even if that mark is removed). Unset: its own board.
+   */
+  boardOf?: string;
 }
 
 /** A PDF on the Shelf, with the exercises and note pages marked on it. */
@@ -309,6 +333,8 @@ export interface TutorRequest {
   checkIn?: CheckIn;
   /** Turn the board's handwriting into a LaTeX write-up (WRITE_UP_PROMPT) instead of tutoring. */
   writeUp?: boolean;
+  /** On a board holding several exercises: the others' names (the problem above is the one being worked on). */
+  otherProblems?: string[];
 }
 
 /** One request as the model gets it (planTutorRequest in src/lib/tutorPrompt.ts), for any provider. */

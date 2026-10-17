@@ -12,6 +12,7 @@ export function KindLine({ item, bookTitle }: { item: HistoryItem; bookTitle?: s
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-700">
       <span className="flex items-center gap-1"><KindIcon type={item.sessionType} />{item.sessionType === 'note' ? 'Notes' : 'Problem'}</span>
       {item.source === 'shelf' && bookTitle && <span className="flex items-center gap-1 min-w-0"><ShelfIcon /><span className="truncate">{bookTitle}</span></span>}
+      {item.problems && !item.isSolved && <span>{item.problems.solved} of {item.problems.total} solved</span>}
       {item.isSolved && <span className="flex items-center gap-1 font-semibold text-gray-900"><SolvedCheck size={14} />Solved</span>}
       {item.favorite && <span className="flex items-center gap-1 font-semibold text-gray-900"><FavoriteStar filled size={14} />Favorite</span>}
     </div>

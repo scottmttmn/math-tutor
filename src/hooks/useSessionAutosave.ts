@@ -7,6 +7,7 @@ import { useSessionDispatch, useSessionState } from '@/context/SessionContext';
 import { hasRecoveryCopy, loadRecoveredSession, saveRecoverableSession, settleInterruptedReplies, stageSession } from '@/lib/sessionRecovery';
 import { boardToOpen, setBoardToOpen } from '@/lib/currentBoard';
 import { checkInTitle } from '@/lib/checkIn';
+import { allSolved, problemsTitle } from '@/lib/boardProblems';
 import type { DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import type { AutosaveStatus, Session, SessionType } from '@/types';
 
@@ -16,6 +17,7 @@ const SAVE_DELAY_MS = 800;
 const contentKey = (session: Session) => JSON.stringify([
   session.problemStatement, session.problemImage, session.chatHistory, session.isSolved, session.sessionType,
   session.checkIn ?? null, session.writeUp?.tex ?? null, session.paper ?? null, session.canvasDocument?.store ?? null, session.canvasStrokes,
+  session.problems ?? null, session.currentProblem ?? null,
 ]);
 
 const rememberCurrent = setBoardToOpen;
@@ -63,7 +65,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
     if (!createdAt.current) createdAt.current = Date.now();
     return {
       id: s.currentSessionId ?? draftId.current!,
-      title: s.checkIn ? checkInTitle(s.checkIn) : s.problemStatement.slice(0, 50) || 'Untitled',
+      title: s.checkIn ? checkInTitle(s.checkIn) : s.problems ? problemsTitle(s.problems) : s.problemStatement.slice(0, 50) || 'Untitled',
       problemStatement: s.problemStatement,
       problemImage: s.problemImage,
       // Strokes from a pre-tldraw save stay until the editor has converted them.
@@ -73,11 +75,13 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
       chatHistory: s.chatHistory,
       createdAt: createdAt.current,
       updatedAt: Date.now(),
-      isSolved: s.isSolved,
+      // A board of several exercises is solved once all of them are.
+      isSolved: s.problems ? allSolved(s.problems) : s.isSolved,
       sessionType: s.sessionType,
       ...(s.checkIn ? { checkIn: s.checkIn } : {}),
       ...(s.writeUp ? { writeUp: s.writeUp } : {}),
       ...(s.paper ? { paper: s.paper } : {}),
+      ...(s.problems ? { problems: s.problems, ...(s.currentProblem ? { currentProblem: s.currentProblem } : {}) } : {}),
       ...(!s.currentSessionId && draftFolder.current ? { folderId: draftFolder.current } : {}),
     };
   }, [canvasHandle]);
@@ -137,6 +141,8 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
         checkIn: session.checkIn,
         writeUp: session.writeUp,
         paper: session.paper,
+        problems: session.problems,
+        currentProblem: session.currentProblem,
       });
       canvasDispatch({ type: 'LOAD', document: session.canvasDocument, strokes: session.canvasStrokes });
     } else {
@@ -190,7 +196,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
   useEffect(() => {
     const timer = setTimeout(() => { void persist(); }, SAVE_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [state.problemStatement, state.problemImage, state.chatHistory, state.isSolved, state.sessionType, state.paper, canvasDocument, persist]);
+  }, [state.problemStatement, state.problemImage, state.chatHistory, state.isSolved, state.sessionType, state.paper, state.problems, state.currentProblem, canvasDocument, persist]);
 
   // A reload or closed tab can't wait for IndexedDB; keep a synchronous copy for the next load.
   const flush = useCallback(() => {

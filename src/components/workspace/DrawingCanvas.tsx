@@ -12,8 +12,12 @@ export interface DrawingCanvasHandle {
   captureThumbnail: () => Promise<Blob | null>;
   /** The whole board as a PNG or JPEG for saving, and how many pixels it has per board unit; null when empty. */
   exportImage: (format: 'png' | 'jpeg') => Promise<{ blob: Blob; pixelRatio: number } | null>;
-  /** Puts the problem picture (base64 PNG) on the board, locked; false when it is already there. */
-  placeProblemImage: (base64: string) => Promise<boolean>;
+  /**
+   * Puts the problem picture (base64 PNG) on the board, locked; false when it is already there (the view
+   * then goes to it). `key` tags it: `true` (the default) for the board's own problem, an exercise's id
+   * for one added to a board of several, which goes below the work already there.
+   */
+  placeProblemImage: (base64: string, key?: string | true) => Promise<boolean>;
   /** Changes whenever the drawing changes; compare it to know whether a new capture is needed. */
   getRevision: () => number;
   /** The live document, fresher than the debounced copy in CanvasContext. */

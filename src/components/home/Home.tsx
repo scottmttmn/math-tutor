@@ -8,7 +8,7 @@ import { isProfileEmpty } from '@/lib/learnerProfile';
 import { folderSummaries, libraryView, queryHistory, toHistoryItem } from '@/lib/history';
 import { bookLocation, folderHref, folderIndex, folderPath, itemFolder } from '@/lib/folders';
 import { createFolder, deleteFolder, moveBoard, moveBook, moveFolder, renameFolder } from '@/lib/folderActions';
-import { removeFromShelf, setShelfKind, unmarkExercise } from '@/lib/shelf';
+import { removeFromShelf, setShelfKind, removeMarkedBoard } from '@/lib/shelf';
 import { useAddPdfs } from '@/hooks/useAddPdfs';
 import { discardRecoveryCopy } from '@/lib/sessionRecovery';
 import { boardToOpen, setBoardToOpen } from '@/lib/currentBoard';
@@ -120,9 +120,9 @@ export default function Home({ folderId = null }: { folderId?: string | null }) 
   };
 
   const removeBoard = (item: HistoryItem) => run(async () => {
-    // A book's board belongs to its mark: deleting it removes the mark too, or the reader would make it again.
+    // A book's board belongs to its marks: deleting it removes them too, or the reader would make it again.
     const book = item.bookId ? index.books.get(item.bookId) : undefined;
-    if (book && item.exerciseId) await unmarkExercise(book, item.exerciseId);
+    if (book) await removeMarkedBoard(book, item.id);
     else {
       await deleteSession(item.id);
       discardRecoveryCopy(item.id);
@@ -176,7 +176,9 @@ export default function Home({ folderId = null }: { folderId?: string | null }) 
   const empty = library !== null && view.folders.length === 0 && view.books.length === 0 && view.boards.length === 0;
   const status = pdfs.error || error || pdfs.busy;
   const heading = folder?.name ?? 'Library';
-  const solvedOf = (book: ShelfDocument) => (library?.items ?? []).filter((item) => item.bookId === book.id && item.isSolved).length;
+  // A board of several exercises counts each one solved.
+  const solvedOf = (book: ShelfDocument) => (library?.items ?? []).filter((item) => item.bookId === book.id)
+    .reduce((count, item) => count + (item.problems ? item.problems.solved : item.isSolved ? 1 : 0), 0);
 
   if (missing) {
     return (
@@ -367,7 +369,7 @@ export default function Home({ folderId = null }: { folderId?: string | null }) 
                         onRename={(name) => run(() => renameSession(item.id, name))}
                         onMove={() => setMoving({ kind: 'board', item })}
                         onDelete={() => removeBoard(item)}
-                        deleteQuestion={item.exerciseId ? 'Delete it and its mark?' : undefined}
+                        deleteQuestion={item.exerciseId ? (item.problems ? 'Delete it and its marks?' : 'Delete it and its mark?') : undefined}
                       />
                     ))}
                   </ul>

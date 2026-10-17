@@ -317,6 +317,83 @@ try {
   await page.getByText(/^Textbook ·/).waitFor();
   console.log('PASS the book shows its kind, solved progress and where you left off');
 
+  // Several exercises on one board: Mark → This board adds the next one to the open board, its
+  // picture below the work, and Mark stays on; the board's exercises switch in its header, each
+  // solved on its own, and the tutor works on the current one knowing the others are there.
+  const boxOnPage = async (top) => {
+    const box = await page.getByTestId('page-overlay').boundingBox();
+    await page.mouse.move(box.x + box.width * 0.1, box.y + box.height * top);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * (top + 0.04), { steps: 5 });
+    await page.mouse.up();
+  };
+  await page.getByRole('link', { name: /^Read at p\. \d+$/ }).click();
+  await page.getByText(/^Page \d of 2$/).waitFor();
+  if (await page.getByText('Page 1 of 2').count()) await page.getByRole('button', { name: 'Next page' }).click();
+  await page.getByRole('button', { name: 'Open Problem 3' }).click();
+  await exerciseHeading('Problem 3').waitFor();
+  await page.locator('.tl-image').waitFor();
+  await page.getByRole('button', { name: 'Mark', exact: true }).click();
+  await boxOnPage(0.3);
+  await page.getByRole('radio', { name: 'This board' }).click();
+  await page.getByLabel('Name').fill('Problem 4');
+  assert.equal(await page.getByLabel('Folder').count(), 0, 'it goes where the board is');
+  await page.getByRole('button', { name: 'Add to board' }).click();
+  await exerciseHeading('Problem 4').waitFor();
+  const onBoard = page.getByRole('group', { name: 'Exercises on this board' });
+  await onBoard.getByRole('button', { name: 'Problem 4', pressed: true }).waitFor();
+  await page.locator('.tl-image').nth(1).waitFor();
+  await page.getByRole('button', { name: 'Done marking' }).waitFor();
+  await boxOnPage(0.5);
+  assert.equal(await page.getByRole('radio', { name: 'This board' }).getAttribute('aria-checked'), 'true');
+  await page.getByLabel('Name').fill('Problem 5');
+  await page.getByRole('button', { name: 'Add to board' }).click();
+  await exerciseHeading('Problem 5').waitFor();
+  await page.getByRole('button', { name: 'Done marking' }).click();
+  assert.deepEqual(await onBoard.getByRole('button').allInnerTexts(), ['Problem 3', 'Problem 4', 'Problem 5']);
+  await page.waitForTimeout(5000);
+  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  await page.getByRole('menuitem').first().click();
+  await page.getByText('Shelf hint.').last().waitFor();
+  const asked = JSON.stringify(requests.at(-1).messages.at(-1).content);
+  assert.match(asked, /The problem I'm working on: Problem 5 · Algebra drills, p\. 2/);
+  assert.match(asked, /My board also holds Problem 3, Problem 4/);
+  await page.getByRole('button', { name: 'Close tutor' }).click();
+  await page.getByRole('button', { name: 'Mark solved', exact: true }).click();
+  await onBoard.getByRole('button', { name: 'Problem 5 (solved)' }).waitFor();
+  await onBoard.getByRole('button', { name: 'Problem 3', exact: true }).click();
+  await exerciseHeading('Problem 3').waitFor();
+  await page.getByRole('button', { name: 'Mark solved', exact: true }).waitFor();
+  await page.getByText('Saved', { exact: true }).waitFor();
+  await page.waitForTimeout(1200);
+  await page.reload();
+  await exerciseHeading('Problem 3').waitFor();
+  await onBoard.getByRole('button', { name: 'Problem 5 (solved)' }).waitFor();
+  await page.locator('.tl-image').nth(2).waitFor();
+  // Removing one of them keeps the board, and its picture and work, for the others.
+  await onBoard.getByRole('button', { name: 'Problem 4', exact: true }).click();
+  await exerciseHeading('Problem 4').waitFor();
+  await page.getByRole('button', { name: 'More for Problem 4' }).click();
+  await page.getByRole('menuitem', { name: 'Remove exercise' }).click();
+  await exerciseHeading('Problem 3').waitFor();
+  await page.getByRole('button', { name: 'Open Problem 4' }).waitFor({ state: 'detached' });
+  assert.deepEqual((await onBoard.getByRole('button').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ')), ['Problem 3', 'Problem 5 (solved)']);
+  assert.equal(await page.locator('.tl-image').count(), 3);
+  await page.getByText('Saved', { exact: true }).waitFor();
+  await page.waitForTimeout(1200);
+  // The book counts both; its folder lists the board once, with how many are solved.
+  await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Algebra drills' }).click();
+  await page.getByText(/^Textbook · 1 of 2 solved · 2 pages$/).waitFor();
+  await page.locator('[aria-labelledby="folders-heading"]').getByText('2 problems', { exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Open Chapter 2' }).click();
+  const grouped = page.locator('[aria-labelledby="boards-heading"] li');
+  await grouped.getByText('Problem 3, Problem 5', { exact: true }).waitFor();
+  await grouped.getByText('1 of 2 solved', { exact: true }).waitFor();
+  assert.equal(await grouped.count(), 1);
+  await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Algebra drills' }).click();
+  await page.getByRole('heading', { name: 'Algebra drills', exact: true }).waitFor();
+  console.log('PASS several exercises on one board: add, switch, solve each, tutor focus, remove one');
+
   // Removing the PDF takes its remaining boards with it; its folder stays while it holds a folder.
   await page.getByRole('button', { name: 'More for the book Algebra drills' }).click();
   await page.getByRole('menuitem', { name: 'Remove' }).click();
