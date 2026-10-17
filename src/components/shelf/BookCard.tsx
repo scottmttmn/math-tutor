@@ -7,13 +7,11 @@ import type { ShelfDocument, ShelfKind } from '@/types';
 import BlobImage from '@/components/common/BlobImage';
 import MoreMenu from '@/components/common/MoreMenu';
 
-/** Where a book's page is: the book and the boards made from it. */
-export const bookHref = (id: string) => `/book?doc=${encodeURIComponent(id)}`;
 /** Where the reader opens a book, on the page last read. */
 export const readerHref = (id: string) => `/shelf/read?doc=${encodeURIComponent(id)}`;
 
-/** A book (a PDF) in the library: its cover opens its page; asks what it is until told; Change kind and Remove. */
-export function BookCard({ document, onRemove, onKind }: { document: ShelfDocument; onRemove: () => Promise<void>; onKind: (kind: ShelfKind) => Promise<void> }) {
+/** A book (a PDF) outside a folder: its cover opens the reader; asks what it is until told; Change kind, Move to and Remove. */
+export function BookCard({ document, onRemove, onKind, onMove }: { document: ShelfDocument; onRemove: () => Promise<void>; onKind: (kind: ShelfKind) => Promise<void>; onMove: () => void }) {
   const [confirming, setConfirming] = useState(false);
   // What it is is asked until chosen, and again from the menu.
   const [choosing, setChoosing] = useState(false);
@@ -50,6 +48,7 @@ export function BookCard({ document, onRemove, onKind }: { document: ShelfDocume
         ) : (
           <MoreMenu label={`More for ${document.title}`} items={[
             ...(document.kind ? [{ label: 'Change kind', onSelect: () => setChoosing(true) }] : []),
+            { label: 'Move to…', onSelect: onMove },
             { label: 'Remove', onSelect: () => setConfirming(true) },
           ]} />
         )}
@@ -59,10 +58,10 @@ export function BookCard({ document, onRemove, onKind }: { document: ShelfDocume
 }
 
 /**
- * A PDF's cover, title, kind, progress and where you left off, opening the book's page (or `href`).
+ * A PDF's cover, title, kind, progress and where you left off, opening the reader (or `href`).
  * Without `solved`, exercises show as a count.
  */
-export function BookCover({ document, solved, href = bookHref(document.id) }: { document: ShelfDocument; solved?: number; href?: string }) {
+export function BookCover({ document, solved, href = readerHref(document.id) }: { document: ShelfDocument; solved?: number; href?: string }) {
   const notes = document.exercises.filter((item) => item.kind === 'note').length;
   const exercises = document.exercises.length - notes;
   const kind = SHELF_KINDS.find((item) => item.kind === document.kind)?.label;

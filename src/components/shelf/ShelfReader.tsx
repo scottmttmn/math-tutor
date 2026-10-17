@@ -10,13 +10,14 @@ import { useTutorChat } from '@/hooks/useTutorChat';
 import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
 import { useToolsHidden } from '@/hooks/useToolsHidden';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
-import { loadInk, loadProfile, loadShelfDocument, savePageInk, saveShelfDocument, shelfSessionId } from '@/lib/db';
+import { listFolders, loadInk, loadProfile, loadShelfDocument, savePageInk, saveShelfDocument, shelfSessionId } from '@/lib/db';
+import { folderHref, folderIndex, folderPath, folderTree, isWithin } from '@/lib/folders';
 import { openPdf, trimmedArea } from '@/lib/pdf';
 import { findPage, pageName } from '@/lib/reader';
 import { ensureExerciseBoard, isNote, markExercise, nextLabel, setReadFrom, solvedExercises, unmarkExercise } from '@/lib/shelf';
 import { paperFor } from '@/lib/paper';
 import { MAX_BOOK_PAGES, loadContents, loadSectionStarts, readBookPages, readingRange, type ContentsEntry, type ReadingRange, type SectionStart } from '@/lib/bookContext';
-import type { BookContext, ChatMessage, InkStroke, InkTool, PageRect, ShelfDocument, ShelfExercise, ShelfMarkKind } from '@/types';
+import type { BookContext, ChatMessage, Folder, InkStroke, InkTool, PageRect, ShelfDocument, ShelfExercise, ShelfMarkKind } from '@/types';
 import { askQuestion } from '@/lib/tutorAsk';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
@@ -33,7 +34,6 @@ import PageAsk from './PageAsk';
 import { useBookSearch } from '@/hooks/useBookSearch';
 import { useFavorite } from '@/hooks/useFavorite';
 import FavoriteButton from '@/components/layout/FavoriteButton';
-import { bookHref } from '@/components/shelf/BookCard';
 
 // Whether the list beside the page is hidden, so the page gets the width.
 const LIST_HIDDEN_KEY = 'math-tutor:shelfListHidden';
@@ -86,6 +86,9 @@ export default function ShelfReader() {
   const [pendingMark, setPendingMark] = useState<PageRect | null>(null);
   const [markLabel, setMarkLabel] = useState('');
   const [markKind, setMarkKind] = useState<ShelfMarkKind>('exercise');
+  // The library's folders: where the book is (the breadcrumb) and where a new mark's board is filed.
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [markFolder, setMarkFolder] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [solvedIds, setSolvedIds] = useState<string[]>([]);
   const [tutorOpen, setTutorOpen] = useState(false);
@@ -194,6 +197,7 @@ export default function ShelfReader() {
       const pages = await loadInk(stored.id);
       if (!active) { void opened.loadingTask.destroy(); return; }
       setInk(Object.fromEntries(pages.map((entry) => [entry.page, entry.strokes])));
+      setFolders(await listFolders().catch(() => []));
       updateDocument(stored);
       setPdf(opened);
       void loadSectionStarts(opened).then((starts) => { if (active) setSectionStarts(starts); });
@@ -296,7 +300,7 @@ export default function ShelfReader() {
     setPendingMark(null);
     try {
       const { document: next, exercise } = await writeDocument(async (current) => {
-        const marked = await markExercise(pdf, current, markPage, rect, markLabel, markKind);
+        const marked = await markExercise(pdf, current, markPage, rect, markLabel, markKind, [], markFolder || undefined);
         updateDocument(marked.document);
         return marked;
       });
@@ -442,6 +446,15 @@ export default function ShelfReader() {
   if (!shelfDocument || !pdf || (trim && printed === undefined)) return <div className="p-6 text-gray-500">Opening PDF…</div>;
   const crop = trim ? printed ?? null : null;
 
+  // Where the book is, and the folders a mark's board can be filed in: the book's and those inside it.
+  const library = folderIndex(folders);
+  const bookFolder = shelfDocument.folderId && library.folders.has(shelfDocument.folderId) ? shelfDocument.folderId : null;
+  const markFolders = bookFolder ? folderTree(library).filter(({ folder }) => isWithin(library, folder.id, bookFolder)) : [];
+  const startingFolder = () => {
+    const last = shelfDocument.markFolderId;
+    return bookFolder && last && library.folders.has(last) && isWithin(library, last, bookFolder) ? last : bookFolder ?? '';
+  };
+
   const exercise = openExerciseForBook;
   const paper = paperFor(chosenPaper, exercise && isNote(exercise) ? 'note' : 'problem');
   // An open board always shows; with none open, the list can make way for the page.
@@ -576,13 +589,24 @@ export default function ShelfReader() {
             <label className="text-sm text-gray-900" htmlFor="mark-label">Name</label>
             <input id="mark-label" value={markLabel} onChange={(event) => setMarkLabel(event.target.value)}
               className="w-36 min-h-11 px-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            {markFolders.length > 1 && (
+              <>
+                <label className="text-sm text-gray-900" htmlFor="mark-folder">Folder</label>
+                <select id="mark-folder" value={markFolder} onChange={(event) => setMarkFolder(event.target.value)}
+                  className="w-44 min-h-11 px-2 text-sm border border-gray-300 rounded-lg bg-white">
+                  {markFolders.map(({ folder, depth }) => (
+                    <option key={folder.id} value={folder.id}>{`${'\u00a0\u00a0'.repeat(Math.max(0, depth - (markFolders[0]?.depth ?? 0)))}${folder.name}`}</option>
+                  ))}
+                </select>
+              </>
+            )}
             <button type="submit" className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Save and open</button>
             <button type="button" onClick={() => setPendingMark(null)} className="min-h-11 px-3 text-sm text-gray-600 border border-gray-300 bg-white rounded-lg hover:bg-gray-50">Cancel</button>
           </form>
         )}
         onMark={(rect) => {
           if (askBox) { setAskDraft({ page, rect }); return; }
-          if (!pendingMark) setMarkLabel(nextLabel(shelfDocument, markKind));
+          if (!pendingMark) { setMarkLabel(nextLabel(shelfDocument, markKind)); setMarkFolder(startingFolder()); }
           setPendingMark(rect);
         }}
         onOpenMark={(mark) => void openExercise(mark)}
@@ -649,8 +673,14 @@ export default function ShelfReader() {
       <header className={`${fullScreen ? 'hidden' : 'flex'} flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-white`}>
         <div className="min-w-0">
           <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-xs text-gray-500 min-w-0">
-            {/* The book's page lists every board made from it; Home is in the bar. */}
-            <Link href={bookHref(shelfDocument.id)} className="text-gray-900 underline truncate">{shelfDocument.title}</Link>
+            {/* The folders the book is in; its own folder lists every board made from it. */}
+            <Link href="/" className="text-gray-900 underline">Library</Link>
+            {folderPath(library, bookFolder).map((step) => (
+              <span key={step.id} className="flex items-center gap-2 min-w-0">
+                <span aria-hidden="true">›</span>
+                <Link href={folderHref(step.id)} className="text-gray-900 underline truncate">{step.name}</Link>
+              </span>
+            ))}
           </nav>
           <h1 className="font-semibold text-gray-900 truncate">{shelfDocument.title}</h1>
         </div>

@@ -25,12 +25,14 @@ interface CardProps {
   onOpen: () => void;
   onRename: (name: string) => Promise<void>;
   onDelete: () => Promise<void>;
+  /** Offers Move to…, which the list opens. */
+  onMove?: () => void;
   /** The question Delete asks first. */
   deleteQuestion?: string;
 }
 
-/** A board in a list: its picture, kind and name; opens it; Rename and Delete in its menu. */
-export default function BoardCard({ item, bookTitle, onOpen, onRename, onDelete, deleteQuestion = 'Delete it?' }: CardProps) {
+/** A board in a list: its picture, kind and name; opens it; Rename, Move to and Delete in its menu. */
+export default function BoardCard({ item, bookTitle, onOpen, onRename, onDelete, onMove, deleteQuestion = 'Delete it?' }: CardProps) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -88,6 +90,7 @@ export default function BoardCard({ item, bookTitle, onOpen, onRename, onDelete,
             label={`More for ${item.title}`}
             items={[
               { label: 'Rename', onSelect: () => { setName(item.title); setRenaming(true); } },
+              ...(onMove ? [{ label: 'Move to…', onSelect: onMove }] : []),
               { label: 'Delete', onSelect: () => setConfirmingDelete(true) },
             ]}
           />

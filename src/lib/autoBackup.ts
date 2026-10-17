@@ -1,6 +1,6 @@
-import { getSetting, hasSavedWork, listSessions, listInk, listShelf, loadProfile, onDataChange, setSetting } from '@/lib/db';
-import { BOARD_FOLDER, MANIFEST_NAME, PDF_FOLDER, backupFingerprint, backupIndex, boardFile, boardPath } from '@/lib/backup';
-import type { BackupStatus, Session } from '@/types';
+import { getSetting, hasSavedWork, listFolders, listSessions, listInk, listShelf, loadProfile, onDataChange, setSetting } from '@/lib/db';
+import { BOARD_FOLDER, MANIFEST_NAME, PDF_FOLDER, backupFingerprint, backupIndex, boardFile, boardPath, boardStamp } from '@/lib/backup';
+import type { BackupStatus } from '@/types';
 
 // Automatic backup to a folder the student picks (say, in Dropbox): the backup's files are written
 // into a "Math Tutor backup" folder there shortly after each change. Chromium only; elsewhere the
@@ -30,7 +30,6 @@ interface SavedState {
   boards?: Record<string, string>;
 }
 
-const boardStamp = (session: Pick<Session, 'updatedAt' | 'customTitle'>) => `${session.updatedAt} ${session.customTitle ?? ''}`;
 const dayName = (at: number) => {
   const day = new Date(at);
   return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
@@ -123,8 +122,8 @@ async function writeFile(directory: FileSystemDirectoryHandle, name: string, con
 async function writeBackup(force: boolean) {
   if (!folder || status.state === 'paused' || status.state === 'off') return;
   try {
-    const [sessions, shelf, profile, ink] = await Promise.all([listSessions(), listShelf(), loadProfile(), listInk()]);
-    const fingerprint = backupFingerprint(sessions, shelf, profile, ink);
+    const [sessions, shelf, profile, ink, folders] = await Promise.all([listSessions(), listShelf(), loadProfile(), listInk(), listFolders()]);
+    const fingerprint = backupFingerprint(sessions, shelf, profile, ink, folders);
     if (!force && fingerprint === saved.fingerprint) { if (status.state !== 'ok') update({ state: 'ok', error: null }); return; }
     update({ state: 'writing' });
     const target = folder.name === BACKUP_FOLDER_NAME ? folder : await folder.getDirectoryHandle(BACKUP_FOLDER_NAME, { create: true });
@@ -155,7 +154,7 @@ async function writeBackup(force: boolean) {
       const existing = await pdfFolder.getFileHandle(name).then((handle) => handle.getFile()).catch(() => null);
       if (existing?.size !== document.file.size) await writeFile(pdfFolder, name, document.file);
     }
-    const manifest = await backupIndex(sessions, shelf, profile, ink, now);
+    const manifest = await backupIndex(sessions, shelf, profile, ink, folders, now);
     const json = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
     await writeFile(target, MANIFEST_NAME, json);
     await writeFile(target, `backup-${day}.json`, json);

@@ -7,10 +7,10 @@ const { crc32, writeZip, readZip } = load('src/lib/zip.ts');
 // The database is replaced by a recorder: restore logic is tested on what it would write.
 const written = [];
 const db = {
-  listSessions: async () => [], listShelf: async () => [],
-  restoreRecords: async (sessions, shelf, profile, ink) => {
-    written.push({ sessions, shelf, profile, ink });
-    return { sessions: sessions.map((s) => s.id), shelf: shelf.filter((d) => d.file).map((d) => d.id), profile: Boolean(profile), ink: ink.map((p) => p.id), skipped: 0, missingPdfs: shelf.filter((d) => !d.file).map((d) => d.title) };
+  listSessions: async () => [], listShelf: async () => [], listFolders: async () => [],
+  restoreRecords: async (sessions, shelf, profile, ink, folders) => {
+    written.push({ sessions, shelf, profile, ink, folders });
+    return { sessions: sessions.map((s) => s.id), shelf: shelf.filter((d) => d.file).map((d) => d.id), profile: Boolean(profile), ink: ink.map((p) => p.id), folders: folders.map((f) => f.id), skipped: 0, missingPdfs: shelf.filter((d) => !d.file).map((d) => d.title) };
   },
 };
 const backup = load('src/lib/backup.ts', { '@/lib/db': db });
@@ -76,7 +76,7 @@ test('a backup carries every board and Shelf PDF, and restores them as they were
   const zip = await writeZip(new Map([['backup.json', new Blob([JSON.stringify(manifest)])], ...boards, ...pdfs]));
   written.length = 0;
   const result = await backup.restoreFromFiles([asFile(zip, 'math-tutor-backup-2026-10-14.zip')]);
-  assert.deepEqual(result, { restoredSessions: 2, restoredShelf: 1, restoredProfile: false, restoredInk: 0, skipped: 0, missingPdfs: [], missingBoards: 0 });
+  assert.deepEqual(result, { restoredSessions: 2, restoredShelf: 1, restoredFolders: 0, restoredProfile: false, restoredInk: 0, skipped: 0, missingPdfs: [], missingBoards: 0 });
   const [{ sessions, shelf }] = written;
   assert.equal(sessions[0].customTitle, 'Named');
   assert.deepEqual(new Uint8Array(await sessions[0].canvasImageBlob.arrayBuffer()), new Uint8Array(await thumbnail.arrayBuffer()));
@@ -216,6 +216,31 @@ test('ink on Shelf pages goes into the backup and comes back; damaged strokes ar
   assert.deepEqual(written[0].ink, [page]);
   assert.notEqual(backup.backupFingerprint([], [], undefined, [page]), backup.backupFingerprint([], [], undefined, [{ ...page, updatedAt: 12 }]));
   assert.notEqual(backup.backupFingerprint([], [], undefined, [page]), backup.backupFingerprint([], []));
+});
+
+test('folders go into the backup and come back, with where boards and books are filed; damaged ones are left out', async () => {
+  const folders = [
+    { id: 'book:doc1', name: 'Book', parentId: 'f1', createdAt: 1, updatedAt: 4 },
+    { id: 'f1', name: 'Fall semester', parentId: null, createdAt: 2, updatedAt: 3 },
+  ];
+  const board = session({ id: 'b1', folderId: 'f1' });
+  const { manifest, boards } = await backup.buildBackup([board], [shelfDocument({ folderId: 'book:doc1' })], undefined, [], folders);
+  assert.deepEqual(manifest.folders, folders);
+  assert.equal(manifest.shelf[0].folderId, 'book:doc1');
+  assert.equal(JSON.parse(await boards.get(backup.boardPath('b1')).text()).folderId, 'f1');
+  assert.equal((await backup.buildBackup([], [])).manifest.folders, undefined);
+  written.length = 0;
+  const damaged = [...folders, { id: 'x', name: 3, parentId: null, createdAt: 1, updatedAt: 1 }, { id: 'self', name: 'Loop', parentId: 'self', createdAt: 1, updatedAt: 1 }, null];
+  const result = await backup.restoreFromFiles([asFile(new Blob([JSON.stringify({ ...manifest, boards: [], folders: damaged })]), 'backup.json')]);
+  assert.equal(result.restoredFolders, 3);
+  assert.deepEqual(written[0].folders, [...folders, { id: 'self', name: 'Loop', parentId: null, createdAt: 1, updatedAt: 1 }]);
+  // Moving a board or a book, or changing a folder, changes the fingerprint (so folder backup runs).
+  const base = backup.backupFingerprint([board], [shelfDocument({})], undefined, [], folders);
+  assert.notEqual(backup.backupFingerprint([{ ...board, folderId: null }], [shelfDocument({})], undefined, [], folders), base);
+  assert.notEqual(backup.backupFingerprint([{ ...board, folderId: undefined }], [shelfDocument({})], undefined, [], folders), base);
+  assert.notEqual(backup.backupFingerprint([board], [shelfDocument({ folderId: 'f1' })], undefined, [], folders), base);
+  assert.notEqual(backup.backupFingerprint([board], [shelfDocument({})], undefined, [], [folders[0]]), base);
+  assert.notEqual(backup.backupFingerprint([board], [shelfDocument({})], undefined, [], [{ ...folders[0], updatedAt: 9 }, folders[1]]), base);
 });
 
 test('restore refuses files that are not a backup', async () => {

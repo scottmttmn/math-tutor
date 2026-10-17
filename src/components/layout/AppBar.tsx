@@ -9,11 +9,12 @@ import { RESTORE_RESULT_KEY } from './BackupSettings';
 import { useBackupStatus } from '@/hooks/useBackupStatus';
 import { backupDue, resumeBackup } from '@/lib/autoBackup';
 import { useAddPdfs } from '@/hooks/useAddPdfs';
-import { GearIcon, HomeIcon, NotesIcon, ProblemIcon, ShelfIcon } from '@/components/common/Icons';
-import { bookHref } from '@/components/shelf/BookCard';
+import { FolderIcon, GearIcon, HomeIcon, NotesIcon, ProblemIcon, ShelfIcon } from '@/components/common/Icons';
+import { folderHref } from '@/lib/folders';
+import { readerHref } from '@/components/shelf/BookCard';
 
-// Only Home has a tab: a book (its page, the reader) opens from Home, and 'memory' from Settings and Home.
-export type AppPlace = 'home' | 'book' | 'board' | 'memory';
+// Only Home has a tab: a folder and a book (the reader) open from Home, and 'memory' from Settings and Home.
+export type AppPlace = 'home' | 'folder' | 'book' | 'board' | 'memory';
 
 interface Props {
   /** Where the page sits; its tab is shown as current. */
@@ -24,6 +25,10 @@ interface Props {
   locked?: boolean;
   /** Runs before another page opens, e.g. saving the board so Home lists the latest work. */
   beforeLeave?: () => Promise<unknown>;
+  /** The folder New puts a new board or PDF in (a folder's page); unset: the top level. */
+  folderId?: string | null;
+  /** Offers New folder, which the page (Home, a folder) makes in place. */
+  onNewFolder?: () => void;
   /** Page-specific controls, shown before New. */
   children?: ReactNode;
 }
@@ -42,7 +47,7 @@ function takeRestoreResult(): { tab: SettingsTab; restored: string } | null {
 }
 
 /** The bar on every page: Home, New (a problem, notes, or a PDF to work from), and Settings. Full screen hides it. */
-export default function AppBar({ place, onNew, locked = false, beforeLeave, children }: Props) {
+export default function AppBar({ place, onNew, locked = false, beforeLeave, folderId = null, onNewFolder, children }: Props) {
   const router = useRouter();
   const [newOpen, setNewOpen] = useState(false);
   // The Settings dialog: which tab, and a restore's result to show on Backup.
@@ -71,15 +76,18 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, chil
   const startNew = (type: SessionType) => {
     setNewOpen(false);
     if (onNew) onNew(type);
-    else void (beforeLeave?.() ?? Promise.resolve()).catch(() => undefined).then(() => router.push(`/board?new=${type}`));
+    else {
+      const href = `/board?new=${type}${folderId ? `&folder=${encodeURIComponent(folderId)}` : ''}`;
+      void (beforeLeave?.() ?? Promise.resolve()).catch(() => undefined).then(() => router.push(href));
+    }
   };
 
-  // A new PDF opens on its book page, where it is read and its boards are listed.
+  // A new PDF comes in a folder of its own, and opens on that folder's page, where its boards will be.
   const addPdfs = async (files: File[]) => {
     if (!files.length) return;
     await (beforeLeave?.() ?? Promise.resolve()).catch(() => undefined);
-    const added = await pdfs.add(files);
-    if (added.length) router.push(bookHref(added[0].id));
+    const added = await pdfs.add(files, folderId);
+    if (added.length) router.push(added[0].folderId ? folderHref(added[0].folderId) : readerHref(added[0].id));
   };
 
   return (
@@ -150,6 +158,11 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, chil
             <button onClick={() => { setNewOpen(false); pdfInput.current?.click(); }} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 border-t border-gray-100 hover:bg-gray-100">
               <ShelfIcon />Add a PDF…
             </button>
+            {onNewFolder && (
+              <button onClick={() => { setNewOpen(false); onNewFolder(); }} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
+                <FolderIcon />New folder
+              </button>
+            )}
           </div>
         )}
         <input ref={pdfInput} type="file" accept="application/pdf,.pdf" multiple hidden aria-label="Add a PDF"

@@ -1,5 +1,5 @@
 import { openDB, type IDBPDatabase, type DBSchema } from 'idb';
-import type { CanvasDocument, Stroke, ChatMessage, InkStroke, LearnerProfile, PageInk, SessionType, ShelfDocument } from '@/types';
+import type { CanvasDocument, Stroke, ChatMessage, Folder, InkStroke, LearnerProfile, PageInk, SessionType, ShelfDocument } from '@/types';
 
 interface MathTutorDB extends DBSchema {
   sessions: {
@@ -18,10 +18,16 @@ interface MathTutorDB extends DBSchema {
       isSolved?: boolean;
       sessionType?: SessionType;
       customTitle?: string;
+      folderId?: string | null;
     };
     indexes: {
       'by-updated': number;
     };
+  };
+  /** The library's folders (boards and books say which one they are in). */
+  folders: {
+    key: string;
+    value: Folder;
   };
   shelf: {
     key: string;
@@ -43,14 +49,14 @@ interface MathTutorDB extends DBSchema {
 }
 
 const DB_NAME = 'math-tutor';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 let dbPromise: Promise<IDBPDatabase<MathTutorDB>> | null = null;
 
 export function getDB(): Promise<IDBPDatabase<MathTutorDB>> {
   if (!dbPromise) {
     dbPromise = openDB<MathTutorDB>(DB_NAME, DB_VERSION, {
-      upgrade(db, oldVersion) {
+      async upgrade(db, oldVersion, _newVersion, tx) {
         if (oldVersion < 1) {
           const store = db.createObjectStore('sessions', { keyPath: 'id' });
           store.createIndex('by-updated', 'updatedAt');
@@ -58,13 +64,25 @@ export function getDB(): Promise<IDBPDatabase<MathTutorDB>> {
         if (oldVersion < 2) db.createObjectStore('shelf', { keyPath: 'id' });
         if (oldVersion < 3) db.createObjectStore('settings');
         if (oldVersion < 4) db.createObjectStore('ink', { keyPath: 'id' }).createIndex('by-document', 'documentId');
+        if (oldVersion < 5) {
+          // Every book gets the folder a new one comes with; its boards follow it there.
+          const folders = db.createObjectStore('folders', { keyPath: 'id' });
+          if (oldVersion >= 2) {
+            const shelf = tx.objectStore('shelf');
+            for (const document of await shelf.getAll()) {
+              if (document.folderId !== undefined) continue;
+              await folders.put(bookFolder(document));
+              await shelf.put({ ...document, folderId: bookFolderId(document.id) });
+            }
+          }
+        }
       },
     });
   }
   return dbPromise;
 }
 
-// Writes to sessions, the Shelf (its ink too) or the tutor memory, so automatic backup knows when to run.
+// Writes to sessions, the Shelf (its ink too), folders or the tutor memory, so automatic backup knows when to run.
 const changeListeners = new Set<() => void>();
 const changed = () => changeListeners.forEach((listener) => listener());
 
@@ -77,10 +95,12 @@ export function onDataChange(listener: () => void) {
 export async function saveSession(session: MathTutorDB['sessions']['value']) {
   const db = await getDB();
   const tx = db.transaction('sessions', 'readwrite');
-  // Names are given in History, not by the page that autosaves, so a save without one keeps it.
-  if (session.customTitle === undefined) {
+  // Names are given in History, and folders chosen by Move, not by the page that autosaves, so a
+  // save without one keeps it.
+  if (session.customTitle === undefined || session.folderId === undefined) {
     const existing = await tx.store.get(session.id);
-    if (existing?.customTitle) session = { ...session, customTitle: existing.customTitle };
+    if (session.customTitle === undefined && existing?.customTitle) session = { ...session, customTitle: existing.customTitle };
+    if (session.folderId === undefined && existing?.folderId !== undefined) session = { ...session, folderId: existing.folderId };
   }
   await tx.store.put(session);
   await tx.done;
@@ -96,6 +116,20 @@ export async function renameSession(id: string, name: string) {
     const renamed: MathTutorDB['sessions']['value'] = { ...existing, customTitle: name.trim() };
     if (!renamed.customTitle) delete renamed.customTitle;
     await tx.store.put(renamed);
+  }
+  await tx.done;
+  changed();
+}
+
+/** Files a saved session in a folder (null: the top level); undefined puts it back where it belongs by default. */
+export async function moveSession(id: string, folderId: string | null | undefined) {
+  const db = await getDB();
+  const tx = db.transaction('sessions', 'readwrite');
+  const existing = await tx.store.get(id);
+  if (existing) {
+    const moved: MathTutorDB['sessions']['value'] = { ...existing, folderId };
+    if (folderId === undefined) delete moved.folderId;
+    await tx.store.put(moved);
   }
   await tx.done;
   changed();
@@ -152,6 +186,53 @@ export async function deleteShelfDocument(id: string) {
   changed();
 }
 
+// === Folders ===
+
+/** The folder a book comes with when added, named after it. */
+export const bookFolderId = (documentId: string) => `book:${documentId}`;
+export const bookFolder = (document: Pick<ShelfDocument, 'id' | 'title' | 'createdAt'>, now = Date.now()): Folder => ({
+  id: bookFolderId(document.id), name: document.title, parentId: null, createdAt: document.createdAt, updatedAt: now,
+});
+
+export async function listFolders(): Promise<Folder[]> {
+  const db = await getDB();
+  return db.getAll('folders');
+}
+
+export async function saveFolder(folder: Folder) {
+  const db = await getDB();
+  await db.put('folders', folder);
+  changed();
+}
+
+/** Deletes a folder; what it held (folders, books, boards) moves up to its parent. */
+export async function deleteFolder(id: string) {
+  const db = await getDB();
+  const tx = db.transaction(['folders', 'sessions', 'shelf'], 'readwrite');
+  const folders = tx.objectStore('folders');
+  const folder = await folders.get(id);
+  if (!folder) { await tx.done; return; }
+  const parent = folder.parentId;
+  const now = Date.now();
+  for (const child of await folders.getAll()) {
+    if (child.parentId === id) await folders.put({ ...child, parentId: parent, updatedAt: now });
+  }
+  const shelf = tx.objectStore('shelf');
+  for (const document of await shelf.getAll()) {
+    if (document.folderId === id) await shelf.put({ ...document, folderId: parent, updatedAt: now });
+  }
+  // A board filed here moves up; one that only follows its book follows it up.
+  const sessions = tx.objectStore('sessions');
+  let cursor = await sessions.openCursor();
+  while (cursor) {
+    if (cursor.value.folderId === id) await cursor.update({ ...cursor.value, folderId: parent });
+    cursor = await cursor.continue();
+  }
+  await folders.delete(id);
+  await tx.done;
+  changed();
+}
+
 // === Ink on Shelf pages ===
 
 export const pageInkId = (documentId: string, page: number) => `${documentId}:${page}`;
@@ -191,10 +272,17 @@ export async function restoreRecords(
   shelf: (Omit<ShelfDocument, 'file'> & { file: Blob | null })[],
   profile?: LearnerProfile,
   ink: PageInk[] = [],
+  folders: Folder[] = [],
 ) {
   const db = await getDB();
-  const tx = db.transaction(['sessions', 'shelf', 'settings', 'ink'], 'readwrite');
-  const written = { sessions: [] as string[], shelf: [] as string[], profile: false, ink: [] as string[], skipped: 0, missingPdfs: [] as string[] };
+  const tx = db.transaction(['sessions', 'shelf', 'settings', 'ink', 'folders'], 'readwrite');
+  const written = { sessions: [] as string[], shelf: [] as string[], profile: false, ink: [] as string[], folders: [] as string[], skipped: 0, missingPdfs: [] as string[] };
+  for (const folder of folders) {
+    const existing = await tx.objectStore('folders').get(folder.id);
+    if (existing && existing.updatedAt >= folder.updatedAt) { written.skipped += 1; continue; }
+    await tx.objectStore('folders').put(folder);
+    written.folders.push(folder.id);
+  }
   for (const session of sessions) {
     const existing = await tx.objectStore('sessions').get(session.id);
     if (existing && existing.updatedAt >= session.updatedAt) { written.skipped += 1; continue; }
@@ -206,7 +294,16 @@ export async function restoreRecords(
     const file = document.file ?? existing?.file;
     if (!file) { written.missingPdfs.push(document.title); continue; }
     if (existing && existing.updatedAt >= document.updatedAt) { written.skipped += 1; continue; }
-    await tx.objectStore('shelf').put({ ...document, file });
+    // A book from before folders goes in its own folder, as the database upgrade put books here.
+    let folderId = document.folderId;
+    if (folderId === undefined) {
+      folderId = existing?.folderId ?? bookFolderId(document.id);
+      if (folderId === bookFolderId(document.id) && !await tx.objectStore('folders').getKey(folderId)) {
+        await tx.objectStore('folders').put(bookFolder(document));
+        written.folders.push(folderId);
+      }
+    }
+    await tx.objectStore('shelf').put({ ...document, file, folderId });
     written.shelf.push(document.id);
   }
   if (profile) {
@@ -223,7 +320,7 @@ export async function restoreRecords(
     written.ink.push(page.id);
   }
   await tx.done;
-  if (written.sessions.length || written.shelf.length || written.profile || written.ink.length) changed();
+  if (written.sessions.length || written.shelf.length || written.profile || written.ink.length || written.folders.length) changed();
   return written;
 }
 
@@ -258,10 +355,10 @@ export async function updateProfile(change: (current: LearnerProfile | undefined
   return next;
 }
 
-/** Whether anything is saved yet: a board, a Shelf PDF or the tutor memory. */
+/** Whether anything is saved yet: a board, a Shelf PDF, a folder or the tutor memory. */
 export async function hasSavedWork() {
   const db = await getDB();
-  return (await db.count('sessions')) + (await db.count('shelf')) + (await db.count('settings', PROFILE_KEY)) > 0;
+  return (await db.count('sessions')) + (await db.count('shelf')) + (await db.count('folders')) + (await db.count('settings', PROFILE_KEY)) > 0;
 }
 
 export async function getSetting<T>(key: string): Promise<T | undefined> {

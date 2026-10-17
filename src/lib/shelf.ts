@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { deleteSession, deleteShelfDocument, loadSession, loadShelfDocument, saveSession, saveShelfDocument, shelfSessionId } from '@/lib/db';
+import { bookFolder, bookFolderId, deleteSession, deleteShelfDocument, loadSession, loadShelfDocument, saveFolder, saveSession, saveShelfDocument, shelfSessionId } from '@/lib/db';
 import { cropPage, imageFileToPng, openPdf, pageImage, renderCover } from '@/lib/pdf';
 import { discardRecoveryCopy } from '@/lib/sessionRecovery';
 import type { ChatMessage, PageRect, ShelfDocument, ShelfExercise, ShelfKind, ShelfMarkKind } from '@/types';
@@ -22,16 +22,21 @@ export async function setShelfKind(document: ShelfDocument, kind: ShelfKind): Pr
   return updated;
 }
 
-/** Puts a PDF on the Shelf. Throws when the file can't be read as a PDF. */
-export async function addToShelf(file: File): Promise<ShelfDocument> {
+/**
+ * Puts a PDF in the library, in a folder of its own named after it, inside `parentId` (null: the
+ * top level). Throws when the file can't be read as a PDF.
+ */
+export async function addToShelf(file: File, parentId: string | null = null): Promise<ShelfDocument> {
   if (!isPdf(file)) throw new Error('Not a PDF');
   const pdf = await openPdf(file);
   try {
     const now = Date.now();
+    const id = uuidv4();
     const document: ShelfDocument = {
-      id: uuidv4(), title: baseName(file.name), file, pageCount: pdf.numPages,
-      cover: await renderCover(pdf).catch(() => null), lastPage: 1, exercises: [], createdAt: now, updatedAt: now,
+      id, title: baseName(file.name), file, pageCount: pdf.numPages,
+      cover: await renderCover(pdf).catch(() => null), lastPage: 1, exercises: [], createdAt: now, updatedAt: now, folderId: bookFolderId(id),
     };
+    await saveFolder({ ...bookFolder(document, now), parentId });
     await saveShelfDocument(document);
     return document;
   } finally { void pdf.loadingTask.destroy(); }
@@ -51,8 +56,11 @@ export const isNote = (mark: ShelfExercise) => mark.kind === 'note';
 export const exerciseStatement = (document: ShelfDocument, exercise: ShelfExercise) =>
   `${exercise.label} · ${document.title}, p. ${exercise.page}`;
 
-/** Makes sure an exercise or note page has its board, creating it with a picture of the marked region if needed. */
-export async function ensureExerciseBoard(pdf: PDFDocumentProxy, document: ShelfDocument, exercise: ShelfExercise, chatHistory: ChatMessage[] = []) {
+/**
+ * Makes sure an exercise or note page has its board, creating it with a picture of the marked region
+ * if needed (filed in `folderId`; unset: its book's folder).
+ */
+export async function ensureExerciseBoard(pdf: PDFDocumentProxy, document: ShelfDocument, exercise: ShelfExercise, chatHistory: ChatMessage[] = [], folderId?: string | null) {
   const id = shelfSessionId(document.id, exercise.id);
   if (await loadSession(id)) return id;
   const now = Date.now();
@@ -60,21 +68,30 @@ export async function ensureExerciseBoard(pdf: PDFDocumentProxy, document: Shelf
   await saveSession({
     id, title: problemStatement.slice(0, 50), problemStatement, problemImage: await cropPage(pdf, exercise.page, exercise.rect),
     canvasStrokes: [], canvasDocument: null, canvasImageBlob: null, chatHistory, createdAt: now, updatedAt: now,
-    isSolved: false, sessionType: isNote(exercise) ? 'note' : 'problem',
+    isSolved: false, sessionType: isNote(exercise) ? 'note' : 'problem', ...(folderId !== undefined ? { folderId } : {}),
   });
   return id;
 }
 
 /**
  * Marks a region of a page as an exercise or a note page, with its own board (starting with
- * `chatHistory`, as when a question about the page is saved as a note page). Returns the updated document.
+ * `chatHistory`, as when a question about the page is saved as a note page). With `folder`, the
+ * board is filed there (a folder other than the book's) and the next mark starts on it. Returns the updated document.
  */
-export async function markExercise(pdf: PDFDocumentProxy, document: ShelfDocument, page: number, rect: PageRect, label: string, kind: ShelfMarkKind = 'exercise', chatHistory: ChatMessage[] = []): Promise<{ document: ShelfDocument; exercise: ShelfExercise }> {
+export async function markExercise(
+  pdf: PDFDocumentProxy, document: ShelfDocument, page: number, rect: PageRect, label: string, kind: ShelfMarkKind = 'exercise',
+  chatHistory: ChatMessage[] = [], folder?: string,
+): Promise<{ document: ShelfDocument; exercise: ShelfExercise }> {
   const exercise: ShelfExercise = {
     id: uuidv4(), ...(kind === 'note' ? { kind } : {}), label: label.trim() || nextLabel(document, kind), page, rect, createdAt: Date.now(),
   };
-  await ensureExerciseBoard(pdf, document, exercise, chatHistory);
-  const updated = { ...document, exercises: [...document.exercises, exercise], updatedAt: Date.now() };
+  const ownFolder = !folder || folder === document.folderId;
+  await ensureExerciseBoard(pdf, document, exercise, chatHistory, ownFolder ? undefined : folder);
+  const updated: ShelfDocument = { ...document, exercises: [...document.exercises, exercise], updatedAt: Date.now() };
+  if (folder !== undefined) {
+    if (ownFolder) delete updated.markFolderId;
+    else updated.markFolderId = folder;
+  }
   await saveShelfDocument(updated);
   return { document: updated, exercise };
 }

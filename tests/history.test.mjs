@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import load from './load-typescript.mjs';
 
-const { toHistoryItem, queryHistory, libraryView } = load('src/lib/history.ts');
+const { toHistoryItem, queryHistory, libraryView, folderSummaries } = load('src/lib/history.ts');
 
 const session = (overrides) => ({
   id: 'a', title: 'Untitled', problemStatement: '', problemImage: null, canvasStrokes: [], canvasDocument: null,
@@ -71,20 +71,42 @@ test('a Shelf entry knows its book and mark; a book lists one only when untouche
   assert.equal(toHistoryItem(session({ id: 'board-1' })).bookId, null);
 });
 
-test('Home browses books and free boards; a search or filter reaches into books', () => {
-  const book = (id, title, createdAt, updatedAt) => ({ id, title, createdAt, updatedAt, exercises: [] });
-  const books = [book('doc1', 'Calculus', 1, 1), book('doc2', 'Linear algebra', 2, 2)];
+test('the library lists what is in each folder; a search or filter reaches everything inside it', () => {
+  const book = (id, title, folderId, createdAt, updatedAt, exercises = []) => ({ id, title, folderId, createdAt, updatedAt, exercises });
+  const mark = (id, page, createdAt) => ({ id, label: id, page, rect: {}, createdAt });
+  const folders = [
+    { id: 'book:doc1', name: 'Calculus', parentId: 'fall', createdAt: 1, updatedAt: 1 },
+    { id: 'fall', name: 'Fall semester', parentId: null, createdAt: 2, updatedAt: 2 },
+    { id: 'ch4', name: 'Chapter 4', parentId: 'book:doc1', createdAt: 3, updatedAt: 3 },
+  ];
+  const books = [
+    book('doc1', 'Calculus', 'book:doc1', 1, 1, [mark('ex1', 9, 1), mark('ex2', 4, 2), mark('ex3', 4, 3)]),
+    book('doc2', 'Linear algebra', null, 2, 2),
+  ];
   const items = [
     session({ id: 'board-1', title: 'Expand (x + 1)^2', updatedAt: 3 }),
-    session({ id: 'shelf:doc1:ex1', title: 'Exercise 1 · Calculus, p. 4', isSolved: true, updatedAt: 9 }),
-  ].map((entry) => toHistoryItem(entry));
+    session({ id: 'board-2', title: 'Fall notes', sessionType: 'note', folderId: 'fall', updatedAt: 4 }),
+    session({ id: 'shelf:doc1:ex1', title: 'Exercise 1 · Calculus, p. 9', isSolved: true, updatedAt: 9 }),
+    session({ id: 'shelf:doc1:ex2', title: 'Exercise 2 · Calculus, p. 4', updatedAt: 5 }),
+    session({ id: 'shelf:doc1:ex3', title: 'Exercise 3 · Calculus, p. 4', folderId: 'ch4', chatHistory: [{}], updatedAt: 6 }),
+  ].map((entry) => toHistoryItem(entry, new Set(), { untouched: true }));
   const view = (query) => {
-    const { books: shown, boards } = libraryView(items, books, { search: '', show: 'all', sort: 'updated', ...query });
-    return { books: shown.map((entry) => entry.id), boards: boards.map((entry) => entry.id) };
+    const shown = libraryView(items, books, folders, { folderId: null, search: '', show: 'all', sort: 'updated', ...query });
+    return { folders: shown.folders.map((entry) => entry.id), books: shown.books.map((entry) => entry.id), boards: shown.boards.map((entry) => entry.id) };
   };
-  // Calculus was last worked on through its exercise.
-  assert.deepEqual(view({}), { books: ['doc1', 'doc2'], boards: ['board-1'] });
-  assert.deepEqual(view({ sort: 'created' }).books, ['doc2', 'doc1']);
-  assert.deepEqual(view({ search: 'calculus' }), { books: ['doc1'], boards: ['shelf:doc1:ex1'] });
-  assert.deepEqual(view({ show: 'solved' }), { books: [], boards: ['shelf:doc1:ex1'] });
+  // The top level: its folders, the book outside any, and its free board.
+  assert.deepEqual(view({}), { folders: ['fall'], books: ['doc2'], boards: ['board-1'] });
+  assert.deepEqual(view({ folderId: 'fall' }), { folders: ['book:doc1'], books: [], boards: ['board-2'] });
+  // A book's folder: the book, the folder inside it, and its boards (only opened ones too) not filed elsewhere, in its order.
+  assert.deepEqual(view({ folderId: 'book:doc1', sort: 'book' }), { folders: ['ch4'], books: ['doc1'], boards: ['shelf:doc1:ex2', 'shelf:doc1:ex1'] });
+  assert.deepEqual(view({ folderId: 'ch4' }).boards, ['shelf:doc1:ex3']);
+  // Searching from the top reaches every depth; boards only with work in them.
+  assert.deepEqual(view({ search: 'calculus' }), { folders: ['book:doc1'], books: ['doc1'], boards: ['shelf:doc1:ex1', 'shelf:doc1:ex3'] });
+  assert.deepEqual(view({ show: 'solved' }), { folders: [], books: [], boards: ['shelf:doc1:ex1'] });
+  // In a folder, only inside it.
+  assert.deepEqual(view({ folderId: 'ch4', search: 'exercise' }).boards, ['shelf:doc1:ex3']);
+  assert.deepEqual(view({ folderId: 'fall', show: 'notes' }).boards, ['board-2']);
+  // A folder's counts take in everything inside it.
+  assert.deepEqual(folderSummaries(items, books, folders).get('fall'), { folders: 2, books: 1, problems: 3, notes: 1, solved: 1 });
+  assert.deepEqual(folderSummaries(items, books, folders).get('ch4'), { folders: 0, books: 0, problems: 1, notes: 0, solved: 0 });
 });

@@ -23,6 +23,11 @@ export function ShelfIcon() {
   return <Icon><path d="M3.5 1.5h6l3 3v10h-9z" /><path d="M9.5 1.5v3h3M5.5 8h5M5.5 10.5h5" /></Icon>;
 }
 
+/** A folder in the library. */
+export function FolderIcon({ size }: { size?: number } = {}) {
+  return <Icon size={size}><path d="M1.5 4a1 1 0 0 1 1-1h3.5l1.5 1.5h6a1 1 0 0 1 1 1V12.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" /></Icon>;
+}
+
 /** The tutor's mark; only the tutor uses it, always in the tutor color. */
 export function TutorIcon() {
   return <Icon><path d="M14 10a2 2 0 0 1-2 2H6l-3.5 2.5V4a2 2 0 0 1 2-2H12a2 2 0 0 1 2 2z" /></Icon>;

@@ -104,6 +104,8 @@ try {
   const boardFile = `Dropbox/Math Tutor backup/${manifest.boards[0].file}`;
   assert.equal(JSON.parse(await readOpfs(page, boardFile)).problemStatement, 'Find x when 2x + 3 = 7 (check it)');
   assert.equal(manifest.shelf[0].title, 'Geometry');
+  // The book's own folder goes with it.
+  assert.deepEqual(manifest.folders.map((entry) => [entry.id, entry.name]), [[manifest.shelf[0].folderId, 'Geometry']]);
   assert.ok(await readOpfs(page, `Dropbox/Math Tutor backup/pdfs/${manifest.shelf[0].id}.pdf`) > 0);
   const today = new Date();
   const day = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -153,7 +155,7 @@ try {
     await fresh.page.getByRole('button', { name: 'Settings' }).click();
     await fresh.page.getByRole('tab', { name: 'Backup' }).click();
     await fresh.page.getByTestId('restore-file').setInputFiles(zip.path);
-    await fresh.page.getByText('Restored 1 board and 1 PDF.').waitFor();
+    await fresh.page.getByText('Restored 1 board, 1 PDF and 1 folder.').waitFor();
     await fresh.page.getByTestId('restore-file').setInputFiles(zip.path);
     await fresh.page.getByText('Nothing to restore: this device already has everything in the backup.').waitFor();
 

@@ -69,6 +69,29 @@ export interface Session {
   writeUp?: WriteUp;
   /** The paper the student chose for this board; unset until they choose. */
   paper?: Paper;
+  /**
+   * The folder it is filed in, set by Move (or New in a folder); null: the library's top level.
+   * Unset: where it belongs by default, a Shelf board in its book's folder, a free board at the top.
+   */
+  folderId?: string | null;
+}
+
+/** A folder in the library, inside another (`parentId`) or at the top level (null). */
+export interface Folder {
+  id: string;
+  name: string;
+  parentId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** What a folder holds, its subfolders included, for its card. */
+export interface FolderSummary {
+  folders: number;
+  books: number;
+  problems: number;
+  notes: number;
+  solved: number;
 }
 
 export interface WriteUp {
@@ -104,11 +127,16 @@ export interface HistoryItem {
   /** A Shelf entry's PDF and mark (ShelfDocument and ShelfExercise ids); null for free-form boards. */
   bookId: string | null;
   exerciseId: string | null;
+  /** Session.folderId as saved (see there for unset). */
+  folderId: string | null | undefined;
+  /** Something was done on it; false for a Shelf exercise only opened (listed only where its book is). */
+  hasWork: boolean;
 }
 
 /** History's filter: everything, problems, notes, problems not yet solved, solved problems, or favorites. */
 export type HistoryShow = 'all' | 'problems' | 'notes' | 'inProgress' | 'solved' | 'favorites';
-export type HistorySort = 'updated' | 'created' | 'title';
+/** `book`: a book's boards in the order of their pages (in a folder holding a book). */
+export type HistorySort = 'updated' | 'created' | 'title' | 'book';
 
 // === Shelf ===
 
@@ -161,6 +189,13 @@ export interface ShelfDocument {
   exercises: ShelfExercise[];
   /** False when the student turned off trimming the pages' blank margins. Unset: trimmed. */
   trimMargins?: boolean;
+  /**
+   * The folder it is in: its own folder (`bookFolderId`) when added; null: the library's top level.
+   * Unset only on books saved before folders (the database upgrade and restore give them their folder).
+   */
+  folderId?: string | null;
+  /** The folder Mark last filed a board in, where the next one starts. Unset: the book's folder. */
+  markFolderId?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -417,12 +452,15 @@ export interface BackupManifest {
   profile?: LearnerProfile;
   /** Ink on Shelf pages; missing in backups made before it existed. */
   ink?: PageInk[];
+  /** The library's folders; missing in backups made before them. */
+  folders?: Folder[];
 }
 
 /** What a restore did: records added or updated, and those left alone because this device's copy is as new. */
 export interface RestoreResult {
   restoredSessions: number;
   restoredShelf: number;
+  restoredFolders: number;
   /** The tutor memory was newer in the backup and replaced this device's. */
   restoredProfile: boolean;
   /** Pages of Shelf ink added or updated. */
