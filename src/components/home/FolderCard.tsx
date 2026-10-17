@@ -12,7 +12,7 @@ import type { Folder, FolderSummary } from '@/types';
 export function summaryText(summary: FolderSummary) {
   const count = (n: number, one: string, many: string) => (n > 0 ? `${n} ${n === 1 ? one : many}` : '');
   return [
-    count(summary.folders, 'folder', 'folders'), count(summary.books, 'book', 'books'),
+    count(summary.folders, 'folder', 'folders'), count(summary.books, 'text', 'texts'),
     count(summary.problems, 'problem', 'problems'), count(summary.notes, 'note', 'notes'),
   ].filter(Boolean).join(' · ') || 'Empty';
 }

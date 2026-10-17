@@ -344,7 +344,7 @@ try {
   await history.getByRole('button', { name: 'Problems', exact: true }).click();
   assert.equal(await history.getByText('Complex modulus', { exact: true }).count(), 1, 'only in Continue');
   await history.getByRole('button', { name: 'All', exact: true }).click();
-  await history.getByRole('searchbox', { name: 'Search books, problems and notes' }).fill('modulus');
+  await history.getByRole('searchbox', { name: 'Search texts, problems and notes' }).fill('modulus');
   assert.equal(await page.locator('[aria-labelledby="boards-heading"] li').count(), 1);
   // A name given in History survives the open session's next autosave.
   await history.getByRole('button', { name: /^More for / }).click();
@@ -366,7 +366,7 @@ try {
   console.log('PASS free-form Notes policy, dictated follow-ups, and Home search, filter and rename');
 
   // Opening an older board from Home brings back its conversation.
-  await history.getByRole('searchbox', { name: 'Search books, problems and notes' }).fill('quadratic');
+  await history.getByRole('searchbox', { name: 'Search texts, problems and notes' }).fill('quadratic');
   await history.getByRole('button', { name: 'Open Find a strategy for a quadratic.' }).click();
   await page.waitForURL(`${origin}/board`); await waitProblem(); await openTutor();
   assert.ok(await page.getByText('Does this approach make sense?', { exact: true }).isVisible());

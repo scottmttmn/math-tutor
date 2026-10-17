@@ -195,7 +195,7 @@ export interface ShelfExercise {
 }
 
 /** A PDF on the Shelf, with the exercises and note pages marked on it. */
-/** What a Shelf PDF is: a textbook, a problem set or a handout. */
+/** What a Shelf PDF was labelled as by earlier versions (no longer shown: folders organize texts now). */
 export type ShelfKind = 'textbook' | 'problem-set' | 'handout';
 
 export interface ShelfDocument {
@@ -210,7 +210,7 @@ export interface ShelfDocument {
   /** That page's printed number, and the section (bookmark) it is in, for the Shelf card. */
   lastPageLabel?: string;
   lastSection?: string;
-  /** What it is, chosen on the Shelf card. Unset until chosen. */
+  /** Chosen on the card by earlier versions; kept as stored, no longer shown. */
   kind?: ShelfKind;
   exercises: ShelfExercise[];
   /** False when the student turned off trimming the pages' blank margins. Unset: trimmed. */

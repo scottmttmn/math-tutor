@@ -844,15 +844,15 @@ export default function ShelfReader() {
             <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-900 bg-white">
               <button onClick={toggleFullScreen} className={smallButton}>Exit full screen</button>
               <span className="min-w-0 flex-1 truncate font-semibold text-gray-900">{shelfDocument.title}</span>
-              <button onClick={() => setPanelOpen((open) => !open)} aria-pressed={panelOpen} aria-label="Book: your list and contents"
-                className={`min-h-11 px-3 text-sm rounded-lg border border-gray-900 ${panelOpen ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 hover:bg-gray-100'}`}>Book</button>
+              <button onClick={() => setPanelOpen((open) => !open)} aria-pressed={panelOpen} aria-label="Lists: your list, contents and search"
+                className={`min-h-11 px-3 text-sm rounded-lg border border-gray-900 ${panelOpen ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 hover:bg-gray-100'}`}>Lists</button>
             </div>
           )}
           <div className="flex-1 min-h-0 relative">
             <div className="absolute inset-0 overflow-y-auto">{pageView}</div>
             {askPanel && <div className="absolute inset-x-0 bottom-0 z-30 h-[55%] flex flex-col shadow-lg">{askPanel}</div>}
             {barsShown && panelOpen && !askPanel && (
-              <section aria-label="Book" className="absolute inset-y-0 left-0 z-20 w-[min(22rem,85%)] flex flex-col bg-white border-r border-gray-900 shadow-lg">
+              <section aria-label="Lists" className="absolute inset-y-0 left-0 z-20 w-[min(22rem,85%)] flex flex-col bg-white border-r border-gray-900 shadow-lg">
                 {listPanel}
               </section>
             )}

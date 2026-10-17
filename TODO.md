@@ -19,7 +19,7 @@ Done: the handwriting test, autosave on the main page, the 5-second request limi
 
 Done: **Home** is the page the app opens on: a Continue card for the last board, then a grid of every free-form board and Shelf exercise that has work in it, with thumbnails, search, rename, sort, and filters (All / Problems / Notes / In progress / Solved). Every page has the same bar: Home, Shelf, + New, Settings.
 
-- Done (library step 2): Home and the Shelf are one page. Home lists **Books** (every PDF) and free boards; a search or filter also finds the boards made in books. Each book has its own page with its boards; **+ New → Add a PDF…** adds one; a new problem takes a picture (**Add picture**), which replaces Single problem. The Shelf tab is gone.
+- Done (library step 2): Home and the Shelf are one page. Home lists **Texts** (every PDF; called books until 2026-10-17) and free boards; a search or filter also finds the boards made in books. Each book has its own page with its boards; **+ New → Add a PDF…** adds one; a new problem takes a picture (**Add picture**), which replaces Single problem. The Shelf tab is gone.
 - Done (library step 3): nested folders ([design](https://claude.ai/artifact/HwasY4HpAiE6Y5qNts1X6k), option B). A PDF comes in a folder of its own, named after it, which holds the book (read it from the top of the folder) and the boards marked in it; folders can hold folders, books and boards, filed by hand with **Move to…**; **+ New → New folder**; Mark can file a board in a folder inside the book's, starting on the last one picked; counts on a folder's card take in everything inside; deleting a folder moves its contents up a level. Books saved before folders were each given their own.
 - Done (library step 4): several exercises on one board. With a problem board open, **Mark** offers **This board** or **Own board**; This board adds the boxed exercise to the open board (its picture below the work, Mark stays on for the next one). The board's header lists its exercises to switch between; each is solved on its own, the tutor works on the current one (and is told the others are there), and Home lists the board once with "N of M solved". Removing one keeps the board for the others. Shelf boards only for now.
 
@@ -31,7 +31,7 @@ Done: one look across the app: ink on paper, with only the tutor in color (**Ask
 
 Every board has the same layout: what it works from beside it (the problem or topic, the PDF page), which can be hidden, and the tutor as a drawer that opens when you ask. Every board has **Full screen** (in its toolbar), and a problem picture can be **put on the board**. **Hide tools** collapses the drawing tools, and the Shelf's list can be hidden so the page gets the full width.
 
-Done (reading, step 1 of the [Shelf design](https://claude.ai/artifact/TXw8zCKZbwQ9ohM2Fk9nC8)): tap a page's edge, swipe sideways or use the arrow keys to turn it; tap the page number to go to a page by its printed number ("47", "xii"); **Contents** beside the page from the PDF's bookmarks; blank margins trimmed so the print is bigger (**Trim margins**, kept per book); **Full screen** for reading, where a tap in the middle hides and brings back the bars and **Book** opens the lists over the page.
+Done (reading, step 1 of the [Shelf design](https://claude.ai/artifact/TXw8zCKZbwQ9ohM2Fk9nC8)): tap a page's edge, swipe sideways or use the arrow keys to turn it; tap the page number to go to a page by its printed number ("47", "xii"); **Contents** beside the page from the PDF's bookmarks; blank margins trimmed so the print is bigger (**Trim margins**, kept per book); **Full screen** for reading, where a tap in the middle hides and brings back the bars and **Lists** opens the lists over the page.
 
 - Done: ink on the page (pen, highlighter, eraser, undo), saved per page and in backups.
 - Done: an exercise opened on an empty board is put on it; on an upright tablet the board takes the screen and swaps with the page (**Page 47** / **Back to board**).
@@ -39,7 +39,7 @@ Done (reading, step 1 of the [Shelf design](https://claude.ai/artifact/TXw8zCKZb
 - Not yet: **Open as note** (moving margin ink onto a new note page); the paper choice for new boards is per kind, not a setting.
 - Done: **Search** in the book's list (results by section with a line of context; the words are lit on the page).
 - Done: **Ask about the page** (Ask, drag a box, ask; the tutor explains it directly; Save as note page keeps it).
-- Done: **Shelf cards** with kind, solved progress and where you left off. The Shelf reading design is built; still open: Open as note, saving a PDF with your markup.
+- Done: **Shelf cards** with solved progress and where you left off (the kind labels were dropped on 2026-10-17: folders organize texts). The Shelf reading design is built; still open: Open as note, saving a PDF with your markup.
 - Still to do: no zoom yet; marks can't be moved or renamed after saving.
 
 ### 4. Export and auto-backup

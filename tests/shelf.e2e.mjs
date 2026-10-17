@@ -263,7 +263,7 @@ try {
   await homeFolders.getByRole('link', { name: 'Open Geometry notes' }).waitFor();
   await homeFolders.locator('li', { has: page.getByRole('link', { name: 'Open Algebra drills' }) }).getByText('1 of 2 solved').waitFor();
   assert.equal(await page.locator('[aria-labelledby="boards-heading"]').count(), 0, 'a book’s boards are in its folder');
-  await page.getByRole('searchbox', { name: 'Search books, problems and notes' }).fill('exercise');
+  await page.getByRole('searchbox', { name: 'Search texts, problems and notes' }).fill('exercise');
   const history = page.locator('[aria-labelledby="boards-heading"]');
   await history.getByRole('button', { name: /^Open Exercise 1/ }).waitFor();
   assert.equal(await history.getByRole('button', { name: /^Open Problem 3/ }).count(), 0);
@@ -300,22 +300,16 @@ try {
   await page.getByRole('link', { name: 'Home' }).waitFor();
   console.log('PASS a new problem takes a picture; it goes on the board; full screen main board');
 
-  // The book at the head of its folder: asks what the PDF is until told, then shows it, with solved
-  // progress and where you left off; the kind can be changed from its menu.
+  // The text at the head of its folder: its solved progress and where you left off, with no kind to choose.
   await page.goto(`${origin}/`);
   await page.getByRole('link', { name: 'Open Algebra drills' }).click();
-  const kinds = page.getByRole('group', { name: 'What Algebra drills is' });
-  await kinds.getByRole('button', { name: 'Problem set' }).click();
-  await kinds.waitFor({ state: 'hidden' });
-  await page.getByText(/^Problem set · 0 of 1 solved · 2 pages$/).waitFor();
+  await page.getByText(/^0 of 1 solved · 2 pages$/).waitFor();
   await page.getByRole('link', { name: /^Read at p\. \d+$/ }).waitFor();
-  await page.reload();
-  await page.getByText(/^Problem set ·/).waitFor();
-  await page.getByRole('button', { name: 'More for the book Algebra drills' }).click();
-  await page.getByRole('menuitem', { name: 'Change kind' }).click();
-  await kinds.getByRole('button', { name: 'Textbook' }).click();
-  await page.getByText(/^Textbook ·/).waitFor();
-  console.log('PASS the book shows its kind, solved progress and where you left off');
+  assert.equal(await page.getByText('What is it?').count(), 0);
+  await page.getByRole('button', { name: 'More for the text Algebra drills' }).click();
+  assert.equal(await page.getByRole('menuitem', { name: 'Change kind' }).count(), 0);
+  await page.keyboard.press('Escape');
+  console.log('PASS the text shows its solved progress and where you left off');
 
   // Several exercises on one board: Mark → This board adds the next one to the open board, its
   // picture below the work, and Mark stays on; the board's exercises switch in its header, each
@@ -383,7 +377,7 @@ try {
   await page.waitForTimeout(1200);
   // The book counts both; its folder lists the board once, with how many are solved.
   await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Algebra drills' }).click();
-  await page.getByText(/^Textbook · 1 of 2 solved · 2 pages$/).waitFor();
+  await page.getByText(/^1 of 2 solved · 2 pages$/).waitFor();
   await page.locator('[aria-labelledby="folders-heading"]').getByText('2 problems', { exact: true }).waitFor();
   await page.getByRole('link', { name: 'Open Chapter 2' }).click();
   const grouped = page.locator('[aria-labelledby="boards-heading"] li');
@@ -395,7 +389,7 @@ try {
   console.log('PASS several exercises on one board: add, switch, solve each, tutor focus, remove one');
 
   // Removing the PDF takes its remaining boards with it; its folder stays while it holds a folder.
-  await page.getByRole('button', { name: 'More for the book Algebra drills' }).click();
+  await page.getByRole('button', { name: 'More for the text Algebra drills' }).click();
   await page.getByRole('menuitem', { name: 'Remove' }).click();
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
   await page.getByRole('link', { name: 'Read Algebra drills' }).waitFor({ state: 'detached' });
