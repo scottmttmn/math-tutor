@@ -6,6 +6,12 @@ export const CHATGPT_USAGE_URL = 'https://chatgpt.com/settings/usage';
 // Falls back to the first model the plan lists.
 export const CHATGPT_DEFAULT_MODEL_PATTERN = /sol/i;
 
+/**
+ * One output cap for every provider. Models that think first (Claude, Gemini, ChatGPT plan models)
+ * spend from it before they answer; the prompts keep the visible reply short, so this only stops a runaway.
+ */
+export const TUTOR_MAX_OUTPUT_TOKENS = 16_000;
+
 // Minimum interval between tutor requests, measured from their start.
 export const RATE_LIMIT_MS = 5 * 1000;
 

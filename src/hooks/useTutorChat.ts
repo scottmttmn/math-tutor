@@ -112,6 +112,7 @@ export function useTutorChat(getBookContext?: () => Promise<BookContext | null>)
       if (!stopped && !hadError) throw new Error('The tutor response was interrupted. Please try again.');
       const { visible, notes, notebook } = splitTutorNotes(reply);
       if (visible.length > shown) append(visible.slice(shown));
+      if (!hadError && !visible.trim()) throw new Error('The tutor sent back an empty reply. Please ask again.');
       if (takeNotes && (notes.length || notebook) && !hadError) await keepNotes(notes, notebook);
       return !hadError && !abort.signal.aborted;
     } catch (error) {

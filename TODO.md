@@ -85,6 +85,7 @@ Done: **Skill check-in** on the Tutor memory page offers the topics nobody is su
 - Multi-page notebooks (tldraw supports pages; they're turned off today).
 - Notes and highlights on Shelf pages, and reading without flipping page by page (to be designed first).
 - Graph paper background and function plots on the canvas.
+- **Ebooks (DRM-free EPUB) as texts.** EPUB text reflows instead of having fixed pages, so Mark, ink on the page and "p. N" (all built on fixed pages) need rethinking for it; math in EPUBs is often MathML or low-resolution images. DRM-locked books (Kindle and the like) can't be opened by any app like this. Until then: convert the EPUB to PDF (Calibre does it) and add it as a text.
 
 ## Down the road (not now)
 
