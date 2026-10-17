@@ -8,6 +8,7 @@ import { chromium } from 'playwright';
 
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const requests = [];
+let finishLongReply;
 const browserErrors = [];
 const profile = await mkdtemp(join(tmpdir(), 'board-acceptance-'));
 const provider = createServer(async (req, res) => {
@@ -19,10 +20,11 @@ const provider = createServer(async (req, res) => {
   const reply = system.includes('Give clear, direct explanations') ? 'Notes explanation.' : 'Problem hint.';
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
   if (JSON.stringify(body.messages.at(-1)).includes('Long response safety check')) {
-    setTimeout(() => {
+    res.write(': pending\n\n');
+    finishLongReply = () => {
       res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: Array.from({ length: 60 }, (_, index) => `Long reply line ${index + 1}.`).join('\n\n') } }] })}\n\n`);
       res.end('data: [DONE]\n\n');
-    }, 7000);
+    };
     return;
   }
   if (JSON.stringify(body.messages.at(-1)).includes('Hold this reply')) {
@@ -160,9 +162,12 @@ try {
   await openTutor(page);
   assert.equal(await followUp().inputValue(), 'Keep my draft while the drawer is closed.');
   await followUp().fill('Long response safety check');
+  const beforeLong = requests.length;
   const longResponseReady = page.waitForResponse((response) => response.url() === `${origin}/api/tutor`);
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await page.waitForFunction(() => !!document.querySelector('[aria-busy="true"]'));
+  // Capturing the board is asynchronous; busy does not yet mean the mock has the request.
+  while (requests.length === beforeLong) await new Promise((resolve) => setTimeout(resolve, 50));
   const beforeToggle = requests.length;
   assert.ok(await page.getByRole('button', { name: 'Ask tutor', exact: true }).isEnabled());
   await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
@@ -181,6 +186,7 @@ try {
   }, model);
   assert.equal(duringStream.status, 429);
   assert.match(duringStream.message, /already answering/);
+  finishLongReply();
   await (await longResponseReady).finished();
   await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
   await openTutor(page);
