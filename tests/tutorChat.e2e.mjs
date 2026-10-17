@@ -1,3 +1,4 @@
+import { openTutor, chooseTutor } from './tutor-ui.mjs';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -20,15 +21,14 @@ try {
   await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: frames }));
   await page.goto(`${origin}/board?new=note`);
   await page.locator('.tl-canvas').waitFor();
-  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
-  await page.getByRole('menuitem').first().click(); // Hint, or Explain this on notes
+  await chooseTutor(page);
   const chat = () => page.locator('.tutor-content').last();
   await chat().locator('.katex').nth(3).waitFor();
   assert.equal(await chat().locator('.katex').count(), 4);
   assert.equal(await chat().locator('.katex-display').count(), 2);
   await page.getByText('Answered with gemini-3.7-flash after a quota limit').waitFor();
 
-  const box = page.getByPlaceholder('Type or speak a follow-up...');
+  const box = page.getByPlaceholder('Ask your own question…');
   const oneLine = (await box.boundingBox()).height;
   await box.fill('Why is the modulus of a product the product of the moduli, and does the same hold for sums of complex numbers?');
   const wrapped = (await box.boundingBox()).height;
@@ -50,7 +50,7 @@ try {
   await page.locator('.tutor-content').nth(1).locator('.katex').nth(3).waitFor();
 
   await page.reload();
-  await page.getByRole('button', { name: 'Tutor', exact: true }).click();
+  await openTutor(page);
   await page.getByText('Answered with gemini-3.7-flash after a quota limit').first().waitFor();
   assert.equal(await chat().locator('.katex').count(), 4);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -84,8 +84,7 @@ try {
     for (let i = 0; i < 10; i += 1) await wide.mouse.move(x + i * 5, y + Math.sin(i) * 10);
     await wide.mouse.up();
   }
-  await wide.getByRole('button', { name: 'Ask tutor', exact: true }).click();
-  await wide.getByRole('menuitem').first().click(); // Hint, or Explain this on notes
+  await chooseTutor(wide);
   await wide.locator('.tutor-content').last().locator('.katex').first().waitFor();
   const png = Buffer.from(wideRequests.at(-1).canvasImage, 'base64');
   const [width, height] = [png.readUInt32BE(16), png.readUInt32BE(20)];
@@ -134,8 +133,7 @@ try {
   await tall.locator('.tl-canvas').waitFor();
   await tall.getByPlaceholder("Type the math problem you're working on...").fill('Check these lines');
   await tall.waitForFunction(() => document.querySelectorAll('.tl-shape[data-shape-type="draw"]').length === 6);
-  await tall.getByRole('button', { name: 'Ask tutor', exact: true }).click();
-  await tall.getByRole('menuitem').first().click();
+  await chooseTutor(tall);
   await tall.locator('.tutor-content .katex').first().waitFor();
   const first = tallRequests.at(-1);
   assert.ok(first.canvasImage);
@@ -158,7 +156,7 @@ try {
     assert.ok(size.ink > 100 && Math.max(size.width, size.height) <= 2048, JSON.stringify(size));
   }
   await writeFile(join(tmpdir(), 'tutor-board-close-up.png'), Buffer.from(first.canvasDetails[0], 'base64'));
-  const follow = tall.getByPlaceholder('Type or speak a follow-up...');
+  const follow = tall.getByPlaceholder('Ask your own question…');
   await follow.fill('What about the same work?');
   await tall.getByRole('button', { name: 'Send', exact: true }).and(tall.locator(':enabled')).waitFor({ timeout: 10_000 });
   await follow.press('Enter');
@@ -175,8 +173,7 @@ try {
   });
   const beforeFailure = tallRequests.length;
   await tall.getByRole('button', { name: 'Ask tutor', exact: true }).and(tall.locator(':enabled')).waitFor({ timeout: 10_000 });
-  await tall.getByRole('button', { name: 'Ask tutor', exact: true }).click();
-  await tall.getByRole('menuitem').first().click();
+  await chooseTutor(tall);
   await tall.getByRole('alert').filter({ hasText: 'could not be captured' }).waitFor({ timeout: 10_000 }).catch(async (error) => {
     throw new Error(`${error.message}; requests=${tallRequests.length}; failures=${await tall.evaluate(() => window.captureFailures)}; alerts=${await tall.getByRole('alert').allTextContents()}; browserErrors=${errors}`);
   });
@@ -199,8 +196,7 @@ try {
   await tall.locator('.tl-canvas').waitFor();
   await tall.waitForFunction(() => document.querySelector('textarea')?.value === 'Check the long diagonal' && document.querySelectorAll('.tl-shape[data-shape-type="draw"]').length === 1);
   await tall.getByRole('button', { name: 'Ask tutor', exact: true }).and(tall.locator(':enabled')).waitFor({ timeout: 10_000 });
-  await tall.getByRole('button', { name: 'Ask tutor', exact: true }).click();
-  await tall.getByRole('menuitem').first().click();
+  await chooseTutor(tall);
   await tall.locator('.tutor-content .katex').first().waitFor();
   assert.ok(tallRequests.at(-1).canvasDetails.length > 0 && tallRequests.at(-1).canvasDetails.length <= 12);
   console.log('PASS a long diagonal uses shape geometry to skip empty cells and reaches the tutor');

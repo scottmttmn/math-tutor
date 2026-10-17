@@ -1,3 +1,4 @@
+import { chooseTutor } from './tutor-ui.mjs';
 // The Android app's bundle (out/, from `npm run build:android`) served the way the app serves it:
 // Capacitor answers every path without an extension with index.html (Home), other paths with the file.
 import assert from 'node:assert/strict';
@@ -164,8 +165,7 @@ try {
   });
   const askTutor = async () => {
     await app.waitForTimeout(5100); // The five-second spacing between tutor requests.
-    await app.getByRole('button', { name: 'Ask tutor', exact: true }).click();
-    await app.getByRole('menuitem').first().click();
+    await chooseTutor(app);
   };
   const openaiCalls = [];
   await app.route('https://api.openai.com/**', async (route) => {

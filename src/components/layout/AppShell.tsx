@@ -21,7 +21,7 @@ import NoteHeader from '../workspace/NoteHeader';
 import CheckInHeader from '../workspace/CheckInHeader';
 import { checkInStarted, checkInTitle } from '@/lib/checkIn';
 import DrawingCanvas, { type DrawingCanvasHandle } from '../workspace/DrawingCanvas';
-import ChatPanel, { focusTutorQuestion } from '../chat/ChatPanel';
+import ChatPanel from '../chat/ChatPanel';
 import BoardFrame from './BoardFrame';
 import WriteUpPanel from '../workspace/WriteUpPanel';
 import { KindIcon } from '@/components/common/Icons';
@@ -85,13 +85,6 @@ function AppContent() {
     }
   }, [sendHelp, leaveFullScreen, checkIn, chatHistory]);
 
-  // Ask… under Ask tutor: the question is typed or spoken in the tutor's chat box.
-  const handleAskOwn = useCallback(() => {
-    leaveFullScreen();
-    setTutorOpen(true);
-    focusTutorQuestion();
-  }, [leaveFullScreen]);
-
   const getBoardImages = useCallback(async (): Promise<TutorBoardImages> => {
     if (!canvasHandle.current) throw new Error('The board is still loading. Please try again.');
     return canvasHandle.current.captureForTutor();
@@ -139,7 +132,7 @@ function AppContent() {
       <BoardFrame
         fullScreen={fullScreen}
         source={checkIn
-          ? { label: 'Check-in', content: <CheckInHeader checkIn={checkIn} started={checkInStarted(chatHistory)} /> }
+          ? { label: 'Check-in', content: <CheckInHeader checkIn={checkIn} started={checkInStarted(chatHistory)} onShowProblem={tutorOpen ? undefined : () => setTutorOpen(true)} /> }
           : sessionType === 'note'
           ? { label: 'Topic', content: <NoteHeader /> }
           : {
@@ -161,8 +154,7 @@ function AppContent() {
         toolbar={(
           <BottomToolbar
             onAskForHelp={(question) => void handleAskForHelp(question)}
-            // A check-in's Ask tutor hands in an answer, so it has no choices.
-            onAskOwn={checkIn ? undefined : handleAskOwn}
+            checkInLabel={checkIn ? (checkInStarted(chatHistory) ? 'Hand in answer' : 'Start check-in') : undefined}
             onClear={() => canvasHandle.current?.clear()}
             isStreaming={isStreaming}
             isSolved={isSolved}
@@ -180,7 +172,7 @@ function AppContent() {
             )}
           />
         )}
-        tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel getBoardImages={getBoardImages} /> }}
+        tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel visible={tutorOpen && !fullScreen} getBoardImages={getBoardImages} onAskForHelp={handleAskForHelp} /> }}
       />
 
       {writeUpOpen && (

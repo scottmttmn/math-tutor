@@ -6,16 +6,15 @@ import { useRateLimit } from '@/hooks/useRateLimit';
 import { RATE_LIMIT_MS } from '@/lib/constants';
 import type { Paper, SessionType } from '@/types';
 import { PAPERS } from '@/lib/paper';
-import { askChoices, askQuestion } from '@/lib/tutorAsk';
 import MoreMenu from '@/components/common/MoreMenu';
 import { BroomIcon, FullScreenIcon, PaperIcon, SolvedCheck, TutorIcon, UnsolvedCheck } from '@/components/common/Icons';
 
 // Drawing tools, colors and undo live in tldraw's own toolbar on the canvas.
 interface Props {
-  /** Asks the tutor about the board; `question` is the choice picked under Ask tutor, if any. */
+  /** Asks the tutor about the board; `question` is a direct check-in action, if any. */
   onAskForHelp: (question?: string) => void;
-  /** Makes Ask tutor a menu (Hint, Check my work, Feedback, Ask…); Ask… calls this to open the chat box. */
-  onAskOwn?: () => void;
+  /** A check-in sends directly instead of opening the drawer's choices. */
+  checkInLabel?: 'Start check-in' | 'Hand in answer';
   onClear: () => void;
   isStreaming: boolean;
   isSolved: boolean;
@@ -25,7 +24,7 @@ interface Props {
   fullScreen?: { on: boolean; toggle: () => void };
   /** Shows the Hide tools button (see useToolsHidden). */
   tools?: { hidden: boolean; toggle: () => void };
-  /** Shows the Tutor button, which opens and closes the tutor beside the board. */
+  /** The Ask tutor toggle, which opens and closes the tutor beside the board. */
   tutor?: { open: boolean; toggle: () => void };
   /** Shows Save as, which saves the whole board as a PNG or a PDF. */
   onSaveAs?: (format: 'png' | 'pdf') => void;
@@ -37,7 +36,7 @@ interface Props {
   favorite?: ReactNode;
 }
 
-export default function BottomToolbar({ onAskForHelp, onAskOwn, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp, paper, favorite }: Props) {
+export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp, paper, favorite }: Props) {
   const { hasContent } = useCanvasState();
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
   const helpDisabled = isLimited || isStreaming;
@@ -121,8 +120,8 @@ export default function BottomToolbar({ onAskForHelp, onAskOwn, onClear, isStrea
         </button>
       )}
 
-      {/* The tutor's controls are the only ones in its color. */}
-      {tutor && (
+      {/* Opening the drawer is always available, including during a reply or rate limit. */}
+      {!checkInLabel && tutor && (
         <button
           onClick={() => {
             // Full screen hides the tutor, so opening it leaves full screen (as Ask tutor does).
@@ -130,30 +129,17 @@ export default function BottomToolbar({ onAskForHelp, onAskOwn, onClear, isStrea
             else tutor.toggle();
           }}
           aria-pressed={tutor.open && !fullScreen?.on}
-          className={`flex items-center gap-1.5 min-h-11 px-3 text-sm text-indigo-700 border rounded-lg ${
-            tutor.open && !fullScreen?.on ? 'bg-indigo-50 border-indigo-700' : 'bg-white border-gray-300 hover:bg-indigo-50'
+          aria-label="Ask tutor"
+          className={`flex shrink-0 items-center gap-1.5 min-h-11 px-4 text-sm font-semibold border-2 border-indigo-700 rounded-lg ${
+            tutor.open && !fullScreen?.on ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' : 'bg-indigo-700 text-white hover:bg-indigo-800'
           }`}
-          title={tutor.open ? 'Close the tutor' : 'Show the conversation with the tutor'}
+          title="Ask tutor"
         >
-          Tutor
+          <TutorIcon />Ask tutor
         </button>
       )}
 
-      {/* Ask tutor says what is wanted: a hint, a check, feedback, or a question of your own. */}
-      {onAskOwn ? (
-        <MoreMenu
-          label="Ask tutor"
-          button={<><TutorIcon />Ask tutor</>}
-          above
-          disabled={helpDisabled}
-          title={isLimited ? 'Please wait a moment before asking again.' : 'Ask the tutor about your board'}
-          buttonClassName={askClass}
-          items={askChoices(sessionType).map((choice) => ({
-            label: choice.label,
-            onSelect: () => (choice.intent === 'own' ? onAskOwn() : onAskForHelp(askQuestion(choice.intent, sessionType))),
-          }))}
-        />
-      ) : (
+      {checkInLabel && (
         <button
           onClick={() => onAskForHelp()}
           disabled={helpDisabled}
@@ -161,7 +147,7 @@ export default function BottomToolbar({ onAskForHelp, onAskOwn, onClear, isStrea
           className={askClass}
         >
           <TutorIcon />
-          Ask tutor
+          {checkInLabel}
         </button>
       )}
     </div>

@@ -65,14 +65,14 @@ Done (step 3): **Favorites** and **the tutor's notebook**. Favorite beside Mark 
 
 ### 6. Skill check-in
 
-Done: **Skill check-in** on the Tutor memory page offers the topics nobody is sure about (rated Rusty or Learning, your own unrated ones, and ones the tutor noted without high confidence), up to 4. It opens a board where the tutor gives one short problem at a time, harder after a right answer and easier after a miss; you answer by hand and press Ask tutor, and each settled topic lands in the memory as a tutor note you can correct.
+Done: **Skill check-in** on the Tutor memory page offers the topics nobody is sure about (rated Rusty or Learning, your own unrated ones, and ones the tutor noted without high confidence), up to 4. It opens a board where the tutor gives one short problem at a time, harder after a right answer and easier after a miss; you answer by hand and press Hand in answer, and each settled topic lands in the memory as a tutor note you can correct.
 
 - Later: **Check me on this topic** for one topic or area straight from its row.
 
 ## Board toolbar simplification
 
 - Done (step 1): named icon controls for full screen, current paper and sweep Clear; paper swatches; Board menu for tools, write-up and exports; Show tools chip; compact tablet labels.
-- Next (step 2): one Ask tutor button toggles the drawer; choices live above its chat box, with direct Start check-in / Hand in answer actions.
+- Done (step 2): one Ask tutor button toggles the drawer without sending; choices stay above its chat box, with direct Start check-in / Hand in answer actions. Drafts and active replies survive closing the drawer; Show check-in problem in its instructions reopens a closed check-in without handing in an answer.
 
 ## After the MVP
 

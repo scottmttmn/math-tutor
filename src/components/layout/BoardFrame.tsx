@@ -111,10 +111,10 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
         {toolbar}
       </section>
 
-      {showTutor && (
+      {/* Keep the conversation mounted when closed, so drafts and an active reply survive toggling. */}
         <aside
           aria-label="Tutor"
-          className="order-first lg:order-none flex flex-col min-h-0 basis-[40%] shrink-0 lg:basis-auto lg:w-[24rem] lg:flex-none border-b-2 lg:border-b-0 lg:border-l-2 border-indigo-700 bg-white"
+          className={`${showTutor ? 'flex' : 'hidden'} order-first lg:order-none flex-col min-h-0 basis-[40%] shrink-0 lg:basis-auto lg:w-[24rem] lg:flex-none border-b-2 lg:border-b-0 lg:border-l-2 border-indigo-700 bg-white`}
         >
           <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200">
             <h2 className="flex-1 flex items-center gap-1.5 font-semibold text-indigo-700"><TutorIcon />Tutor</h2>
@@ -124,7 +124,6 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
           </div>
           <div className="flex-1 min-h-0 flex flex-col">{tutor.content}</div>
         </aside>
-      )}
     </div>
   );
 }
