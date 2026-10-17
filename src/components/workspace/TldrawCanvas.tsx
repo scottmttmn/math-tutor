@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react';
-import { AssetRecordType, Box, DefaultSizeStyle, Tldraw, createShapeId, useEditor, useValue, type Editor, type TLComponents, type TLShape, type TLShapeId } from 'tldraw';
+import { AssetRecordType, Box, DefaultDashStyle, DefaultSizeStyle, Tldraw, createShapeId, useEditor, useValue, type Editor, type TLComponents, type TLShape, type TLShapeId } from 'tldraw';
 import 'tldraw/tldraw.css';
 import { getAssetUrls } from '@tldraw/assets/selfHosted';
 import { useCanvasDispatch, useCanvasState, type CanvasLoad } from '@/context/CanvasContext';
@@ -59,10 +59,13 @@ const MIRROR_DELAY_MS = 250;
 
 // tldraw defaults to M, which is too heavy for writing math; start every board on S.
 const DEFAULT_PEN_SIZE = 's';
+// Solid ink keeps an even width; tldraw's default "draw" dash varies it like a marker.
+const DEFAULT_PEN_DASH = 'solid';
 
-// A fresh board starts with the pen at its default size, even when the editor is reused.
+// A fresh board starts with the pen at its default size and dash, even when the editor is reused.
 function startDrawing(editor: Editor) {
   editor.setStyleForNextShapes(DefaultSizeStyle, DEFAULT_PEN_SIZE);
+  editor.setStyleForNextShapes(DefaultDashStyle, DEFAULT_PEN_DASH);
   editor.setCurrentTool('draw');
 }
 
@@ -125,7 +128,8 @@ async function placeProblemImage(editor: Editor, base64: string, key: string | t
     });
   });
   if (content) editor.zoomToBounds(Box.Common([content, new Box(x, y, w, h)]), { animation: { duration: 200 }, targetZoom: 1 });
-  startDrawing(editor);
+  // Back to the pen, keeping the size and dash picked on this board.
+  editor.setCurrentTool('draw');
   return true;
 }
 
