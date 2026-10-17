@@ -817,7 +817,7 @@ export default function ShelfReader() {
               )}
             </>
           )}
-          canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} paper={paper} />}
+          canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} onShowTools={toggleTools} paper={paper} />}
           toolbar={(
             <BottomToolbar
               onAskForHelp={(question) => void askForHelp(question)}

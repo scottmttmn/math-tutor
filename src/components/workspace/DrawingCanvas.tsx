@@ -35,13 +35,16 @@ const TldrawCanvas = dynamic(() => import('./TldrawCanvas'), {
 });
 
 /** Fills its nearest positioned ancestor; give that element a size. */
-export default function DrawingCanvas({ handleRef, toolsHidden = false, paper = 'blank' }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden?: boolean; paper?: Paper }) {
+export default function DrawingCanvas({ handleRef, toolsHidden = false, onShowTools, paper = 'blank' }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden?: boolean; onShowTools?: () => void; paper?: Paper }) {
   // data-loading: the editor still shows the previous board (the browser tests wait for it to go).
   const { pendingLoad } = useCanvasState();
   return (
     // isolate: tldraw's toolbars use z-indexes up to 10000; keep them below the app's dialogs.
     <div className="absolute inset-0 isolate" data-loading={pendingLoad ? 'true' : undefined}>
       <TldrawCanvas handleRef={handleRef} toolsHidden={toolsHidden} paper={paper} />
+      {toolsHidden && onShowTools && (
+        <button onClick={onShowTools} className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 min-h-11 px-3 text-sm text-gray-900 bg-white border border-gray-900 rounded-full shadow-sm">Show tools</button>
+      )}
     </div>
   );
 }

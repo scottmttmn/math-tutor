@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { SessionType } from '@/types';
+import type { Paper, SessionType } from '@/types';
 
 // Line icons drawn in the current text color, so they read the same on an e-ink screen.
 function Icon({ size = 16, children }: { size?: number; children: ReactNode }) {
@@ -48,6 +48,20 @@ export function GearIcon() {
 
 export function FullScreenIcon() {
   return <Icon><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" /></Icon>;
+}
+
+/** The current sheet, with the same ruling as the board. */
+export function PaperIcon({ paper, size = 20 }: { paper: Paper; size?: number }) {
+  return <Icon size={size}>
+    <rect x="2.5" y="1.5" width="11" height="13" rx="1" />
+    {paper !== 'blank' && <path d="M4.5 5h7M4.5 8h7M4.5 11h7" strokeWidth="0.8" />}
+    {paper === 'grid' && <path d="M6 3.5v9M9 3.5v9" strokeWidth="0.8" />}
+  </Icon>;
+}
+
+/** A sweep, distinct from the drawing eraser and the library's delete actions. */
+export function BroomIcon() {
+  return <Icon size={20}><path d="m13.5 1.5-6 7M5.5 7.5l4 3-3 4-5-4zM5.5 10l-2 2M7.5 11.5l-2 2M10 14h4" /></Icon>;
 }
 
 export function KindIcon({ type }: { type: SessionType }) {

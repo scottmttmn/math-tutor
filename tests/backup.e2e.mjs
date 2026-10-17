@@ -68,12 +68,12 @@ try {
   await page.getByText('Saved', { exact: true }).waitFor();
 
   // Save the board as a picture and as a PDF.
-  await page.getByRole('button', { name: 'Save board as' }).click();
-  const png = await download(page, () => page.getByRole('menuitem', { name: 'PNG picture' }).click());
+  await page.getByRole('button', { name: 'Board menu' }).click();
+  const png = await download(page, () => page.getByRole('menuitem', { name: 'Save as PNG' }).click());
   assert.equal(png.name, 'Find x when 2x + 3 = 7.png');
   assert.deepEqual([...png.bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
-  await page.getByRole('button', { name: 'Save board as' }).click();
-  const pdf = await download(page, () => page.getByRole('menuitem', { name: 'PDF' }).click());
+  await page.getByRole('button', { name: 'Board menu' }).click();
+  const pdf = await download(page, () => page.getByRole('menuitem', { name: 'Save as PDF' }).click());
   assert.equal(pdf.name, 'Find x when 2x + 3 = 7.pdf');
   assert.equal(pdf.bytes.subarray(0, 8).toString('latin1'), '%PDF-1.4');
   console.log('PASS a board saves as a PNG and a PDF');

@@ -208,7 +208,7 @@ try {
   await page.getByRole('button', { name: 'Put on board' }).click();
   await page.waitForTimeout(300);
   assert.equal(await shapeCount(), 2, 'placed only once');
-  await page.getByRole('button', { name: 'Clear' }).click();
+  await page.getByRole('button', { name: 'Clear board' }).click();
   await page.waitForTimeout(300);
   assert.equal(await shapeCount(), 1, 'Clear keeps the problem');
 
@@ -228,7 +228,8 @@ try {
   await page.getByText('Shelf hint.').last().waitFor();
   // Hiding the tools leaves the pen writing; the choice survives a reload.
   await page.locator('.tlui-layout').waitFor();
-  await page.getByRole('button', { name: 'Hide tools' }).click();
+  await page.getByRole('button', { name: 'Board menu' }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Hide drawing tools' }).click();
   await page.locator('.tlui-layout').waitFor({ state: 'detached' });
   const before = await shapeCount();
   await drawStroke(200);

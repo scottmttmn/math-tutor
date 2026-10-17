@@ -246,7 +246,7 @@ try {
   await page.getByRole('menuitem', { name: 'Explain this' }).waitFor();
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Paper: Lined' }).click();
-  await page.getByRole('menuitem', { name: 'Grid' }).click();
+  await page.getByRole('menuitemradio', { name: 'Grid' }).click();
   await page.locator('[data-paper="grid"]').waitFor();
   await page.waitForTimeout(1200);
   await page.reload();

@@ -242,8 +242,8 @@ try {
   assert.match(providerCalls[1].url, /\/v1beta\/openai\/chat\/completions$/);
   assert.deepEqual(await app.evaluate(() => Object.keys(window.deviceKeys).sort()), ['anthropic', 'chatgpt', 'gemini']);
   console.log('PASS in the app, the tutor calls the provider directly with the key saved on the device');
-  await app.getByRole('button', { name: 'Save board as' }).click();
-  await app.getByRole('menuitem', { name: 'PNG picture' }).click();
+  await app.getByRole('button', { name: 'Board menu' }).click();
+  await app.getByRole('menuitem', { name: 'Save as PNG' }).click();
   await app.waitForFunction(() => window.saves.length === 1);
   const png = await app.evaluate(() => window.saves[0]);
   assert.equal(png.plugin, 'SaveFile');
