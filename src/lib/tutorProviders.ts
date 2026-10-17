@@ -76,9 +76,6 @@ function cleanMessages(messages: Anthropic.MessageParam[]): Anthropic.MessagePar
   return cleaned;
 }
 
-/** Room for the thinking current Claude models do before the visible reply. */
-const ANTHROPIC_MIN_MAX_TOKENS = 16_000;
-
 export function streamAnthropicResponse(modelConfig: ModelConfig, plan: TutorPlan, { apiKey, source, onFinish = () => {} }: ProviderOptions): ReadableStream {
   // The profile and book pages open the conversation, so every question on the board shares them as a cached prefix.
   const messages: Anthropic.MessageParam[] = plan.preface
@@ -99,9 +96,7 @@ export function streamAnthropicResponse(modelConfig: ModelConfig, plan: TutorPla
   const anthropic = new Anthropic({ apiKey, ...(source === 'device' ? { dangerouslyAllowBrowser: true } : {}) });
   const stream = anthropic.messages.stream({
     model: modelConfig.model,
-    // Current Claude models think before they answer, and the thinking counts against max_tokens:
-    // at 1024 Sonnet 5.5 spent it all thinking and sent a half sentence or nothing.
-    max_tokens: Math.max(ANTHROPIC_MIN_MAX_TOKENS, plan.maxTokens * 4),
+    max_tokens: plan.maxTokens,
     system: plan.systemPrompt,
     messages: cleanMessages(messages),
   });
@@ -184,8 +179,7 @@ export function streamOpenAIResponse(modelConfig: ModelConfig, plan: TutorPlan, 
           try {
             const stream = await openai.chat.completions.create({
               model,
-              // Gemini's thinking spends part of the budget before it answers.
-              max_tokens: isGemini ? Math.max(2048, plan.maxTokens * 2) : plan.maxTokens,
+              max_tokens: plan.maxTokens,
               ...(isGemini ? { reasoning_effort: 'low' as const } : {}),
               messages,
               stream: true,

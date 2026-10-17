@@ -144,7 +144,7 @@ test('Gemini uses its own key and request options; another compatible provider k
     assert.equal(clients[0].apiKey, 'gemini-test-key');
     assert.equal(calls[0].model, 'gemini-3.8-flash');
     assert.equal(calls[0].reasoning_effort, 'low');
-    assert.equal(calls[0].max_tokens, 2048);
+    assert.equal(calls[0].max_tokens, 16000);
     assert.match(JSON.stringify(calls[0].messages), /data:image\/png;base64,fake-image/);
 
     process.env.GOOGLE_API_KEY = 'google-test-key';
@@ -156,7 +156,7 @@ test('Gemini uses its own key and request options; another compatible provider k
     await (await request({ modelConfig: { provider: 'openai-compatible', model: 'test', baseUrl: 'http://localhost/v1' } })).text();
     assert.equal(clients[2].apiKey, 'openai-test-key');
     assert.equal(calls[2].reasoning_effort, undefined);
-    assert.equal(calls[2].max_tokens, 1024);
+    assert.equal(calls[2].max_tokens, 16000);
   } finally {
     if (previousGemini === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = previousGemini;
     if (previousGoogle === undefined) delete process.env.GOOGLE_API_KEY; else process.env.GOOGLE_API_KEY = previousGoogle;
@@ -251,8 +251,7 @@ for (const provider of ['anthropic', 'openai-compatible']) {
     const system = provider === 'anthropic' ? calls[0].system : calls[0].messages[0].content;
     assert.match(system, /Transcribe, don't solve/);
     assert.doesNotMatch(system, /The answer is theirs to find|LEARNER PROFILE|TOPIC NOTES|SKILL CHECK-IN/);
-    // Claude thinks before it answers, out of the same budget.
-    assert.equal(calls[0].max_tokens, provider === 'anthropic' ? 16384 : 4096);
+    assert.equal(calls[0].max_tokens, 16000);
     const text = JSON.stringify(calls[0].messages);
     assert.match(text, /Write up the handwritten work on my board in LaTeX/);
     assert.match(text, /Show that 1\+1=2/);
@@ -273,11 +272,11 @@ test('chatgpt: a write-up caps the plan reply; a question does not', async () =>
     problemStatement: '', chatHistory: [], canvasImage: 'board', modelConfig: { provider: 'chatgpt', model: 'plan', baseUrl: '' }, ...extra,
   }) }));
   await (await request({ writeUp: true })).text();
-  assert.equal(options[0].maxOutputTokens, 16384);
+  assert.equal(options[0].maxOutputTokens, 16000);
   assert.match(options[0].instructions, /Transcribe, don't solve/);
   now += 5000;
   await (await request({ userQuestion: 'Help', canvasDetails: ['ink-top', 'ink-bottom'] })).text();
-  assert.equal(options[1].maxOutputTokens, undefined);
+  assert.equal(options[1].maxOutputTokens, 16000);
   assert.deepEqual(options[1].input.at(-1).content.filter((part) => part.type === 'input_image').map((part) => part.image_url),
     ['board', 'ink-top', 'ink-bottom'].map((image) => `data:image/png;base64,${image}`));
 });
@@ -492,7 +491,7 @@ test('a cancelled ChatGPT-plan stream releases the server gate right away', asyn
   next.release();
 });
 
-test('anthropic: room to think before answering, and a reply cut off by max_tokens says so', async () => {
+test('anthropic: a reply cut off by max_tokens says so', async () => {
   const { request, calls, advanceTime } = routeHarness(false, undefined, () => (async function* () {
     yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Not quite. There is' } };
     yield { type: 'message_delta', delta: { stop_reason: 'max_tokens' } };
