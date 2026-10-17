@@ -120,7 +120,7 @@ export function streamAnthropicResponse(modelConfig: ModelConfig, plan: TutorPla
           }
         }
         if (cancelled) return;
-        if (stopReason === 'max_tokens') controller.enqueue(sse({ type: 'error', error: 'The tutor ran out of room before finishing its reply. Please ask again.' }));
+        if (stopReason === 'max_tokens' || stopReason === 'model_context_window_exceeded') controller.enqueue(sse({ type: 'error', error: 'The tutor ran out of room before finishing its reply. Please ask again.' }));
         else if (stopReason === 'refusal') controller.enqueue(sse({ type: 'error', error: 'The model declined to answer this one. Try rephrasing, or another model in Settings.' }));
         else controller.enqueue(sse({ type: 'message_stop' }));
       } catch (err) {
