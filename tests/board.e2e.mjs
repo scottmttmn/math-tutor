@@ -87,7 +87,7 @@ async function draw(offset = 0) {
   await page.mouse.down();
   await page.mouse.move(box.x + 180 + offset, box.y + 160, { steps: 12 });
   await page.mouse.up();
-  await page.waitForFunction(() => [...document.querySelectorAll('button')].some((button) => button.textContent === 'Clear' && !button.disabled));
+  await page.waitForFunction(() => [...document.querySelectorAll('button')].some((button) => button.getAttribute('aria-label') === 'Clear board' && !button.disabled));
   await page.waitForTimeout(400); // the app mirrors tldraw's document once the pen rests
 }
 const imageOf = (request) => {
@@ -118,7 +118,7 @@ const TOPIC_PLACEHOLDER = "Topic or concept you're studying...";
 async function newBoard(type) {
   const showing = () => page.evaluate(([problem, topic]) => ({
     text: document.querySelector(`[placeholder="${problem}"], [placeholder="${topic}"]`)?.value ?? '',
-    drawn: [...document.querySelectorAll('button')].some((button) => button.textContent === 'Clear' && !button.disabled),
+    drawn: [...document.querySelectorAll('button')].some((button) => button.getAttribute('aria-label') === 'Clear board' && !button.disabled),
   }), [PROBLEM_PLACEHOLDER, TOPIC_PLACEHOLDER]);
   const before = await showing();
   assert.ok(before.text || before.drawn, 'newBoard is called with something on the open board');
@@ -126,7 +126,7 @@ async function newBoard(type) {
   await page.getByRole('button', { name: type === 'note' ? /New Notes/ : 'New Problem' }).click();
   await page.waitForFunction(([placeholder]) => {
     const box = document.querySelector(`[placeholder="${placeholder}"]`);
-    const clear = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Clear');
+    const clear = [...document.querySelectorAll('button')].find((button) => button.getAttribute('aria-label') === 'Clear board');
     return box?.value === '' && clear?.disabled === true && !document.querySelector('[data-loading]');
   }, [type === 'note' ? TOPIC_PLACEHOLDER : PROBLEM_PLACEHOLDER]);
 }
@@ -145,13 +145,13 @@ try {
   // A problem board starts on blank paper; the choice is kept with the board.
   await page.locator('[data-paper="blank"]').waitFor();
   await page.getByRole('button', { name: 'Paper: Blank' }).click();
-  await page.getByRole('menuitem', { name: 'Lined' }).click();
+  await page.getByRole('menuitemradio', { name: 'Lined' }).click();
   await page.locator('[data-paper="lined"]').waitFor();
   await page.waitForTimeout(1200);
   await page.reload(); await waitProblem();
   await page.locator('[data-paper="lined"]').waitFor();
   await page.getByRole('button', { name: 'Paper: Lined' }).click();
-  await page.getByRole('menuitem', { name: 'Blank' }).click();
+  await page.getByRole('menuitemradio', { name: 'Blank' }).click();
   await page.locator('[data-paper="blank"]').waitFor();
   await page.getByRole('button', { name: 'Tutor', exact: true }).click(); // The reload closed it.
   console.log('PASS board paper: blank by default, changed and kept');
@@ -183,7 +183,7 @@ try {
   await page.getByRole('button', { name: 'Mark solved', exact: true }).click();
   await page.reload(); await waitProblem(); await openTutor();
   assert.ok(await page.getByRole('button', { name: 'Solved', exact: true }).isVisible());
-  assert.ok(await page.getByRole('button', { name: 'Clear', exact: true }).isEnabled());
+  assert.ok(await page.getByRole('button', { name: 'Clear board', exact: true }).isEnabled());
   assert.ok(await page.getByText('Problem hint.', { exact: true }).first().isVisible());
   assert.equal(await problemBox().inputValue(), 'Find a strategy for a quadratic.');
   console.log('PASS immediate reload preserves board, conversation, problem and Solved');
@@ -266,7 +266,7 @@ try {
   await page.getByRole('status').getByText('Saved', { exact: true }).waitFor();
   await context.close(); await openBrowser(); await waitProblem(); await openTutor();
   assert.ok(await page.getByRole('button', { name: 'Mark solved', exact: true }).isVisible());
-  assert.ok(await page.getByRole('button', { name: 'Clear', exact: true }).isEnabled());
+  assert.ok(await page.getByRole('button', { name: 'Clear board', exact: true }).isEnabled());
   assert.ok(await page.getByText('Does this approach make sense?', { exact: true }).isVisible());
   console.log('PASS browser close/reopen and taking Solved back');
 
@@ -274,7 +274,7 @@ try {
   await newBoard('problem'); await waitProblem();
   await problemBox().fill('Expand (x + 1)^2.');
   await openTutor();
-  assert.ok(await page.getByRole('button', { name: 'Clear', exact: true }).isDisabled());
+  assert.ok(await page.getByRole('button', { name: 'Clear board', exact: true }).isDisabled());
   assert.equal(await page.getByText('Problem hint.', { exact: true }).count(), 0);
   request = await askTutor('Problem hint.');
   assert.doesNotMatch(JSON.stringify(request.messages), /Does this approach make sense/);

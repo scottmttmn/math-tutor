@@ -157,7 +157,7 @@ function AppContent() {
             <h1 className="font-semibold text-gray-900 truncate">{checkIn ? checkInTitle(checkIn) : problemStatement.split('\n')[0].trim() || (sessionType === 'note' ? 'New notes' : 'New problem')}</h1>
           </>
         )}
-        canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} paper={paper} />}
+        canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} onShowTools={toggleTools} paper={paper} />}
         toolbar={(
           <BottomToolbar
             onAskForHelp={(question) => void handleAskForHelp(question)}

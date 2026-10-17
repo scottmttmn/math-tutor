@@ -69,6 +69,11 @@ Done: **Skill check-in** on the Tutor memory page offers the topics nobody is su
 
 - Later: **Check me on this topic** for one topic or area straight from its row.
 
+## Board toolbar simplification
+
+- Done (step 1): named icon controls for full screen, current paper and sweep Clear; paper swatches; Board menu for tools, write-up and exports; Show tools chip; compact tablet labels.
+- Next (step 2): one Ask tutor button toggles the drawer; choices live above its chat box, with direct Start check-in / Hand in answer actions.
+
 ## After the MVP
 
 - **Handwriting to TeX write-up.** Done (free boards): **TeX write-up** in the board's toolbar has the tutor transcribe the board (or the selected part) as LaTeX without solving anything; edit it beside a KaTeX preview and **Download .tex**. It saves with the board and goes in backups. Still to do: drawings come out as `\fbox{Figure: …}` placeholders rather than images; Shelf boards don't have the button yet.

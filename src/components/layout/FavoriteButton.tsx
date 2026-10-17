@@ -64,13 +64,14 @@ export default function FavoriteButton({ favorite, disabled = false, failed = fa
         disabled={disabled}
         aria-pressed={Boolean(favorite)}
         aria-expanded={open}
-        className={`flex items-center gap-1.5 min-h-11 px-3 text-sm rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40 ${
+        aria-label="Favorite"
+        className={`flex items-center justify-center gap-1.5 min-h-11 min-w-11 px-3 text-sm rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40 ${
           favorite ? 'font-semibold text-gray-900 border-2 border-gray-900' : 'text-gray-800 border border-gray-300'
         }`}
-        title={disabled ? 'Write something on the board first' : favorite ? 'One of your favorites: change why, or take the star off' : 'Mark this problem as one you really like'}
+        title="Favorite"
       >
         <FavoriteStar filled={Boolean(favorite)} />
-        Favorite
+        <span className="hidden lg:inline">Favorite</span>
       </button>
       {open && (
         <div role="dialog" aria-label="Favorite" className="absolute right-0 bottom-full mb-1 w-72 p-3 flex flex-col gap-2 bg-white border border-gray-300 rounded-lg shadow-lg z-50">

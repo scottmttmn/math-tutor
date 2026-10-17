@@ -48,7 +48,7 @@ src/
 │   │   ├── AppShell.tsx       # The free board page; wires contexts + UI
 │   │   ├── TopBar.tsx         # AppBar on a free board, plus save status
 │   │   ├── BoardFrame.tsx     # The layout every board shares: source, board with header and toolbar, tutor drawer
-│   │   ├── BottomToolbar.tsx  # Full screen, Hide tools, Paper, TeX write-up, Save as (PNG/PDF), Clear, Favorite, Mark solved, Tutor, Ask tutor (drawing tools are tldraw's own)
+│   │   ├── BottomToolbar.tsx  # Full screen, Paper swatches, sweep Clear, Board menu (tools, TeX write-up, PNG/PDF), Favorite, Mark solved, Tutor, Ask tutor (drawing tools are tldraw's own)
 │   │   ├── FavoriteButton.tsx # Favorite: the star and its optional "What made it good?"
 │   │   ├── BackupSettings.tsx # Settings' Backup tab: folder backup, download, restore, storage status
 │   │   └── SettingsModal.tsx  # Settings: Tutor tab (model/provider, defines PRESETS array) and Backup tab
@@ -340,7 +340,7 @@ ESLint uses the Next.js core web vitals config. Run `npm run lint` before commit
 - **Only the tutor has a color**, Tailwind `indigo-700` (`indigo-50` for its replies and tints): **Ask tutor**, the **Tutor** toggle, the drawer's edge and heading, Send/Ask in a chat, "Tutor reads". Nothing else uses indigo, and the tutor uses nothing else. Focus rings and links are ink.
 - **Solved** is a filled ink check (`SolvedCheck` in `common/Icons.tsx`) plus the word, everywhere (boards, Home, Shelf lists; the Shelf page's mark gets a filled label). No green.
 - Kinds wear their icon (`KindIcon`: Problem, Notes; `ShelfIcon` for books) on cards, in the board's title line and in **+ New**.
-- Controls are at least 44px tall (`min-h-11`) and labelled in words. One solid ink button per screen for its main action. Delete, Rename and Remove live in a `MoreMenu` ("⋯"), with an inline confirm for deletes.
+- Controls are at least 44px tall (`min-h-11`) and labelled in words. The agreed board-toolbar exception uses named, titled 44px icon buttons for Full screen, current Paper and sweep Clear; below `lg`, Favorite is a named star, Board is named dots, and Mark solved reads Solved. One solid ink button per screen for its main action. Delete, Rename and Remove live in a `MoreMenu` ("⋯"), with an inline confirm for deletes.
 - Red is only for errors and failed saves, always with words.
 
 ### Board frame
@@ -349,7 +349,7 @@ ESLint uses the Next.js core web vitals config. Run `npm run lint` before commit
 - Below 2xl (96rem) the open tutor takes the source's place (above the board on narrow screens), so the board keeps its room; the header toggle then reads **Show {source}** and closes the tutor. On 2xl screens all three sit side by side.
 
 ### Full screen and tools
-- **Hide tools** (`BottomToolbar` `tools` prop, `useToolsHidden`, remembered in `localStorage` as `math-tutor:toolsHidden` for every board) passes `hideUi` to tldraw: toolbars and style panel go, the current tool (the pen) keeps working.
+- **Board → Hide drawing tools** (`BottomToolbar` `tools` prop, `useToolsHidden`, remembered in `localStorage` as `math-tutor:toolsHidden` for every board) passes `hideUi` to tldraw: toolbars and style panel go, the current tool (the pen) keeps working. A **Show tools** chip appears at the bottom centre of the canvas, where the tools went; the Board menu checkbox also brings them back.
 - Every board (main page, Shelf) has a **Full screen** button in `BottomToolbar` (`fullScreen` prop), driven by `useBoardFullScreen`: the page hides everything but the board and toolbar and asks the browser for full screen. Esc, Exit full screen, **Tutor** or **Ask tutor** (so the reply is visible) leaves it.
 
 ### Keyboard Shortcuts

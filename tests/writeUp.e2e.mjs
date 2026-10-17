@@ -44,7 +44,8 @@ try {
 
   // The server keeps tutor requests five seconds apart, also across test files run back to back;
   // the write-up waits that out by itself.
-  await page.getByRole('button', { name: 'TeX write-up' }).click();
+  await page.getByRole('button', { name: 'Board menu' }).click();
+  await page.getByRole('menuitem', { name: 'TeX write-up…' }).click();
   await dialog().getByRole('button', { name: 'Write up the board' }).click();
   await dialog().getByTestId('write-up-preview').locator('.katex').first().waitFor({ timeout: 15_000 });
   await dialog().getByRole('button', { name: 'Write up again' }).waitFor();
@@ -77,7 +78,8 @@ try {
   await page.waitForTimeout(1200);
   await page.reload();
   await page.locator('.tl-canvas').waitFor();
-  await page.getByRole('button', { name: 'TeX write-up' }).click();
+  await page.getByRole('button', { name: 'Board menu' }).click();
+  await page.getByRole('menuitem', { name: 'TeX write-up…' }).click();
   assert.match(await dialog().getByRole('textbox', { name: 'LaTeX' }).inputValue(), /\\section\*\{Check\}/);
   console.log('PASS the write-up is saved with the board');
 

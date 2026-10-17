@@ -8,7 +8,7 @@ import type { Paper, SessionType } from '@/types';
 import { PAPERS } from '@/lib/paper';
 import { askChoices, askQuestion } from '@/lib/tutorAsk';
 import MoreMenu from '@/components/common/MoreMenu';
-import { FullScreenIcon, SolvedCheck, TutorIcon, UnsolvedCheck } from '@/components/common/Icons';
+import { BroomIcon, FullScreenIcon, PaperIcon, SolvedCheck, TutorIcon, UnsolvedCheck } from '@/components/common/Icons';
 
 // Drawing tools, colors and undo live in tldraw's own toolbar on the canvas.
 interface Props {
@@ -42,67 +42,66 @@ export default function BottomToolbar({ onAskForHelp, onAskOwn, onClear, isStrea
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
   const helpDisabled = isLimited || isStreaming;
   const askClass = 'flex items-center gap-1.5 min-h-11 px-4 text-sm font-semibold text-white bg-indigo-700 rounded-lg hover:bg-indigo-800 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed';
-  const plain = 'flex items-center gap-1.5 min-h-11 px-3 text-sm text-gray-800 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40';
+  const plain = 'flex shrink-0 items-center justify-center gap-1.5 min-h-11 min-w-11 px-3 text-sm text-gray-800 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40';
+  const square = `${plain} w-11 p-0`;
+  const paperLabel = PAPERS.find((item) => item.paper === paper?.value)?.label ?? 'Blank';
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2 border-t border-gray-200 bg-white flex-wrap">
+    <div role="group" aria-label="Board controls" className="flex items-center gap-1.5 lg:gap-2 px-2 lg:px-3 py-2 border-t border-gray-200 bg-white flex-wrap">
       {fullScreen && (
         <button
           onClick={fullScreen.toggle}
           aria-pressed={fullScreen.on}
-          className={plain}
-          title={fullScreen.on ? 'Show the rest of the page again (Esc)' : 'Give the board the whole screen'}
+          className={square}
+          aria-label={fullScreen.on ? 'Exit full screen' : 'Full screen'}
+          title={fullScreen.on ? 'Exit full screen' : 'Full screen'}
         >
           <FullScreenIcon />
-          {fullScreen.on ? 'Exit full screen' : 'Full screen'}
-        </button>
-      )}
-
-      {tools && (
-        <button
-          onClick={tools.toggle}
-          aria-pressed={tools.hidden}
-          className={plain}
-          title={tools.hidden ? 'Show the drawing tools and colors' : 'Hide the drawing tools and colors; the pen keeps writing'}
-        >
-          {tools.hidden ? 'Show tools' : 'Hide tools'}
         </button>
       )}
 
       {paper && (
         <MoreMenu
-          label={`Paper: ${PAPERS.find((item) => item.paper === paper.value)?.label}`}
-          button={`Paper: ${PAPERS.find((item) => item.paper === paper.value)?.label}`}
+          label={`Paper: ${paperLabel}`}
+          title={`Paper: ${paperLabel}`}
+          button={<PaperIcon paper={paper.value} />}
+          buttonClassName={square}
           above
-          items={PAPERS.map((item) => ({ label: item.label, onSelect: () => paper.onChange(item.paper) }))}
+          align="left"
+          menuClassName="w-56 p-2 grid grid-cols-3 gap-1"
+          items={PAPERS.map((item) => ({
+            label: item.label, role: 'menuitemradio', checked: paper.value === item.paper,
+            onSelect: () => paper.onChange(item.paper),
+            content: <><PaperIcon paper={item.paper} size={30} /><span>{item.label}</span></>,
+            className: `flex flex-col items-center justify-center gap-1 min-h-20 text-sm rounded-lg border-2 ${paper.value === item.paper ? 'border-gray-900' : 'border-transparent hover:bg-gray-100'}`,
+          }))}
         />
       )}
 
-      {/* Spacer */}
-      <div className="flex-1" />
+      <button onClick={onClear} disabled={!hasContent} className={square} aria-label="Clear board" title="Clear board">
+        <BroomIcon />
+      </button>
 
-      {onWriteUp && (
-        <button onClick={onWriteUp} className={plain} title="Turn the handwriting into a LaTeX document you can edit and download">
-          TeX write-up
-        </button>
-      )}
-
-      {onSaveAs && (
+      {(tools || onWriteUp || onSaveAs) && (
         <MoreMenu
-          label="Save board as"
-          button="Save as…"
+          label="Board menu"
+          title="Board menu"
+          button={<><span className="hidden lg:inline">Board</span><span aria-hidden="true">⋯</span></>}
+          buttonClassName={plain}
           above
-          disabled={!hasContent}
+          align="left"
           items={[
-            { label: 'PNG picture', onSelect: () => onSaveAs('png') },
-            { label: 'PDF', onSelect: () => onSaveAs('pdf') },
+            ...(tools ? [{ label: 'Hide drawing tools', role: 'menuitemcheckbox' as const, checked: tools.hidden, onSelect: tools.toggle }] : []),
+            ...(onWriteUp ? [{ label: 'TeX write-up…', separatorBefore: Boolean(tools), onSelect: onWriteUp }] : []),
+            ...(onSaveAs ? [
+              { label: 'Save as PNG', separatorBefore: Boolean(tools && !onWriteUp), disabled: !hasContent, onSelect: () => onSaveAs('png') },
+              { label: 'Save as PDF', disabled: !hasContent, onSelect: () => onSaveAs('pdf') },
+            ] : []),
           ]}
         />
       )}
 
-      <button onClick={onClear} disabled={!hasContent} className={plain} title="Erase the whole board (undo with Ctrl+Z)">
-        Clear
-      </button>
+      <div className="flex-1" />
 
       {sessionType === 'problem' && favorite}
 
@@ -111,13 +110,14 @@ export default function BottomToolbar({ onAskForHelp, onAskOwn, onClear, isStrea
         <button
           onClick={onToggleSolved}
           aria-pressed={isSolved}
+          aria-label={isSolved ? 'Solved' : 'Mark solved'}
           className={`flex items-center gap-1.5 min-h-11 px-3 text-sm rounded-lg bg-white hover:bg-gray-50 ${
             isSolved ? 'font-semibold text-gray-900 border-2 border-gray-900' : 'text-gray-800 border border-gray-300'
           }`}
           title={isSolved ? 'Mark it as not solved yet' : 'Mark this problem as solved'}
         >
           {isSolved ? <SolvedCheck /> : <UnsolvedCheck />}
-          {isSolved ? 'Solved' : 'Mark solved'}
+          <span className="lg:hidden">Solved</span><span className="hidden lg:inline">{isSolved ? 'Solved' : 'Mark solved'}</span>
         </button>
       )}
 
