@@ -35,7 +35,7 @@ export default function BookSearch({ search, pageCount, contents, labels, onGoTo
   return (
     <div className="grid gap-3">
       <form role="search" onSubmit={(event) => event.preventDefault()} className="flex gap-2">
-        <input type="search" aria-label="Search this book" placeholder="Search this book" value={query}
+        <input type="search" aria-label="Search this text" placeholder="Search this text" value={query}
           onChange={(event) => setQuery(event.target.value)}
           className="flex-1 min-w-0 min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
         {query && (
@@ -47,7 +47,7 @@ export default function BookSearch({ search, pageCount, contents, labels, onGoTo
         <p className="text-xs text-gray-600" aria-live="polite">
           {done && noText ? 'This PDF is a scan, so its text can’t be searched.'
             : !done ? `Searching… page ${name(Math.max(1, pagesRead))} of ${pageCount}${count ? `, ${count} found` : ''}`
-            : count === 0 ? 'Not found in this book.'
+            : count === 0 ? 'Not found in this text.'
             : capped ? `The first ${MAX_MATCHES} matches, up to p. ${name(pagesRead)}.`
             : `${count} ${count === 1 ? 'match' : 'matches'} on ${results.length} ${results.length === 1 ? 'page' : 'pages'}.`}
         </p>

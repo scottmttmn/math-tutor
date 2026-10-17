@@ -129,11 +129,11 @@ try {
   await tapPage(0.5, 0.4);
   await at('p. 2 (4 of 5)');
   // The book's lists open as a panel over the page; choosing a section closes it.
-  await page.getByRole('button', { name: 'Book: your list and contents' }).click();
+  await page.getByRole('button', { name: 'Lists: your list, contents and search' }).click();
   await page.getByRole('tab', { name: 'Contents' }).click();
   await page.getByRole('button', { name: /^2 Functions/ }).click();
   await at('p. 3 (5 of 5)');
-  await page.getByRole('region', { name: 'Book' }).waitFor({ state: 'detached' });
+  await page.getByRole('region', { name: 'Lists' }).waitFor({ state: 'detached' });
   await page.getByRole('button', { name: 'Exit full screen' }).click();
   await page.getByRole('link', { name: 'Home' }).waitFor();
   console.log('PASS full screen reading with bars on tap');
@@ -250,7 +250,7 @@ try {
   // Search: every place the words are, by section, with the line around them; a result opens its
   // page with the words lit, and Clear puts them out.
   await page.getByRole('tab', { name: 'Search' }).click();
-  await page.getByLabel('Search this book').fill('ADDS their   angles');
+  await page.getByLabel('Search this text').fill('ADDS their   angles');
   await at('5 matches on 5 pages.');
   const polar = page.getByRole('region', { name: '1.1 Polar form' });
   const result = polar.getByRole('button', { name: /their lengths and adds their angles\. p\. 2$/ });
@@ -264,8 +264,8 @@ try {
   const pageBox = await page.getByTestId('page-overlay').boundingBox();
   assert.ok(hitBox.width > 40 && hitBox.x > pageBox.x + pageBox.width * 0.3 && hitBox.y < pageBox.y + pageBox.height * 0.5,
     `the words are lit where they are printed (${JSON.stringify(hitBox)} on ${JSON.stringify(pageBox)})`);
-  await page.getByLabel('Search this book').fill('quaternion');
-  await at('Not found in this book.');
+  await page.getByLabel('Search this text').fill('quaternion');
+  await at('Not found in this text.');
   await page.getByRole('button', { name: 'Clear', exact: true }).click();
   assert.equal(await hit.count(), 0);
   await page.getByRole('tab', { name: 'Your list' }).click();

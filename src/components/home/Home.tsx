@@ -8,7 +8,7 @@ import { isProfileEmpty } from '@/lib/learnerProfile';
 import { folderSummaries, libraryView, queryHistory, toHistoryItem } from '@/lib/history';
 import { bookLocation, folderHref, folderIndex, folderPath, itemFolder } from '@/lib/folders';
 import { createFolder, deleteFolder, moveBoard, moveBook, moveFolder, renameFolder } from '@/lib/folderActions';
-import { removeFromShelf, setShelfKind, removeMarkedBoard } from '@/lib/shelf';
+import { removeFromShelf, removeMarkedBoard } from '@/lib/shelf';
 import { useAddPdfs } from '@/hooks/useAddPdfs';
 import { discardRecoveryCopy } from '@/lib/sessionRecovery';
 import { boardToOpen, setBoardToOpen } from '@/lib/currentBoard';
@@ -20,7 +20,7 @@ import FolderCard from '@/components/home/FolderCard';
 import MoveDialog from '@/components/home/MoveDialog';
 import BookHero from '@/components/book/BookHero';
 import { BookCard } from '@/components/shelf/BookCard';
-import type { Folder, HistoryItem, HistoryShow, HistorySort, ShelfDocument, ShelfKind } from '@/types';
+import type { Folder, HistoryItem, HistoryShow, HistorySort, ShelfDocument } from '@/types';
 
 const SHOW_OPTIONS: { value: HistoryShow; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -143,7 +143,6 @@ export default function Home({ folderId = null }: { folderId?: string | null }) 
     if (folderId === own) router.push(folderHref(index.parent.get(own)));
   };
 
-  const changeKind = (book: ShelfDocument, kind: ShelfKind) => run(() => setShelfKind(book, kind));
 
   const move = (to: string | null) => {
     const target = moving;
@@ -257,8 +256,8 @@ export default function Home({ folderId = null }: { folderId?: string | null }) 
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder={folder ? `Search in ${folder.name}` : 'Search books, problems and notes'}
-              aria-label={folder ? `Search in ${folder.name}` : 'Search books, problems and notes'}
+              placeholder={folder ? `Search in ${folder.name}` : 'Search texts, problems and notes'}
+              aria-label={folder ? `Search in ${folder.name}` : 'Search texts, problems and notes'}
               className="flex-1 min-w-[12rem] max-w-md min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900"
             />
             {/* Two rows of three on a phone, where six don't fit in one. */}
@@ -280,7 +279,7 @@ export default function Home({ folderId = null }: { folderId?: string | null }) 
               aria-label="Sort by"
               className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white"
             >
-              {holdsBook && <option value="book">Book order</option>}
+              {holdsBook && <option value="book">Page order</option>}
               <option value="updated">Last worked on</option>
               <option value="created">Started</option>
               <option value="title">Name</option>
@@ -313,7 +312,7 @@ export default function Home({ folderId = null }: { folderId?: string | null }) 
             ) : (
               <div className="max-w-md mx-auto text-center text-sm text-gray-500 py-12 space-y-2">
                 <p className="text-base text-gray-700">Nothing here yet.</p>
-                <p>Start with <strong>+ New</strong>: a problem, notes, a PDF to work from (a textbook, a problem set, a handout), or a folder. You can also drop a PDF here.</p>
+                <p>Start with <strong>+ New</strong>: a problem, notes, a PDF to work from (a textbook, an article, a problem set), or a folder. You can also drop a PDF here.</p>
                 <p>Everything you work on is saved here automatically.</p>
               </div>
             )
@@ -322,7 +321,7 @@ export default function Home({ folderId = null }: { folderId?: string | null }) 
           ) : (
             <>
               {folder && view.books.map((book) => (
-                <BookHero key={book.id} book={book} solved={solvedOf(book)} onKind={(kind) => changeKind(book, kind)} named={book.title !== folder.name}
+                <BookHero key={book.id} book={book} solved={solvedOf(book)} named={book.title !== folder.name}
                   onMove={() => setMoving({ kind: 'book', book })} onRemove={() => removeBook(book)} />
               ))}
               {folder && browsing && view.books.length > 0 && view.boards.length === 0 && (
@@ -347,10 +346,10 @@ export default function Home({ folderId = null }: { folderId?: string | null }) 
               )}
               {!folder && view.books.length > 0 && (
                 <section aria-labelledby="books-heading" className="flex flex-col gap-3">
-                  <h2 id="books-heading" className="text-base font-semibold text-gray-900">Books</h2>
+                  <h2 id="books-heading" className="text-base font-semibold text-gray-900">Texts</h2>
                   <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
                     {view.books.map((book) => (
-                      <BookCard key={book.id} document={book} onRemove={() => removeBook(book)} onKind={(kind) => changeKind(book, kind)}
+                      <BookCard key={book.id} document={book} onRemove={() => removeBook(book)}
                         onMove={() => setMoving({ kind: 'book', book })} />
                     ))}
                   </ul>

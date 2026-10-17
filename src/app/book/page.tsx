@@ -26,7 +26,7 @@ function BookRoute() {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <AppBar place="book" />
-      <p className="p-12 text-center text-sm text-gray-700">This book isn’t in your library. <Link href="/" className="text-gray-900 underline">Back to Home</Link></p>
+      <p className="p-12 text-center text-sm text-gray-700">This text isn’t in your library. <Link href="/" className="text-gray-900 underline">Back to Home</Link></p>
     </div>
   );
 }

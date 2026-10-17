@@ -2,19 +2,17 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { SHELF_KINDS, solvedExercises } from '@/lib/shelf';
-import type { ShelfDocument, ShelfKind } from '@/types';
+import { solvedExercises } from '@/lib/shelf';
+import type { ShelfDocument } from '@/types';
 import BlobImage from '@/components/common/BlobImage';
 import MoreMenu from '@/components/common/MoreMenu';
 
-/** Where the reader opens a book, on the page last read. */
+/** Where the reader opens a text, on the page last read. */
 export const readerHref = (id: string) => `/shelf/read?doc=${encodeURIComponent(id)}`;
 
-/** A book (a PDF) outside a folder: its cover opens the reader; asks what it is until told; Change kind, Move to and Remove. */
-export function BookCard({ document, onRemove, onKind, onMove }: { document: ShelfDocument; onRemove: () => Promise<void>; onKind: (kind: ShelfKind) => Promise<void>; onMove: () => void }) {
+/** A text (a PDF) outside a folder: its cover opens the reader; Move to and Remove. */
+export function BookCard({ document, onRemove, onMove }: { document: ShelfDocument; onRemove: () => Promise<void>; onMove: () => void }) {
   const [confirming, setConfirming] = useState(false);
-  // What it is is asked until chosen, and again from the menu.
-  const [choosing, setChoosing] = useState(false);
   const [solved, setSolved] = useState<number | undefined>(undefined);
   const marked = document.exercises.length;
   useEffect(() => {
@@ -26,18 +24,6 @@ export function BookCard({ document, onRemove, onKind, onMove }: { document: She
     // No overflow-hidden on the card: it would clip the "⋯" menu.
     <li className="flex flex-col bg-white border border-gray-200 rounded-xl">
       <div className="rounded-t-xl overflow-hidden"><BookCover document={document} solved={solved} /></div>
-      {(!document.kind || choosing) && (
-        <div role="group" aria-label={`What ${document.title} is`} className="px-3 pt-1">
-          <p className="text-xs text-gray-600">What is it?</p>
-          <div className="mt-1 flex flex-wrap gap-1">
-            {SHELF_KINDS.map(({ kind, label }) => (
-              <button key={kind} aria-pressed={document.kind === kind}
-                onClick={() => { void onKind(kind); setChoosing(false); }}
-                className={`min-h-11 px-2 text-xs rounded-lg border border-gray-900 ${document.kind === kind ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 hover:bg-gray-100'}`}>{label}</button>
-            ))}
-          </div>
-        </div>
-      )}
       <div className="mt-auto flex flex-wrap items-center justify-end gap-1.5 px-3 py-2">
         {confirming ? (
           <>
@@ -47,7 +33,6 @@ export function BookCard({ document, onRemove, onKind, onMove }: { document: She
           </>
         ) : (
           <MoreMenu label={`More for ${document.title}`} items={[
-            ...(document.kind ? [{ label: 'Change kind', onSelect: () => setChoosing(true) }] : []),
             { label: 'Move to…', onSelect: onMove },
             { label: 'Remove', onSelect: () => setConfirming(true) },
           ]} />
@@ -58,13 +43,12 @@ export function BookCard({ document, onRemove, onKind, onMove }: { document: She
 }
 
 /**
- * A PDF's cover, title, kind, progress and where you left off, opening the reader (or `href`).
+ * A PDF's cover, title, progress and where you left off, opening the reader (or `href`).
  * Without `solved`, exercises show as a count.
  */
 export function BookCover({ document, solved, href = readerHref(document.id) }: { document: ShelfDocument; solved?: number; href?: string }) {
   const notes = document.exercises.filter((item) => item.kind === 'note').length;
   const exercises = document.exercises.length - notes;
-  const kind = SHELF_KINDS.find((item) => item.kind === document.kind)?.label;
   const notesText = `${notes} ${notes === 1 ? 'note page' : 'note pages'}`;
   // Where you left off, once the reader has saved a place (older records only have the page).
   const opened = document.lastPageLabel !== undefined || document.lastPage > 1;
@@ -75,7 +59,6 @@ export function BookCover({ document, solved, href = readerHref(document.id) }: 
       </div>
       <div className="px-3 py-2 grid gap-1">
         <p className="text-sm font-medium text-gray-900 line-clamp-2">{document.title}</p>
-        {kind && <span className="justify-self-start px-2 text-xs leading-5 text-gray-900 border border-gray-900 rounded-full">{kind}</span>}
         {exercises > 0 && solved !== undefined ? (
           <>
             <div aria-hidden="true" className="h-1.5 border border-gray-900 rounded-sm overflow-hidden">
