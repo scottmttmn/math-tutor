@@ -1,13 +1,13 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import { listInk, listSessions, listShelf, loadProfile, restoreRecords } from '@/lib/db';
+import { listFolders, listInk, listSessions, listShelf, loadProfile, restoreRecords } from '@/lib/db';
 import { readZip, writeZip } from '@/lib/zip';
 import { MAX_NOTEBOOK, RATINGS, favoriteEntry } from '@/lib/learnerProfile';
-import type { BackupManifest, BackupSession, FavoriteProblem, InkStroke, LearnerProfile, PageInk, ProfileTopic, RestoreResult, SaveFilePlugin, Session, ShelfDocument, TopicRating, TutorNote } from '@/types';
+import type { BackupManifest, BackupSession, FavoriteProblem, Folder, InkStroke, LearnerProfile, PageInk, ProfileTopic, RestoreResult, SaveFilePlugin, Session, ShelfDocument, TopicRating, TutorNote } from '@/types';
 
 const TOPIC_RATINGS: (TopicRating | null)[] = RATINGS.map((option) => option.rating);
 
 // A backup is backup.json (every Shelf entry with its cover, marks and the ink on its pages, the
-// tutor memory, and a list of the boards), each board as boards/<id>.json (with its thumbnail and
+// folders, the tutor memory, and a list of the boards), each board as boards/<id>.json (with its thumbnail and
 // problem picture), and each Shelf PDF as pdfs/<id>.pdf. Boards are files of their own so that a
 // folder backup rewrites only the boards that changed (see autoBackup.ts), however many there are.
 // The download is all of it in one ZIP; a backup folder holds the same files side by side, so
@@ -45,7 +45,7 @@ export async function boardRecord({ canvasImageBlob, ...session }: Session): Pro
 export const boardFile = async (session: Session) => new Blob([JSON.stringify(await boardRecord(session))], { type: 'application/json' });
 
 /** backup.json for these records; the boards' own files are made with boardFile. */
-export async function backupIndex(sessions: Pick<Session, 'id'>[], shelf: ShelfDocument[], profile?: LearnerProfile, ink: PageInk[] = [], now = Date.now()): Promise<BackupManifest> {
+export async function backupIndex(sessions: Pick<Session, 'id'>[], shelf: ShelfDocument[], profile?: LearnerProfile, ink: PageInk[] = [], folders: Folder[] = [], now = Date.now()): Promise<BackupManifest> {
   return {
     app: 'math-tutor',
     version: 2,
@@ -58,12 +58,13 @@ export async function backupIndex(sessions: Pick<Session, 'id'>[], shelf: ShelfD
     })),
     ...(profile ? { profile } : {}),
     ...(ink.length ? { ink } : {}),
+    ...(folders.length ? { folders } : {}),
   };
 }
 
 /** The backup of these records: backup.json's contents, and the boards' and PDFs' files by path. */
-export async function buildBackup(sessions: Session[], shelf: ShelfDocument[], profile?: LearnerProfile, ink: PageInk[] = [], now = Date.now()) {
-  const manifest = await backupIndex(sessions, shelf, profile, ink, now);
+export async function buildBackup(sessions: Session[], shelf: ShelfDocument[], profile?: LearnerProfile, ink: PageInk[] = [], folders: Folder[] = [], now = Date.now()) {
+  const manifest = await backupIndex(sessions, shelf, profile, ink, folders, now);
   const boards = new Map(await Promise.all(sessions.map(async (session) => [boardPath(session.id), await boardFile(session)] as const)));
   const pdfs = new Map(shelf.map((document) => [pdfPath(document.id), document.file] as const));
   return { manifest, boards, pdfs };
@@ -71,24 +72,30 @@ export async function buildBackup(sessions: Session[], shelf: ShelfDocument[], p
 
 /** Everything saved on this device. */
 export async function collectBackup() {
-  const [sessions, shelf, profile, ink] = await Promise.all([listSessions(), listShelf(), loadProfile(), listInk()]);
-  return buildBackup(sessions, shelf, profile, ink);
+  const [sessions, shelf, profile, ink, folders] = await Promise.all([listSessions(), listShelf(), loadProfile(), listInk(), listFolders()]);
+  return buildBackup(sessions, shelf, profile, ink, folders);
 }
 
-/** Changes whenever a board, Shelf entry or page of ink is added, changed, renamed or removed. */
+/** Changes whenever a board, Shelf entry, folder or page of ink is added, changed, renamed, moved or removed. */
 export function backupFingerprint(
-  sessions: Pick<Session, 'id' | 'updatedAt' | 'customTitle'>[],
-  shelf: Pick<ShelfDocument, 'id' | 'updatedAt'>[],
+  sessions: Pick<Session, 'id' | 'updatedAt' | 'customTitle' | 'folderId' | 'filedAt'>[],
+  shelf: Pick<ShelfDocument, 'id' | 'updatedAt' | 'folderId'>[],
   profile?: Pick<LearnerProfile, 'updatedAt'>,
   ink: Pick<PageInk, 'id' | 'updatedAt'>[] = [],
+  folders: Pick<Folder, 'id' | 'updatedAt'>[] = [],
 ) {
   return [
-    ...sessions.map((session) => `s ${session.id} ${session.updatedAt} ${session.customTitle ?? ''}`),
-    ...shelf.map((document) => `p ${document.id} ${document.updatedAt}`),
+    ...sessions.map((session) => `s ${session.id} ${boardStamp(session)}`),
+    ...shelf.map((document) => `p ${document.id} ${document.updatedAt} ${document.folderId ?? ''}`),
     ...(profile ? [`m ${profile.updatedAt}`] : []),
     ...ink.map((page) => `i ${page.id} ${page.updatedAt}`),
+    ...folders.map((folder) => `f ${folder.id} ${folder.updatedAt}`),
   ].sort().join('\n');
 }
+
+/** Changes when a board's file would: it was saved, renamed or moved. */
+export const boardStamp = (session: Pick<Session, 'updatedAt' | 'customTitle' | 'folderId' | 'filedAt'>) =>
+  `${session.updatedAt} ${session.customTitle ?? ''} ${session.folderId === undefined ? '' : session.folderId ?? '/'} ${session.filedAt ?? ''}`;
 
 export const backupFileName = (date = new Date()) =>
   `math-tutor-backup-${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}.zip`;
@@ -142,9 +149,11 @@ export async function restoreManifest(manifest: BackupManifest, files: Map<strin
     return { ...document, cover: cover ? dataUrlToBlob(cover) : null, file: file ? new Blob([file], { type: 'application/pdf' }) : null };
   });
   const ink = Array.isArray(manifest.ink) ? manifest.ink.map(validPageInk).filter((page): page is PageInk => page !== undefined) : [];
-  const written = await restoreRecords(sessions, shelf, validProfile(manifest.profile), ink);
+  const folders = Array.isArray(manifest.folders) ? manifest.folders.map(validFolder).filter((folder): folder is Folder => folder !== undefined) : [];
+  const written = await restoreRecords(sessions, shelf, validProfile(manifest.profile), ink, folders);
   return {
-    restoredSessions: written.sessions.length, restoredShelf: written.shelf.length, restoredProfile: written.profile, restoredInk: written.ink.length,
+    restoredSessions: written.sessions.length, restoredShelf: written.shelf.length, restoredFolders: written.folders.length,
+    restoredProfile: written.profile, restoredInk: written.ink.length,
     skipped: written.skipped, missingPdfs: written.missingPdfs, missingBoards: missing,
   };
 }
@@ -181,6 +190,13 @@ function validTutorNote(note: unknown): TutorNote | undefined {
   if (!t || !TOPIC_RATINGS.includes(t.level) || !['low', 'medium', 'high'].includes(t.confidence)
     || typeof t.note !== 'string' || !Number.isFinite(t.updatedAt)) return undefined;
   return { level: t.level, confidence: t.confidence, note: t.note, updatedAt: t.updatedAt, ...(t.edited === true ? { edited: true } : {}) };
+}
+
+function validFolder(folder: unknown): Folder | undefined {
+  const f = folder as Folder | null;
+  if (!f || typeof f.id !== 'string' || typeof f.name !== 'string' || !(f.parentId === null || typeof f.parentId === 'string')
+    || !Number.isFinite(f.createdAt) || !Number.isFinite(f.updatedAt)) return undefined;
+  return { id: f.id, name: f.name, parentId: f.parentId === f.id ? null : f.parentId, createdAt: f.createdAt, updatedAt: f.updatedAt };
 }
 
 // Ink is drawn straight from these numbers, so a damaged page is left out and its stroke checked.

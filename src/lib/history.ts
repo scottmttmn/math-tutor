@@ -1,4 +1,5 @@
-import type { HistoryItem, HistoryShow, HistorySort, Session, ShelfDocument } from '@/types';
+import { folderIndex, itemFolder, bookLocation, isWithin, folderSummary } from '@/lib/folders';
+import type { Folder, HistoryItem, HistoryShow, HistorySort, Session, ShelfDocument } from '@/types';
 
 const SHELF_ENTRY = /^shelf:([^:]+):([^:]+)$/;
 
@@ -19,10 +20,12 @@ export function toHistoryItem(session: Session, favoriteIds: ReadonlySet<string>
   let source: HistoryItem['source'] = 'board';
   let bookId: string | null = null;
   let exerciseId: string | null = null;
+  let hasWork = true;
   if (session.id.startsWith('workbook:')) return null;
   if (session.id.startsWith('shelf:')) {
     // The reader saves every exercise it opens; only ones with work in them belong in the list.
-    if (!untouched && session.chatHistory.length === 0 && !hasDrawing(session) && !session.isSolved && !favorite) return null;
+    hasWork = session.chatHistory.length > 0 || hasDrawing(session) || Boolean(session.isSolved) || favorite;
+    if (!untouched && !hasWork) return null;
     const shelf = SHELF_ENTRY.exec(session.id);
     if (!shelf) return null;
     source = 'shelf';
@@ -46,6 +49,8 @@ export function toHistoryItem(session: Session, favoriteIds: ReadonlySet<string>
     href,
     bookId,
     exerciseId,
+    folderId: session.folderId,
+    hasWork,
   };
 }
 
@@ -58,14 +63,34 @@ const SHOWN: Record<HistoryShow, (item: HistoryItem) => boolean> = {
   favorites: (item) => item.favorite,
 };
 
-const ORDER: Record<HistorySort, (a: HistoryItem, b: HistoryItem) => number> = {
-  updated: (a, b) => b.updatedAt - a.updatedAt,
-  created: (a, b) => b.createdAt - a.createdAt,
-  title: (a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base', numeric: true }),
+const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true });
+
+// A book's boards in its order: by book, then page, then as marked; free boards after them, newest first.
+const bookOrder = (books: ReadonlyMap<string, ShelfDocument>) => {
+  const place = (item: HistoryItem) => {
+    const book = item.bookId ? books.get(item.bookId) : undefined;
+    const index = book?.exercises.findIndex((mark) => mark.id === item.exerciseId) ?? -1;
+    const mark = book && index >= 0 ? book.exercises[index] : undefined;
+    return mark && book ? { title: book.title, page: mark.page, at: mark.createdAt } : null;
+  };
+  return (a: HistoryItem, b: HistoryItem) => {
+    const [pa, pb] = [place(a), place(b)];
+    if (!pa || !pb) return pa ? -1 : pb ? 1 : b.updatedAt - a.updatedAt;
+    return byName(pa.title, pb.title) || pa.page - pb.page || pa.at - pb.at;
+  };
 };
 
-/** Items matching every word of the search (in the name or the problem) and the filter, in order. */
-export function queryHistory(items: HistoryItem[], { search, show, sort }: { search: string; show: HistoryShow; sort: HistorySort }) {
+const ORDER: Record<Exclude<HistorySort, 'book'>, (a: HistoryItem, b: HistoryItem) => number> = {
+  updated: (a, b) => b.updatedAt - a.updatedAt,
+  created: (a, b) => b.createdAt - a.createdAt,
+  title: (a, b) => byName(a.title, b.title),
+};
+
+/**
+ * Items matching every word of the search (in the name or the problem) and the filter, in order.
+ * Sorting in book order needs the books (by id).
+ */
+export function queryHistory(items: HistoryItem[], { search, show, sort }: { search: string; show: HistoryShow; sort: HistorySort }, books: ReadonlyMap<string, ShelfDocument> = new Map()) {
   const words = search.toLowerCase().split(/\s+/).filter(Boolean);
   return items
     .filter((item) => SHOWN[show](item))
@@ -73,28 +98,59 @@ export function queryHistory(items: HistoryItem[], { search, show, sort }: { sea
       const text = `${item.title}\n${item.problemStatement}`.toLowerCase();
       return words.every((word) => text.includes(word));
     })
-    .sort(ORDER[sort]);
+    .sort(sort === 'book' ? bookOrder(books) : ORDER[sort]);
 }
 
 const matches = (text: string, words: string[]) => words.every((word) => text.toLowerCase().includes(word));
 
+export interface LibraryQuery {
+  /** The folder shown; null for the top level (Home). */
+  folderId: string | null;
+  search: string;
+  show: HistoryShow;
+  sort: HistorySort;
+}
+
 /**
- * What Home lists. Browsing (no search, showing all): every book (Shelf PDF) and the free-form boards,
- * since a book's boards are listed on its own page. Searching or filtering: matching boards from
- * everywhere, book exercises included, and, showing all, the books whose title matches.
+ * What a folder (or Home, the top level) lists. Browsing (no search, showing all): its folders,
+ * books and boards, a book's boards being where the book is unless moved. Searching or filtering:
+ * everything inside it that matches, at any depth: boards with work in them, and, showing all,
+ * folders and books by name.
  */
-export function libraryView(items: HistoryItem[], books: ShelfDocument[], query: { search: string; show: HistoryShow; sort: HistorySort }) {
+export function libraryView(items: HistoryItem[], books: ShelfDocument[], folders: Folder[], query: LibraryQuery) {
+  const index = folderIndex(folders, books);
   const words = query.search.toLowerCase().split(/\s+/).filter(Boolean);
   const browsing = words.length === 0 && query.show === 'all';
-  // A book was last worked on when it or one of its boards last changed.
+  const here = query.folderId;
+  const inside = (location: string | null) => (browsing ? location === here : isWithin(index, location, here));
+  // A book or folder was last worked on when it or something in it last changed.
   const lastWorked = (book: ShelfDocument) => Math.max(book.updatedAt, ...items.filter((item) => item.bookId === book.id).map((item) => item.updatedAt));
-  const bookOrder: Record<HistorySort, (a: ShelfDocument, b: ShelfDocument) => number> = {
+  const folderWorked = (folder: Folder) => Math.max(folder.updatedAt,
+    ...items.filter((item) => isWithin(index, itemFolder(index, item), folder.id)).map((item) => item.updatedAt),
+    ...books.filter((book) => isWithin(index, bookLocation(index, book), folder.id)).map((book) => book.updatedAt));
+  const bookSort: Record<HistorySort, (a: ShelfDocument, b: ShelfDocument) => number> = {
     updated: (a, b) => lastWorked(b) - lastWorked(a),
     created: (a, b) => b.createdAt - a.createdAt,
-    title: (a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base', numeric: true }),
+    title: (a, b) => byName(a.title, b.title),
+    book: (a, b) => byName(a.title, b.title),
   };
+  const folderSort: Record<HistorySort, (a: Folder, b: Folder) => number> = {
+    updated: (a, b) => folderWorked(b) - folderWorked(a),
+    created: (a, b) => b.createdAt - a.createdAt,
+    title: (a, b) => byName(a.name, b.name),
+    book: (a, b) => byName(a.name, b.name),
+  };
+  const showsAll = query.show === 'all';
   return {
-    books: query.show === 'all' ? books.filter((book) => matches(book.title, words)).sort(bookOrder[query.sort]) : [],
-    boards: queryHistory(browsing ? items.filter((item) => item.source === 'board') : items, query),
+    folders: showsAll ? folders.filter((folder) => folder.id !== here && (browsing ? index.parent.get(folder.id) === here : isWithin(index, index.parent.get(folder.id) ?? null, here)))
+      .filter((folder) => matches(folder.name, words)).sort(folderSort[query.sort]) : [],
+    books: showsAll ? books.filter((book) => inside(bookLocation(index, book)) && matches(book.title, words)).sort(bookSort[query.sort]) : [],
+    boards: queryHistory(items.filter((item) => inside(itemFolder(index, item)) && (browsing || item.hasWork)), query, index.books),
   };
+}
+
+/** The card's counts for each folder listed. */
+export function folderSummaries(items: HistoryItem[], books: ShelfDocument[], folders: Folder[]) {
+  const index = folderIndex(folders, books);
+  return new Map(folders.map((folder) => [folder.id, folderSummary(index, folder.id, items)]));
 }

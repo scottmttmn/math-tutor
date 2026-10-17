@@ -37,6 +37,8 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
 
   // Id for a new session until its first save; created lazily so render stays pure.
   const draftId = useRef<string | null>(null);
+  // The folder a new session started from a folder's page is filed in, on its first save.
+  const draftFolder = useRef<string | undefined>(undefined);
   const createdAt = useRef(0);
   const thumbnail = useRef<Blob | null>(null);
   const savedKey = useRef<string | null>(null);
@@ -76,6 +78,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
       ...(s.checkIn ? { checkIn: s.checkIn } : {}),
       ...(s.writeUp ? { writeUp: s.writeUp } : {}),
       ...(s.paper ? { paper: s.paper } : {}),
+      ...(!s.currentSessionId && draftFolder.current ? { folderId: draftFolder.current } : {}),
     };
   }, [canvasHandle]);
 
@@ -119,6 +122,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
     savedKey.current = null;
     try { loadedUnsaved.current = Boolean(session && hasRecoveryCopy(session.id)); } catch { loadedUnsaved.current = false; }
     draftId.current = null;
+    draftFolder.current = undefined;
     createdAt.current = session?.createdAt ?? 0;
     thumbnail.current = session?.canvasImageBlob ?? null;
     if (session) {
@@ -153,11 +157,12 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
     return true;
   }, [persist, applyLoad]);
 
-  /** Saves the current session (unless it was just deleted), then starts an empty one. */
-  const startNew = useCallback(async (type: SessionType, opts?: { discardCurrent?: boolean }): Promise<boolean> => {
+  /** Saves the current session (unless it was just deleted), then starts an empty one (filed in `folderId`, if given). */
+  const startNew = useCallback(async (type: SessionType, opts?: { discardCurrent?: boolean; folderId?: string }): Promise<boolean> => {
     switched.current = true;
     if (!opts?.discardCurrent && !await persist()) return false;
     applyLoad(undefined, type);
+    draftFolder.current = opts?.folderId;
     return true;
   }, [persist, applyLoad]);
 

@@ -58,12 +58,14 @@ function AppContent() {
     void startNew(type);
   }, [startNew, cancelWriteUp]);
 
-  // New from another page arrives as /board?new=problem|note; start it once, then drop it from the URL.
+  // New from another page arrives as /board?new=problem|note (and &folder=<id> from a folder's page);
+  // start it once, then drop it from the URL.
   useEffect(() => {
-    const type = new URLSearchParams(window.location.search).get('new');
+    const params = new URLSearchParams(window.location.search);
+    const type = params.get('new');
     if (type !== 'problem' && type !== 'note') return;
     window.history.replaceState(null, '', '/board');
-    void startNew(type);
+    void startNew(type, { folderId: params.get('folder') ?? undefined });
   }, [startNew]);
 
   const handleAskForHelp = useCallback(async (picked?: string) => {

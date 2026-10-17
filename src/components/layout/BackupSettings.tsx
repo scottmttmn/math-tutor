@@ -25,6 +25,7 @@ function describeRestore(result: RestoreResult) {
   const restored = [
     boards && `${boards} board${boards === 1 ? '' : 's'}`,
     pdfs && `${pdfs} PDF${pdfs === 1 ? '' : 's'}`,
+    result.restoredFolders && `${result.restoredFolders} folder${result.restoredFolders === 1 ? '' : 's'}`,
     result.restoredProfile && 'your tutor memory',
     result.restoredInk && `ink on ${result.restoredInk} page${result.restoredInk === 1 ? '' : 's'}`,
   ].filter(Boolean);
@@ -102,7 +103,7 @@ export default function BackupSettings({ onClose, saveOpenBoard, restoredMessage
     void run('restore', async () => {
       await saveBoard();
       const result = await restoreFromFiles(picked, fromDay || undefined);
-      if (!result.restoredSessions && !result.restoredShelf && !result.restoredProfile && !result.restoredInk) return describeRestore(result);
+      if (!result.restoredSessions && !result.restoredShelf && !result.restoredFolders && !result.restoredProfile && !result.restoredInk) return describeRestore(result);
       // The page still holds what it loaded before the restore, and its next autosave would write
       // that over a restored copy; reload so it shows what is saved now.
       try { sessionStorage.setItem(RESTORE_RESULT_KEY, describeRestore(result)); } catch { /* The reload still happens. */ }

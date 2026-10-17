@@ -59,19 +59,34 @@ try {
   await page.waitForURL(`${origin}/`);
   await page.getByRole('heading', { name: 'Library', exact: true }).waitFor();
 
-  // + New → Add a PDF opens the new book's page, with its page count; Start reading opens the reader.
+  // + New → Add a PDF puts the book in a folder of its own and opens it, with the book's page
+  // count; Start reading opens the reader.
   await page.getByRole('button', { name: 'New', exact: true }).click();
   await page.getByRole('button', { name: 'Add a PDF…' }).waitFor();
   await page.locator('input[aria-label="Add a PDF"]').setInputFiles(pdfPath);
   await page.getByRole('heading', { name: 'Algebra drills', exact: true }).waitFor();
-  assert.match(new URL(page.url()).pathname, /^\/book$/);
+  assert.match(new URL(page.url()).pathname, /^\/folder$/);
   await page.getByText(/2 pages/).waitFor();
-  await page.getByText(/^None yet\./).waitFor();
-  // Adding another PDF from a book's page shows the new book; Back shows the first again.
+  await page.getByText(/^No boards yet\./).waitFor();
+  // Adding another PDF from a folder puts it inside that folder; Back shows the first again.
   await page.locator('input[aria-label="Add a PDF"]').setInputFiles(secondPdfPath);
   await page.getByRole('heading', { name: 'Geometry notes', exact: true }).waitFor();
+  await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Algebra drills' }).waitFor();
   await page.goBack();
   await page.getByRole('heading', { name: 'Algebra drills', exact: true }).waitFor();
+  // Move to… takes it out to the top level.
+  const folders = page.locator('[aria-labelledby="folders-heading"]');
+  await folders.getByRole('link', { name: 'Open Geometry notes' }).waitFor();
+  await page.getByRole('button', { name: 'More for Geometry notes' }).click();
+  await page.getByRole('menuitem', { name: 'Move to…' }).click();
+  await page.getByRole('dialog', { name: 'Move Geometry notes' }).getByRole('button', { name: 'Library (no folder)' }).click();
+  await folders.waitFor({ state: 'detached' });
+  // New folder makes one here, for the book's chapters.
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByRole('button', { name: 'New folder' }).click();
+  await page.getByLabel('New folder in Algebra drills').fill('Chapter 2');
+  await page.getByRole('button', { name: 'Make folder' }).click();
+  await folders.getByRole('link', { name: 'Open Chapter 2' }).waitFor();
   await page.getByRole('link', { name: 'Start reading' }).click();
   await page.getByText('Page 1 of 2').waitFor();
 
@@ -161,6 +176,10 @@ try {
   await page.mouse.up();
   assert.equal(await page.getByLabel('Name').inputValue(), 'Exercise 2');
   await page.getByLabel('Name').fill('Problem 3');
+  // Its board can be filed in a folder inside the book's.
+  assert.equal(await page.getByLabel('Folder').inputValue(), 'book:' + new URL(page.url()).searchParams.get('doc'));
+  assert.deepEqual((await page.getByLabel('Folder').locator('option').allInnerTexts()).map((text) => text.trim()), ['Algebra drills', 'Chapter 2']);
+  await page.getByLabel('Folder').selectOption({ index: 1 });
   await page.getByRole('button', { name: 'Save and open' }).click();
   await exerciseHeading('Problem 3').waitFor();
   await page.locator('.tl-image').waitFor();
@@ -228,13 +247,22 @@ try {
   await page.getByRole('tab', { name: 'Your list', exact: true }).waitFor();
   await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Algebra drills' }).waitFor();
   await page.getByRole('link', { name: 'Algebra drills', exact: true }).click();
-  const bookBoards = page.locator('[aria-labelledby="book-boards-heading"]');
+  // The book's folder: the book, its Chapter 2 folder holding Problem 3, and Exercise 1.
+  const bookBoards = page.locator('[aria-labelledby="boards-heading"]');
   await bookBoards.getByRole('button', { name: /^Open Exercise 1/ }).waitFor();
-  await bookBoards.getByRole('button', { name: /^Open Problem 3/ }).waitFor();
+  assert.equal(await bookBoards.getByRole('button', { name: /^Open Problem 3/ }).count(), 0);
   await page.getByText(/1 of 2 solved/).waitFor();
+  await page.locator('[aria-labelledby="folders-heading"]').getByText('1 problem', { exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Open Chapter 2' }).click();
+  await page.getByRole('heading', { name: 'Chapter 2', exact: true }).waitFor();
+  await bookBoards.getByRole('button', { name: /^Open Problem 3/ }).waitFor();
   await page.getByRole('link', { name: 'Home', exact: true }).click();
-  await page.locator('[aria-labelledby="books-heading"]').getByRole('link', { name: 'Open Algebra drills' }).waitFor();
-  assert.equal(await page.locator('[aria-labelledby="boards-heading"]').count(), 0, 'a book’s boards are on its page');
+  // Home: the book's folder (its cover and counts) and Geometry notes'; a book's boards are in its folder.
+  const homeFolders = page.locator('[aria-labelledby="folders-heading"]');
+  await homeFolders.getByRole('link', { name: 'Open Algebra drills' }).waitFor();
+  await homeFolders.getByRole('link', { name: 'Open Geometry notes' }).waitFor();
+  await homeFolders.locator('li', { has: page.getByRole('link', { name: 'Open Algebra drills' }) }).getByText('1 of 2 solved').waitFor();
+  assert.equal(await page.locator('[aria-labelledby="boards-heading"]').count(), 0, 'a book’s boards are in its folder');
   await page.getByRole('searchbox', { name: 'Search books, problems and notes' }).fill('exercise');
   const history = page.locator('[aria-labelledby="boards-heading"]');
   await history.getByRole('button', { name: /^Open Exercise 1/ }).waitFor();
@@ -250,7 +278,7 @@ try {
   await page.getByRole('tab', { name: 'Your list', exact: true }).waitFor();
   // The board closes before the mark's removal is written, so wait for the mark to go.
   await page.getByRole('button', { name: 'Open Exercise 1' }).waitFor({ state: 'detached' });
-  console.log('PASS a book’s page lists its boards; a search on Home finds them; removing a mark removes its board');
+  console.log('PASS a book comes in its own folder; folders, Move to and filing a mark; a search on Home finds the boards; removing a mark removes its board');
 
   // A new problem takes a picture of itself as its figure.
   await page.goto(`${origin}/`);
@@ -272,30 +300,49 @@ try {
   await page.getByRole('link', { name: 'Home' }).waitFor();
   console.log('PASS a new problem takes a picture; it goes on the board; full screen main board');
 
-  // The book's card on Home: asks what the PDF is until told, then shows it, with solved progress and
-  // where you left off; the kind can be changed from the menu.
+  // The book at the head of its folder: asks what the PDF is until told, then shows it, with solved
+  // progress and where you left off; the kind can be changed from its menu.
   await page.goto(`${origin}/`);
-  // Geometry notes, added too, still asks what it is, so look inside Algebra drills' card.
-  const bookCard = page.locator('li', { has: page.getByRole('link', { name: 'Open Algebra drills' }) });
+  await page.getByRole('link', { name: 'Open Algebra drills' }).click();
   const kinds = page.getByRole('group', { name: 'What Algebra drills is' });
   await kinds.getByRole('button', { name: 'Problem set' }).click();
   await kinds.waitFor({ state: 'hidden' });
-  await bookCard.getByText('Problem set', { exact: true }).waitFor();
-  await bookCard.getByText(/^\d+ of \d+ solved/).waitFor();
-  await bookCard.getByText(/^p\. \d+/).waitFor();
+  await page.getByText(/^Problem set · 0 of 1 solved · 2 pages$/).waitFor();
+  await page.getByRole('link', { name: /^Read at p\. \d+$/ }).waitFor();
   await page.reload();
-  await bookCard.getByText('Problem set', { exact: true }).waitFor();
-  await page.getByRole('button', { name: 'More for Algebra drills' }).click();
+  await page.getByText(/^Problem set ·/).waitFor();
+  await page.getByRole('button', { name: 'More for the book Algebra drills' }).click();
   await page.getByRole('menuitem', { name: 'Change kind' }).click();
   await kinds.getByRole('button', { name: 'Textbook' }).click();
-  await bookCard.getByText('Textbook', { exact: true }).waitFor();
-  console.log('PASS the book card shows its kind, solved progress and where you left off');
+  await page.getByText(/^Textbook ·/).waitFor();
+  console.log('PASS the book shows its kind, solved progress and where you left off');
 
-  // Removing the PDF takes its remaining boards with it.
-  await page.getByRole('button', { name: 'More for Algebra drills' }).click();
+  // Removing the PDF takes its remaining boards with it; its folder stays while it holds a folder.
+  await page.getByRole('button', { name: 'More for the book Algebra drills' }).click();
   await page.getByRole('menuitem', { name: 'Remove' }).click();
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
-  await page.getByRole('link', { name: 'Open Algebra drills' }).waitFor({ state: 'detached' });
+  await page.getByRole('link', { name: 'Read Algebra drills' }).waitFor({ state: 'detached' });
+  await page.getByRole('link', { name: 'Open Chapter 2' }).waitFor();
+  // Deleting a folder moves what it holds up a level.
+  await page.getByRole('button', { name: 'More for this folder' }).click();
+  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  await page.getByText('Delete the folder? What’s in it moves to the Library.').waitFor();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await page.waitForURL(`${origin}/`);
+  await page.locator('[aria-labelledby="folders-heading"]').getByRole('link', { name: 'Open Chapter 2' }).waitFor();
+  assert.equal(await page.getByRole('link', { name: 'Open Algebra drills' }).count(), 0);
+  // + New in a folder starts the board there.
+  await page.getByRole('link', { name: 'Open Chapter 2' }).click();
+  await page.getByRole('heading', { name: 'Chapter 2', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByRole('button', { name: 'New Problem' }).click();
+  await page.waitForURL(`${origin}/board`);
+  await page.getByPlaceholder("Type the math problem you're working on...").fill('Sum the angles of a pentagon');
+  await page.getByText('Saved', { exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Home', exact: true }).click();
+  assert.equal(await page.locator('[aria-labelledby="boards-heading"]').getByRole('button', { name: /^Open Sum the angles/ }).count(), 0);
+  await page.getByRole('link', { name: 'Open Chapter 2' }).click();
+  await page.locator('[aria-labelledby="boards-heading"]').getByRole('button', { name: /^Open Sum the angles/ }).waitFor();
   const shelfSessions = await page.evaluate(() => new Promise((resolve) => {
     const open = indexedDB.open('math-tutor');
     open.onsuccess = () => {
@@ -304,8 +351,44 @@ try {
     };
   }));
   assert.deepEqual(shelfSessions, []);
+
+  // A library saved before folders: each book is put in a folder of its own, its boards with it.
+  const old = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const oldPage = await old.newPage();
+  oldPage.on('pageerror', (error) => browserErrors.push(error.message));
+  await oldPage.goto(`${origin}/pen-test`);
+  await oldPage.evaluate(() => new Promise((resolve, reject) => {
+    const open = indexedDB.open('math-tutor', 4);
+    open.onupgradeneeded = () => {
+      const db = open.result;
+      db.createObjectStore('sessions', { keyPath: 'id' }).createIndex('by-updated', 'updatedAt');
+      db.createObjectStore('shelf', { keyPath: 'id' });
+      db.createObjectStore('settings');
+      db.createObjectStore('ink', { keyPath: 'id' }).createIndex('by-document', 'documentId');
+    };
+    open.onsuccess = () => {
+      const tx = open.result.transaction(['shelf', 'sessions'], 'readwrite');
+      tx.objectStore('shelf').put({
+        id: 'old', title: 'Old notes', file: new Blob(['%PDF-1.4'], { type: 'application/pdf' }), pageCount: 3, cover: null, lastPage: 1,
+        exercises: [{ id: 'ex1', label: 'Exercise 1', page: 2, rect: { x: 0, y: 0, width: 0.5, height: 0.2 }, createdAt: 1 }], createdAt: 1, updatedAt: 1,
+      });
+      tx.objectStore('sessions').put({
+        id: 'shelf:old:ex1', title: 'Exercise 1 · Old notes, p. 2', problemStatement: 'Exercise 1 · Old notes, p. 2', problemImage: null, canvasStrokes: [],
+        canvasDocument: null, canvasImageBlob: null, chatHistory: [{ role: 'user', content: 'Hi' }], createdAt: 1, updatedAt: 2, isSolved: true,
+      });
+      tx.oncomplete = () => { open.result.close(); resolve(); };
+      tx.onerror = () => reject(tx.error);
+    };
+  }));
+  await oldPage.goto(`${origin}/`);
+  await oldPage.locator('[aria-labelledby="folders-heading"]').getByText('1 of 1 solved').waitFor();
+  await oldPage.getByRole('link', { name: 'Open Old notes' }).click();
+  await oldPage.waitForURL(/\/folder\?id=book%3Aold$/);
+  await oldPage.locator('[aria-labelledby="boards-heading"]').getByRole('button', { name: /^Open Exercise 1/ }).waitFor();
+  await old.close();
+  console.log('PASS books saved before folders each get their own folder');
   assert.deepEqual(browserErrors, []);
-  console.log('PASS removing a PDF removes its boards; no browser exceptions');
+  console.log('PASS removing a PDF removes its boards; deleting a folder moves its contents up; no browser exceptions');
 } finally {
   await browser.close();
   provider.close();
