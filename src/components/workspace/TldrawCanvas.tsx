@@ -128,7 +128,8 @@ async function placeProblemImage(editor: Editor, base64: string, key: string | t
     });
   });
   if (content) editor.zoomToBounds(Box.Common([content, new Box(x, y, w, h)]), { animation: { duration: 200 }, targetZoom: 1 });
-  startDrawing(editor);
+  // Back to the pen, keeping the size and dash picked on this board.
+  editor.setCurrentTool('draw');
   return true;
 }
 
