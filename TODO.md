@@ -1,95 +1,98 @@
 # TODO
 
+Reviewed against the app on 2026-10-18.
+
 Goal: make Math Tutor a great math notebook on its own, even for someone who never uses the AI tutor. The primary audience is the self-motivated learner who enjoys math, at any skill level.
 
-Direction: pen-first and keyboard-free. The end state is an Android app on an e-ink tablet (BOOX in mind), with the web app in a thin shell plus the tablet's pen SDK, and no laptop needed. The shell waits until there is a device to test on; until then, check that every feature works pen-only at tablet size. See `docs/pen-first-math-workbook-plan.md`.
+Direction: pen-first and keyboard-free for the core reading, writing and tutor loop. The Android app is already built; the next hardware decision depends on testing the actual BOOX. It has **not arrived yet** (2026-10-18). Keep checking features with pen and taps at tablet size in the meantime.
 
-Work top to bottom unless priorities change. Every change goes through a branch and a PR (see CLAUDE.md, "Workflow and CI").
+Every change goes through a branch and a PR (see CLAUDE.md, "Workflow and CI"). The remaining items below carry forward the existing roadmap; priorities can change after the device test.
 
-Done: the handwriting test, autosave on the main page, the 5-second request limit, CI on every PR, thinner default pen.
+## Remaining work
 
-## MVP
+### PDF reading and writing
 
-### 1. Handwriting test set
+- [ ] **Open as note:** move ink from a passage on a PDF page onto a new note board. Marking a passage as a note page already works.
+- [ ] Edit a saved mark's box and label in the reader. Boards can already be renamed from the library; that does not edit the original mark's label or bounds.
+- [ ] Dedicated PDF zoom controls beyond the current fit-to-width page and browser pinch zoom. The drawing board already has tldraw's zoom controls.
+- [ ] Save a PDF with its page ink and highlights included. Board PNG/PDF export and full backups already exist.
+- [ ] An optional default paper setting for new boards. Today each board remembers its paper; new Problems start Blank and Notes start Lined.
 
-- Done (2026-10-17): tutor board images keep a capped overview plus readable close-ups of large boards, skip empty gaps, and accompany every follow-up even without new ink. Problem pictures remain behind annotations; capture failures are visible and keep typed drafts.
+### Backup on the tablet
 
-- Pages of real handwriting (written on a Wacom in the app) with a LaTeX answer key, in `tests/handwriting/`. Done (2026-10-09): Claude Sonnet 5.5, Claude Opus 5.5 and ChatGPT-plan Sol 6.1 each read 99%; their misreads are lookalikes (O/θ, q/9, S/5) and the odd dropped sign or row. Luna (91%) invented a whole page of work, so it isn't used for reading handwriting. Gemini 3.8 Flash's free tier was rate limited before it could finish.
-- A script (`npm run handwriting`) sends each page to every configured model and scores the transcription against the key, so we know which models read handwritten math well enough before building on recognition.
+- [ ] Automatic backup to a folder or a sync-app location from the Android app. Desktop Chromium folder backup is built; Android currently saves a backup ZIP through its native Save dialog and can restore a chosen backup.
 
-### 2. Problem history
+### Tutor and memory
 
-Done: **Home** is the page the app opens on: a Continue card for the last board, then a grid of every free-form board and Shelf exercise that has work in it, with thumbnails, search, rename, sort, and filters (All / Problems / Notes / In progress / Solved). Every page has the same bar: Home, Shelf, + New, Settings.
+- [ ] **Check me on this topic** for one topic or area straight from its row in Tutor memory. The multi-topic Skill check-in is built.
+- [ ] Tutor-recommended problems based on Favorites and the learner profile. Starring a problem, recording why it was good and sharing favorites with the tutor are built.
+- [ ] Design contextual tutor cards beside the selected passage or handwritten work, preserving useful feedback and follow-up context. The current tutor is a collapsible drawer with pen-friendly choices; replacing it remains a separate design step.
 
-- Done (library step 2): Home and the Shelf are one page. Home lists **Texts** (every PDF; called books until 2026-10-17) and free boards; a search or filter also finds the boards made in books. Each book has its own page with its boards; **+ New → Add a PDF…** adds one; a new problem takes a picture (**Add picture**), which replaces Single problem. The Shelf tab is gone.
-- Done (library step 3): nested folders ([design](https://claude.ai/artifact/HwasY4HpAiE6Y5qNts1X6k), option B). A PDF comes in a folder of its own, named after it, which holds the book (read it from the top of the folder) and the boards marked in it; folders can hold folders, books and boards, filed by hand with **Move to…**; **+ New → New folder**; Mark can file a board in a folder inside the book's, starting on the last one picked; counts on a folder's card take in everything inside; deleting a folder moves its contents up a level. Books saved before folders were each given their own.
-- Done (library step 4): several exercises on one board. With a problem board open, **Mark** offers **This board** or **Own board**; This board adds the boxed exercise to the open board (its picture below the work, Mark stays on for the next one). The board's header lists its exercises to switch between; each is solved on its own, the tutor works on the current one (and is told the others are there), and Home lists the board once with "N of M solved". Removing one keeps the board for the others. Shelf boards only for now.
+### Handwriting to TeX
 
-### 3. PDF Shelf
+- [ ] Include drawings as images in a write-up; they currently become `\fbox{Figure: …}` placeholders.
+- [ ] Offer TeX write-up on boards opened from PDF marks. It is currently available on free boards through **Board → TeX write-up…**.
 
-Done: **Shelf** (in the bar) holds what you work from: PDFs of any kind (textbooks, problem sets, handouts) added or dropped in. Open one to read it page by page; **Mark exercise** and drag a box around a problem, and it opens on its own board beside the page (below it on an upright tablet), stays marked on the page (✓ once solved), and shows on Home. **Single problem** puts a picture or a PDF's first page straight onto a new board. Works offline; the tutor gets the marked region as the problem figure, plus the text of the book pages leading up to it (from the section's bookmark, at most 15 pages, never past the exercise; adjustable or off on the board).
+## BOOX validation — waiting for the device
 
-Done: one look across the app: ink on paper, with only the tutor in color (**Ask tutor**, its drawer and replies), Solved as a filled ink check everywhere, kind icons on cards and in **+ New**, 44px controls, and Delete/Remove in a "⋯" menu.
+- [ ] Test the actual app's small mathematical symbols, stroke latency, palm rejection, erasing, selection, undo, page movement and long reading sessions. The bare `/pen-test` page is available for comparison.
+- [ ] Use those results to decide whether tldraw is suitable and whether a native pen layer / BOOX SDK integration is needed. Keep canvas-specific polish small until then.
+- [ ] Try the installed Android app's tutor calls and Sign in with ChatGPT on the device, without a Mac.
+- [ ] Test backup/restore on the device and choose its long-term backup location or sync workflow.
+- [ ] Decide whether the pen panel should have fewer colors and no opacity for the monochrome screen.
 
-Every board has the same layout: what it works from beside it (the problem or topic, the PDF page), which can be hidden, and the tutor as a drawer that opens when you ask. Every board has **Full screen** (in its toolbar), and a problem picture can be **put on the board**. **Hide tools** collapses the drawing tools, and the Shelf's list can be hidden so the page gets the full width.
+## Later ideas
 
-Done: pen styles collapse behind a color/size chip at the top right; the native controls open on tap, stay open for multiple changes, and collapse on a stroke or Esc. Open/collapsed is remembered on the device. Later: decide on fewer colors and no opacity after testing the BOOX.
+- [ ] Multi-page notebooks. tldraw supports pages, but each board currently has one.
+- [ ] Continuous reading instead of only page-by-page navigation; design it first. Page ink, highlights and note boards are already built.
+- [ ] Function plots on the canvas. Grid/graph paper is already built.
+- [ ] **DRM-free EPUB as texts.** Reflow needs a different approach to marks, ink anchors and page references; math rendering also needs evaluation. DRM-locked books are outside this import path. The existing workaround is EPUB-to-PDF conversion, then **Add a PDF…**.
+- [ ] A shared problem collection and recommendations from other learners. Personal Favorites already provide the "interesting problem" star.
 
-Done (reading, step 1 of the [Shelf design](https://claude.ai/artifact/TXw8zCKZbwQ9ohM2Fk9nC8)): tap a page's edge, swipe sideways or use the arrow keys to turn it; tap the page number to go to a page by its printed number ("47", "xii"); **Contents** beside the page from the PDF's bookmarks; blank margins trimmed so the print is bigger (**Trim margins**, kept per book); **Full screen** for reading, where a tap in the middle hides and brings back the bars and **Lists** opens the lists over the page.
+## Delivered
 
-- Done: ink on the page (pen, highlighter, eraser, undo), saved per page and in backups.
-- Done: an exercise opened on an empty board is put on it; on an upright tablet the board takes the screen and swaps with the page (**Page 47** / **Back to board**).
-- Done: note pages (**Mark** → Exercise or Note; a note opens on a lined Notes board), and **Your list**: the book's exercises, note pages, highlights (quoted) and ink by section, with solved counts. Boards have **Paper**: Blank, Lined or Grid.
-- Not yet: **Open as note** (moving margin ink onto a new note page); the paper choice for new boards is per kind, not a setting.
-- Done: **Search** in the book's list (results by section with a line of context; the words are lit on the page).
-- Done: **Ask about the page** (Ask, drag a box, ask; the tutor explains it directly; Save as note page keeps it).
-- Done: **Shelf cards** with solved progress and where you left off (the kind labels were dropped on 2026-10-17: folders organize texts). The Shelf reading design is built; still open: Open as note, saving a PDF with your markup.
-- Still to do: no zoom yet; marks can't be moved or renamed after saving.
+### Home, folders and texts
 
-### 4. Export and auto-backup
+**Home** is the library: Continue, nested folders, texts and free boards, with thumbnails, search, sorting, filters (including Favorites), Rename, Move to and Delete/Remove. **+ New** offers Problem, Notes, Add a PDF and, in the library, New folder. The main bar is Home, + New and Settings; the old Shelf tab is gone.
 
-Done: **Save as…** on every board saves the whole board as a PNG or a one-page PDF. **Settings → Backup** downloads everything (every board, note and Shelf PDF) as one ZIP and restores it, or a backup folder, on any device; a restore only adds what is missing or newer. In Chrome on a computer, pick a folder (e.g. in Dropbox) and the app backs up there shortly after each change, with a dated copy per day for the last week; after a browser restart the bar shows **Backup paused** until you allow it again. The app asks the browser for persistent storage, and the bar suggests **Back up** when there is work with no backup from the last week.
+A PDF is a **text**, added or dropped into the library in a folder of its own. Its folder holds the text and its marked boards, and can contain more folders. Open the text from there to read at the saved page. Texts outside folders open directly in the reader. Search and filters find boards within folders and texts; deleting a folder moves its contents up a level.
 
-- Still to do: on the BOOX (Android Chrome can't write to a folder) backup is the download; the Android shell can back up to a folder or a sync app instead.
+### PDF reader and marked boards
 
-### 5. Tutor memory
+Read with edge taps, sideways swipes, arrow keys, printed page numbers, Contents, margin trimming and full screen. **Your list**, **Contents** and **Search** organize and find exercises, note pages, highlights and page ink by section. The list can be hidden to give the page more room.
 
-Done (step 1): **Tutor memory** (Settings → Tutor, or the line on Home while it's empty) holds **About you** and a self-assessment: topics by area, each rated Solid, Rusty, Learning or Never seen, plus topics of your own. It is sent with every question as information the tutor uses to pitch its hints (never as instructions), can be turned off, shows exactly what the tutor reads, and is in backups.
+**Mark** boxes an Exercise or Note, creates its board and keeps a mark on the PDF. An exercise picture is placed automatically on an empty board. Several marked exercises can share one PDF board (**This board** / **Own board**), with a current exercise and separate solved states. On an upright tablet, **Page N** / **Back to board** swaps between the page and board.
 
-Done (step 2): the tutor notes what your boards show, per topic with a level and how sure it is, at the end of a reply and out of sight of the chat. The notes show under each topic on the Tutor memory page, where you can correct the level or forget the note, and the tutor reads them back with later questions.
+Pen, Highlight, Eraser and Undo work directly on PDF pages; ink is saved per page and included in backups. **Ask about the page** explains a boxed passage and **Save as note page** keeps the conversation on a note board. Exercise questions can include the preceding PDF text, limited to the exercise's page and at most 15 pages; the student can adjust or disable that context.
 
-Done (step 3): **Favorites** and **the tutor's notebook**. Favorite beside Mark solved stars a problem and asks, optionally, what made it good; Home has a Favorites filter and the tutor reads every favorite. The tutor also keeps a short notebook on you in its own words (how you like to be helped, what you enjoy), rewritten as it learns and editable on the Tutor memory page. Later: the tutor recommends a problem, built on the favorites.
+### Boards and tutor controls
 
-- A local, user-editable learner profile, summarized after each session and sent with tutor requests (not the raw history).
-- Kept in app storage, so it moves with the app to the tablet.
-- **Self-assessment** (optional): pick topics and rate each one (solid, rusty, learning, never seen), plus a free-text "About me". This is the tutor's starting picture of the learner.
-- Each topic in the profile has a level and how sure the tutor is of it. Everyday boards keep updating it, so one old answer never fixes a wrong picture in place.
+Problem and Notes boards use tldraw, autosave, restore after reload, and start at pen size S / solid dash. Paper choices are Blank, Lined and Grid. **Add picture** accepts an image or a PDF's first page; **Put on board** places it behind the writing. This replaces the old Single problem flow.
 
-### 6. Skill check-in
+The compact toolbar has Full screen, current Paper, sweep Clear, a Board menu, Favorite, Solved and one **Ask tutor** toggle. Board holds Hide drawing tools, PNG/PDF export and, on free boards, TeX write-up. **Show tools** restores hidden tools. Pen styles collapse behind a remembered color/size chip, opening the native controls on tap and closing on a stroke or Esc.
 
-Done: **Skill check-in** on the Tutor memory page offers the topics nobody is sure about (rated Rusty or Learning, your own unrated ones, and ones the tutor noted without high confidence), up to 4. It opens a board where the tutor gives one short problem at a time, harder after a right answer and easier after a miss; you answer by hand and press Hand in answer, and each settled topic lands in the memory as a tutor note you can correct.
+The tutor drawer's choices are Hint / Check my work / Feedback for Problems and Explain this / Check my notes for Notes, above the custom-question box and microphone. Opening/closing sends nothing and preserves drafts and active replies; hiding stops speech input, and reopening shows the latest reply. Every question carries a fresh board image, with readable close-ups for large boards; capture errors keep drafts. The five-second request interval and one-active-request limit apply across tutor calls.
 
-- Later: **Check me on this topic** for one topic or area straight from its row.
+### Tutor memory and check-ins
 
-## Board toolbar simplification
+**Tutor memory** holds About you, optional self-ratings, editable tutor topic notes, Favorites and the tutor's notebook. The tutor can update notes at the end of a reply when the work teaches it something; these are not automatic summaries of every session. The profile is kept locally, included in backups and shared with questions when enabled; the student can inspect what the tutor reads.
 
-- Done (step 1): named icon controls for full screen, current paper and sweep Clear; paper swatches; Board menu for tools, write-up and exports; Show tools chip; compact tablet labels.
-- Done (step 2): one Ask tutor button toggles the drawer without sending; choices stay above its chat box, with direct Start check-in / Hand in answer actions. Drafts and active replies survive closing the drawer; Show check-in problem in its instructions reopens a closed check-in without handing in an answer.
+**Skill check-in** offers up to four uncertain topics, asks one problem at a time and records settled topics in memory. **Start check-in** requests the first problem; **Hand in answer** submits the board. **Show check-in problem** reopens a closed conversation without handing in an answer.
 
-## After the MVP
+### Export, backup and Android app
 
-- **Handwriting to TeX write-up.** Done (free boards): **TeX write-up** in the board's toolbar has the tutor transcribe the board (or the selected part) as LaTeX without solving anything; edit it beside a KaTeX preview and **Download .tex**. It saves with the board and goes in backups. Still to do: drawings come out as `\fbox{Figure: …}` placeholders rather than images; Shelf boards don't have the button yet.
-- **Replace the chat pane.** Pen-only actions on a selection (Explain this, Give me a hint, Review my work), with replies as cards beside the work. The tutor waits until invited.
-- **Android app** that needs no Mac (decided 2026-10-15). Done: the app bundled into an Android app (`android/`, Capacitor), APK built in CI; tutor calls from the device with API keys pasted into Settings and kept encrypted on the tablet; Sign in with ChatGPT on the device (allowed for a personal app that runs locally; still to try for real on the tablet). Next: BOOX pen SDK once the tablet is here; backup to a folder.
+**Board → Save as PNG / Save as PDF** exports a whole board. **Settings → Backup** downloads a ZIP of boards, texts, page ink, folders and tutor memory, and restores missing or newer work from a ZIP or folder. Desktop Chromium can automatically write to a chosen folder, keeping seven days of dated copies; **Backup paused** restores permission after a browser restart, and **Back up** reminds when a backup is due.
 
-## Later
+The Capacitor Android app is bundled and its APK built in CI. It calls tutor providers directly from the device, stores API keys with Android Keystore encryption, supports Sign in with ChatGPT, and uses the native Save dialog for downloads. Real-device validation remains above.
 
-- Multi-page notebooks (tldraw supports pages; they're turned off today).
-- Notes and highlights on Shelf pages, and reading without flipping page by page (to be designed first).
-- Graph paper background and function plots on the canvas.
-- **Ebooks (DRM-free EPUB) as texts.** EPUB text reflows instead of having fixed pages, so Mark, ink on the page and "p. N" (all built on fixed pages) need rethinking for it; math in EPUBs is often MathML or low-resolution images. DRM-locked books (Kindle and the like) can't be opened by any app like this. Until then: convert the EPUB to PDF (Calibre does it) and add it as a text.
+### Handwriting test and development checks
 
-## Down the road (not now)
+The Wacom pages and LaTeX keys live in `tests/handwriting/`; `npm run handwriting` transcribes and scores configured models. In the **2026-10-09** run, Claude Sonnet 5.5, Claude Opus 5.5 and ChatGPT-plan Sol 6.1 each scored 99% on written lines; Luna scored 91% and invented work, and Gemini 3.8 Flash's free tier was rate limited before completing the set. These are dated test results, not a new benchmark.
 
-- Mark a problem as **interesting**. A star on saved problems is cheap once problem history exists.
-- Eventually: a crowdsourced network of problems. Solve one, mark it interesting, and get recommendations for others.
+CI runs lint, typecheck, unit tests, production build and browser tests, plus the Android bundle tests and APK build. The app's shared visual language is ink on paper, with indigo reserved for tutor controls and feedback.
+
+## Design references
+
+- [Pen-first workbook direction](docs/pen-first-math-workbook-plan.md): historical product discussion; current implementation status is recorded here.
+- [Library folders design](https://claude.ai/artifact/HwasY4HpAiE6Y5qNts1X6k), option B.
+- [PDF reading design](https://claude.ai/artifact/TXw8zCKZbwQ9ohM2Fk9nC8), originally called the Shelf design.
