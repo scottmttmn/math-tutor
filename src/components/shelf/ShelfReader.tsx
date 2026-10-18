@@ -26,7 +26,7 @@ import BottomToolbar from '@/components/layout/BottomToolbar';
 import AppBar from '@/components/layout/AppBar';
 import ChatPanel from '@/components/chat/ChatPanel';
 import MoreMenu from '@/components/common/MoreMenu';
-import { KindIcon, SolvedCheck } from '@/components/common/Icons';
+import { ChevronIcon, EraserIcon, FullScreenIcon, HighlightIcon, KindIcon, ListIcon, PenIcon, SolvedCheck, TutorIcon, UndoIcon } from '@/components/common/Icons';
 import BoardFrame from '@/components/layout/BoardFrame';
 import { saveBoardAs } from '@/lib/exportBoard';
 import PdfPage from './PdfPage';
@@ -47,11 +47,11 @@ const LIST_TABS: { tab: ListTab; label: string }[] = [{ tab: 'list', label: 'You
 const MARK_KINDS: { kind: ShelfMarkKind; label: string }[] = [{ kind: 'exercise', label: 'Exercise' }, { kind: 'note', label: 'Note' }];
 
 // The page toolbar's ink tools, as labelled there.
-const INK_TOOLS: { tool: InkTool; label: string }[] = [
-  { tool: 'pen', label: 'Pen' },
-  { tool: 'highlighter', label: 'Highlight' },
-  { tool: 'eraser', label: 'Eraser' },
-];
+const INK_TOOLS = [
+  { tool: 'pen', label: 'Pen', icon: PenIcon },
+  { tool: 'highlighter', label: 'Highlight', icon: HighlightIcon },
+  { tool: 'eraser', label: 'Eraser', icon: EraserIcon },
+] as const;
 // A page with no ink: one array, so the page isn't redrawn on every render.
 const NO_INK: InkStroke[] = [];
 const NO_LIT: PageRect[] = [];
@@ -514,12 +514,15 @@ export default function ShelfReader() {
   const litOnPage = search.results.find((result) => result.page === page)?.matches.flatMap((match) => match.rects) ?? NO_LIT;
   const name = pageName(labels, page);
   const pageText = name === String(page) ? `Page ${page} of ${pageCount}` : `p. ${name} (${page} of ${pageCount})`;
+  const pageLabel = name === String(page) ? `${page} / ${pageCount}` : `p. ${name}`;
   const readingFullScreen = fullScreen && !exercise;
   // The bookmark the page is in: the last one starting at or before it.
   const hereIndex = contents.reduce((found, entry, index) => (entry.page <= page && (found < 0 || entry.page >= contents[found].page) ? index : found), -1);
 
   // The page and its controls: beside an open board, or beside the list of exercises.
   const smallButton = 'min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40';
+  const plain = 'flex shrink-0 items-center justify-center gap-1.5 min-h-11 min-w-11 px-3 text-sm text-gray-800 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40';
+  const square = `${plain} w-11 p-0`;
   const stopAskBox = () => { setAskBox(false); setAskDraft(null); };
   // A box drawn to ask about: send the question (empty asks for an explanation) and open the conversation.
   const submitAsk = () => {
@@ -563,42 +566,48 @@ export default function ShelfReader() {
   );
 
   const pageToolbar = (
-    <>
-      <button onClick={() => turn(-1)} disabled={page <= 1} aria-label="Previous page" className={smallButton}>‹ Prev</button>
-      {goTo === null ? (
-        <button onClick={() => { setGoTo(''); setGoToError(''); }} title="Go to a page" aria-label={`${pageText}. Go to a page`}
-          className="min-h-11 px-2 text-sm text-gray-700 tabular-nums rounded-lg hover:bg-gray-100">{pageText}</button>
-      ) : (
-        <form onSubmit={(event) => { event.preventDefault(); submitGoTo(); }}
-          onKeyDown={(event) => { if (event.key === 'Escape') { setGoTo(null); setGoToError(''); } }}
-          className="flex items-center gap-1">
-          <input autoFocus aria-label="Go to page" value={goTo} onChange={(event) => { setGoTo(event.target.value); setGoToError(''); }}
-            placeholder={labels ? 'e.g. 47' : `1–${pageCount}`} inputMode={labels ? 'text' : 'numeric'}
-            className="w-24 min-h-11 px-2 text-sm border border-gray-900 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
-          <button type="submit" className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Go</button>
-          <button type="button" onClick={() => { setGoTo(null); setGoToError(''); }} className={smallButton}>Cancel</button>
-        </form>
-      )}
-      <button onClick={() => turn(1)} disabled={page >= pageCount} aria-label="Next page" className={smallButton}>Next ›</button>
-      {goToError && <span role="alert" className="text-sm text-red-700">{goToError}</span>}
-      <div className="flex-1" />
-      <div role="group" aria-label="Write on the page" className="flex items-center gap-1">
-        {INK_TOOLS.map(({ tool, label }) => (
-          <button key={tool} aria-pressed={inkTool === tool}
-            onClick={() => { setInkTool((current) => (current === tool ? null : tool)); setMarking(false); setPendingMark(null); stopAskBox(); }}
-            className={`min-h-11 px-3 text-sm rounded-lg border border-gray-900 ${inkTool === tool ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 hover:bg-gray-100'}`}>{label}</button>
-        ))}
-        {inkTool && <button onClick={undoInk} disabled={!inkUndo[page]?.length} className={smallButton}>Undo</button>}
+    <div role="group" aria-label="Text controls" className="flex flex-1 flex-wrap items-center gap-1.5 min-w-0">
+      <div role="group" aria-label="Page navigation" className="flex items-center gap-1">
+        <button onClick={() => turn(-1)} disabled={page <= 1} aria-label="Previous page" title="Previous page" className={square}><ChevronIcon direction="left" /></button>
+        {goTo === null ? (
+          <button onClick={() => { setGoTo(''); setGoToError(''); }} title={`${pageText}. Go to a page`} aria-label={`${pageText}. Go to a page`}
+            className="min-h-11 min-w-11 px-2 text-sm text-gray-700 tabular-nums rounded-lg hover:bg-gray-100">{pageLabel}</button>
+        ) : (
+          <form onSubmit={(event) => { event.preventDefault(); submitGoTo(); }}
+            onKeyDown={(event) => { if (event.key === 'Escape') { setGoTo(null); setGoToError(''); } }}
+            className="flex items-center gap-1">
+            <input autoFocus aria-label="Go to page" value={goTo} onChange={(event) => { setGoTo(event.target.value); setGoToError(''); }}
+              placeholder={labels ? 'e.g. 47' : `1–${pageCount}`} inputMode={labels ? 'text' : 'numeric'}
+              className="w-24 min-h-11 px-2 text-sm border border-gray-900 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            <button type="submit" className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Go</button>
+            <button type="button" onClick={() => { setGoTo(null); setGoToError(''); }} className={smallButton}>Cancel</button>
+          </form>
+        )}
+        <button onClick={() => turn(1)} disabled={page >= pageCount} aria-label="Next page" title="Next page" className={square}><ChevronIcon direction="right" /></button>
       </div>
-      <button onClick={() => void changeTrim(!trim)} aria-pressed={trim} title="Hide the pages' blank margins so the print is bigger"
-        className={`min-h-11 px-3 text-sm rounded-lg border ${trim ? 'border-gray-900 bg-gray-100 text-gray-900' : 'border-gray-300 bg-white text-gray-700'} hover:bg-gray-50`}>Trim margins</button>
+      {goToError && <span role="alert" className="text-sm text-red-700">{goToError}</span>}
+      <div role="group" aria-label="Write on the page" className="flex shrink-0 items-center gap-1">
+        {INK_TOOLS.map(({ tool, label, icon: ToolIcon }) => (
+          <button key={tool} aria-pressed={inkTool === tool} aria-label={label} title={label}
+            onClick={() => { setInkTool((current) => (current === tool ? null : tool)); setMarking(false); setPendingMark(null); stopAskBox(); }}
+            className={`flex items-center justify-center min-h-11 w-11 rounded-lg border ${inkTool === tool ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50'}`}><ToolIcon /></button>
+        ))}
+        {inkTool && <button onClick={undoInk} disabled={!inkUndo[page]?.length} aria-label="Undo" title="Undo" className={square}><UndoIcon /></button>}
+      </div>
       {/* Reading full screen has its way out in the top bar; a board has its own Full screen. */}
-      {!exercise && !fullScreen && <button onClick={toggleFullScreen} className={smallButton}>Full screen</button>}
+      {!exercise && !fullScreen && <button onClick={toggleFullScreen} aria-label="Full screen" title="Full screen" className={square}><FullScreenIcon /></button>}
+      <MoreMenu label="Text menu" title="Text menu" button={<span aria-hidden="true">⋯</span>} buttonClassName={square}
+        above={readingFullScreen} align="left"
+        items={[{ label: 'Trim margins', role: 'menuitemcheckbox', checked: trim, onSelect: () => void changeTrim(!trim) }]} />
+      {pageOnly && !fullScreen && (
+        <button onClick={() => changeListHidden(false)} aria-label="Your list" title="Your list: contents and search" className={square}><ListIcon /></button>
+      )}
+      <div className="flex-1" />
       <button
         onClick={() => { setMarking((on) => !on); setPendingMark(null); setInkTool(null); stopAskBox(); }}
         aria-pressed={marking}
         title="Box an exercise to work it, or a passage to take notes on"
-        className={`min-h-11 px-3 text-sm font-medium rounded-lg border border-gray-900 ${marking ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 hover:bg-gray-100'}`}
+        className={`shrink-0 min-h-11 px-3 text-sm font-medium rounded-lg border border-gray-900 ${marking ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 hover:bg-gray-100'}`}
       >
         {marking ? 'Done marking' : 'Mark'}
       </button>
@@ -607,12 +616,12 @@ export default function ShelfReader() {
           onClick={() => { if (askBox) stopAskBox(); else { setAskBox(true); setMarking(false); setPendingMark(null); setInkTool(null); } }}
           aria-pressed={askBox}
           title="Drag a box around part of the page to ask the tutor about it"
-          className={`min-h-11 px-3 text-sm font-medium rounded-lg border border-indigo-700 ${askBox ? 'bg-white text-indigo-700' : 'bg-indigo-700 text-white hover:bg-indigo-800'}`}
+          className={`flex shrink-0 items-center gap-1.5 min-h-11 px-3 text-sm font-semibold rounded-lg border-2 border-indigo-700 ${askBox ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' : 'bg-indigo-700 text-white hover:bg-indigo-800'}`}
         >
-          {askBox ? 'Cancel ask' : 'Ask'}
+          <TutorIcon />{askBox ? 'Cancel ask' : 'Ask'}
         </button>
       )}
-    </>
+    </div>
   );
   const pageView = (
     <div ref={pageArea} className="p-3">
@@ -857,10 +866,6 @@ export default function ShelfReader() {
           <section className={`flex ${pageOnly ? 'flex-1' : 'basis-[45%]'} lg:basis-auto lg:flex-1 min-w-0 min-h-0 flex-col border-b lg:border-b-0 border-gray-200`}>
             <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-white border-b border-gray-200">
               {pageToolbar}
-              {pageOnly && (
-                <button onClick={() => changeListHidden(false)} title="Show your list and the contents beside the page"
-                  className={smallButton}>Your list</button>
-              )}
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto">{pageView}</div>
           </section>

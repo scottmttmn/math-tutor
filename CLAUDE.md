@@ -342,7 +342,7 @@ ESLint uses the Next.js core web vitals config. Run `npm run lint` before commit
 - **Only the tutor has a color**, Tailwind `indigo-700` (`indigo-50` for its replies and tints): **Ask tutor**, the drawer’s outlined choices, the drawer's edge and heading, Send/Ask in a chat, "Tutor reads". Nothing else uses indigo, and the tutor uses nothing else. Focus rings and links are ink.
 - **Solved** is a filled ink check (`SolvedCheck` in `common/Icons.tsx`) plus the word, everywhere (boards, Home, Shelf lists; the Shelf page's mark gets a filled label). No green.
 - Kinds wear their icon (`KindIcon`: Problem, Notes; `ShelfIcon` for books) on cards, in the board's title line and in **+ New**.
-- Controls are at least 44px tall (`min-h-11`) and labelled in words. The agreed board-toolbar exception uses named, titled 44px icon buttons for Full screen, current Paper and sweep Clear; below `lg`, Favorite is a named star, Board is named dots, and Mark solved reads Solved. One solid ink button per screen for its main action. Delete, Rename and Remove live in a `MoreMenu` ("⋯"), with an inline confirm for deletes.
+- Controls are at least 44px tall (`min-h-11`) and labelled in words. The compact board and text toolbars also use named, titled 44px icon buttons: boards have Full screen, current Paper and sweep Clear; texts have page arrows, Pen, Highlight, Eraser, Undo, Full screen and Your list. Text's dots menu holds Trim margins. Below `lg`, Favorite is a named star, Board is named dots, and Mark solved reads Solved. One solid ink button per screen for its main action. Delete, Rename and Remove live in a `MoreMenu` ("⋯"), with an inline confirm for deletes.
 - Red is only for errors and failed saves, always with words.
 
 ### Board frame

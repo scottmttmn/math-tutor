@@ -89,7 +89,7 @@ try {
   await page.getByRole('button', { name: 'Make folder' }).click();
   await folders.getByRole('link', { name: 'Open Chapter 2' }).waitFor();
   await page.getByRole('link', { name: 'Start reading' }).click();
-  await page.getByText('Page 1 of 2').waitFor();
+  await page.getByRole('button', { name: 'Page 1 of 2. Go to a page', exact: true }).waitFor();
 
   // Mark an exercise: drag a box on the page, keep the suggested name, and its board opens.
   await page.getByRole('button', { name: 'Mark', exact: true }).click();
@@ -149,7 +149,7 @@ try {
 
   // A second exercise on page 2 gets its own empty board; the first keeps its work.
   await page.getByRole('button', { name: 'Next page' }).click();
-  await page.getByText('Page 2 of 2').waitFor();
+  await page.getByRole('button', { name: 'Page 2 of 2. Go to a page', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Mark', exact: true }).click();
 
   // A box near the foot of a scrolled page stays drawn, its form opens beside it in view, and
@@ -215,11 +215,11 @@ try {
   // Full screen hides the page and gives the board the window; asking for help leaves it.
   const boardWidth = (await page.locator('.tl-canvas').boundingBox()).width;
   await page.getByRole('button', { name: 'Full screen' }).click();
-  await page.getByText('Page 1 of 2').waitFor({ state: 'hidden' });
+  await page.getByRole('button', { name: 'Page 1 of 2. Go to a page', exact: true }).waitFor({ state: 'hidden' });
   await page.waitForTimeout(300);
   assert.ok((await page.locator('.tl-canvas').boundingBox()).width > boardWidth * 1.5, 'the board fills the window');
   await page.getByRole('button', { name: 'Exit full screen' }).click();
-  await page.getByText('Page 1 of 2').waitFor();
+  await page.getByRole('button', { name: 'Page 1 of 2. Go to a page', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Full screen' }).click();
   await page.waitForTimeout(5000);
   await chooseTutor(page);
@@ -278,7 +278,7 @@ try {
   assert.match(await history.locator('li').first().innerText(), /Algebra drills/);
   await history.getByRole('button', { name: /^Open Exercise 1/ }).click();
   await exerciseHeading('Exercise 1').waitFor();
-  await page.getByText('Page 1 of 2').waitFor();
+  await page.getByRole('button', { name: 'Page 1 of 2. Go to a page', exact: true }).waitFor();
 
   // Removing a mark removes its board.
   await page.getByRole('button', { name: 'More for Exercise 1' }).click();
@@ -330,8 +330,8 @@ try {
     await page.mouse.up();
   };
   await page.getByRole('link', { name: /^Read at p\. \d+$/ }).click();
-  await page.getByText(/^Page \d of 2$/).waitFor();
-  if (await page.getByText('Page 1 of 2').count()) await page.getByRole('button', { name: 'Next page' }).click();
+  await page.getByRole('button', { name: /^Page \d of 2\. Go to a page$/ }).waitFor();
+  if (await page.getByRole('button', { name: 'Page 1 of 2. Go to a page', exact: true }).count()) await page.getByRole('button', { name: 'Next page' }).click();
   await page.getByRole('button', { name: 'Open Problem 3' }).click();
   await exerciseHeading('Problem 3').waitFor();
   await page.locator('.tl-image').waitFor();

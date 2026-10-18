@@ -179,7 +179,7 @@ try {
     await fresh.page.goto(`${origin}/`);
     await fresh.page.getByRole('link', { name: 'Open Geometry' }).click();
     await fresh.page.getByRole('link', { name: 'Start reading' }).click();
-    await fresh.page.getByText('Page 1 of 1').waitFor();
+    await fresh.page.getByRole('button', { name: 'Page 1 of 1. Go to a page', exact: true }).waitFor();
 
     // The saved board PDF is a real PDF: it goes in the library like any other.
     await fresh.page.goto(`${origin}/`);
