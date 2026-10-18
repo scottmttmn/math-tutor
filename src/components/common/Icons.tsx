@@ -50,6 +50,30 @@ export function FullScreenIcon() {
   return <Icon><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" /></Icon>;
 }
 
+export function ChevronIcon({ direction }: { direction: 'left' | 'right' }) {
+  return <Icon size={20}><path d={direction === 'left' ? 'm10 3-5 5 5 5' : 'm6 3 5 5-5 5'} /></Icon>;
+}
+
+export function PenIcon() {
+  return <Icon size={20}><path d="m3 10 7.5-7.5a1.4 1.4 0 0 1 2 2L5 12l-3 1zM9 4l3 3" /></Icon>;
+}
+
+export function HighlightIcon() {
+  return <Icon size={20}><path d="m5 8 5-6 4 4-6 5zM5 8l-2 3 2 2 3-2M2 14h10" /></Icon>;
+}
+
+export function EraserIcon() {
+  return <Icon size={20}><path d="m2 9 7-7 5 5-7 7H5zM6 5l5 5M7 14h7" /></Icon>;
+}
+
+export function UndoIcon() {
+  return <Icon size={20}><path d="M2 7h7a4 4 0 0 1 0 8M2 7l4-4M2 7l4 4" /></Icon>;
+}
+
+export function ListIcon() {
+  return <Icon size={20}><path d="M6 4h8M6 8h8M6 12h8M2 4h.5M2 8h.5M2 12h.5" /></Icon>;
+}
+
 /** The current sheet, with the same ruling as the board. */
 export function PaperIcon({ paper, size = 20 }: { paper: Paper; size?: number }) {
   return <Icon size={size}>

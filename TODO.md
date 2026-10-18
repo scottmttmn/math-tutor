@@ -61,6 +61,8 @@ A PDF is a **text**, added or dropped into the library in a folder of its own. I
 
 Read with edge taps, sideways swipes, arrow keys, printed page numbers, Contents, margin trimming and full screen. **Your list**, **Contents** and **Search** organize and find exercises, note pages, highlights and page ink by section. The list can be hidden to give the page more room.
 
+The compact text toolbar groups page arrows and drawing tools as named 44px icons, with Full screen and Your list icons, **Trim margins** in the Text menu, and direct **Mark** and **Ask** buttons.
+
 **Mark** boxes an Exercise or Note, creates its board and keeps a mark on the PDF. An exercise picture is placed automatically on an empty board. Several marked exercises can share one PDF board (**This board** / **Own board**), with a current exercise and separate solved states. On an upright tablet, **Page N** / **Back to board** swaps between the page and board.
 
 Pen, Highlight, Eraser and Undo work directly on PDF pages; ink is saved per page and included in backups. **Ask about the page** explains a boxed passage and **Save as note page** keeps the conversation on a note board. Exercise questions can include the preceding PDF text, limited to the exercise's page and at most 15 pages; the student can adjust or disable that context.
