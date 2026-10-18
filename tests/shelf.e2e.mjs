@@ -133,6 +133,24 @@ try {
   await page.getByText('Shelf hint.', { exact: true }).nth(1).waitFor();
   assert.deepEqual(requests.at(-1).messages.at(-1).content.filter((part) => part.type === 'image_url'), content.filter((part) => part.type === 'image_url'));
 
+  // The page returns beside the board and tutor on wide screens. Its rendered PDF width must
+  // not squeeze the board to a sliver and let the board toolbar spill across the conversation.
+  for (const width of [1600, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.waitForFunction(() => {
+      const page = document.querySelector('section[aria-label="Page"]')?.getBoundingClientRect();
+      const controls = document.querySelector('[aria-label="Board controls"]');
+      const board = controls?.closest('section')?.getBoundingClientRect();
+      const tutor = document.querySelector('aside[aria-label="Tutor"]')?.getBoundingClientRect();
+      if (!page || !board || !tutor || page.width < 1 || Math.abs(page.width - board.width) > 2) return false;
+      return [...controls.querySelectorAll('button')].every((button) => button.getBoundingClientRect().right <= tutor.left);
+    });
+    const tutor = page.getByRole('complementary', { name: 'Tutor' });
+    await tutor.getByRole('button', { name: 'Check my work', exact: true }).click({ trial: true });
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  console.log('PASS wide PDF, board and tutor columns share space without controls overlapping chat');
+
   // Solving shows on the page's mark; a reload returns to the same board with the stroke.
   // The tutor opened in its drawer; closing it leaves the page and the board.
   await page.getByRole('complementary', { name: 'Tutor' }).waitFor();

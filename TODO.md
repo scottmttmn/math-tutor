@@ -73,6 +73,8 @@ The compact toolbar has Full screen, current Paper, sweep Clear, a Board menu, F
 
 The tutor drawer's choices are Hint / Check my work / Feedback for Problems and Explain this / Check my notes for Notes, above the custom-question box and microphone. Opening/closing sends nothing and preserves drafts and active replies; hiding stops speech input, and reopening shows the latest reply. Every question carries a fresh board image, with readable close-ups for large boards; capture errors keep drafts. The five-second request interval and one-active-request limit apply across tutor calls.
 
+On wide screens the PDF page and its board share the space beside the tutor, keeping the board's controls out of the conversation.
+
 ### Tutor memory and check-ins
 
 **Tutor memory** holds About you, optional self-ratings, editable tutor topic notes, Favorites and the tutor's notebook. The tutor can update notes at the end of a reply when the work teaches it something; these are not automatic summaries of every session. The profile is kept locally, included in backups and shared with questions when enabled; the student can inspect what the tutor reads.
