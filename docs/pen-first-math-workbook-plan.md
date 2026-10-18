@@ -2,6 +2,8 @@
 
 Recorded September 28, 2026, from the product discussion with Scott.
 
+> Status note, October 18, 2026: this is a historical design discussion. tldraw is now the board canvas; PDFs are texts in Home's library and folders, with page ink, highlights and marked note boards. The Android app is built. The BOOX has not arrived, so device validation and a possible native pen layer remain pending. See [TODO.md](../TODO.md) for the current roadmap; implementation sequences and descriptions of the old workbook below record the earlier plan.
+
 > October 15, 2026: the built-in Complex Analysis workbook this refers to has been removed. Books now come in as PDFs on the Shelf, so read "the book" below as a Shelf PDF; the principles still apply.
 
 ## Intended experience
