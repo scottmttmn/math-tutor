@@ -343,8 +343,44 @@ test('chatgpt: a write-up caps the plan reply; a question does not', async () =>
   now += 5000;
   await (await request({ userQuestion: 'Help', canvasDetails: ['ink-top', 'ink-bottom'] })).text();
   assert.equal(options[1].maxOutputTokens, 16000);
-  assert.deepEqual(options[1].input.at(-1).content.filter((part) => part.type === 'input_image').map((part) => part.image_url),
+  assert.deepEqual(options[1].input[0].content.filter((part) => part.type === 'input_image').map((part) => part.image_url),
     ['board', 'ink-top', 'ink-bottom'].map((image) => `data:image/png;base64,${image}`));
+});
+
+test('ChatGPT preserves reference and board messages as history and memory change', async () => {
+  const { planTutorRequest } = load('src/lib/tutorPrompt.ts');
+  const { streamChatGPTResponse } = load('src/lib/chatgptPlan.ts', { '@/lib/siwc': { ChatGPTError: class extends Error {} } });
+  const sent = [];
+  const chatgpt = () => ({ streamResponse: async (options) => { sent.push(options); return {}; } });
+  const modelConfig = { provider: 'chatgpt', model: 'gpt-6.1-sol', baseUrl: '' };
+  const body = {
+    modelConfig, problemStatement: 'Find x.', canvasImage: 'board', problemImage: 'figure', canvasDetails: ['detail'],
+    bookContext: { title: 'Book', fromPage: 1, toPage: 2, text: 'Definitions' },
+    takeNotes: true, chatHistory: [], userQuestion: 'Check my work.',
+  };
+  const send = async (changes = {}, model = modelConfig.model) => {
+    await new Response(streamChatGPTResponse(chatgpt, { ...modelConfig, model }, planTutorRequest({ ...body, ...changes }))).text();
+    return sent.at(-1);
+  };
+  const first = await send();
+  const second = await send({
+    learnerProfile: 'New tutor observations', userQuestion: 'Explain that step.',
+    chatHistory: [{ role: 'user', content: 'Check my work.' }, { role: 'assistant', content: 'Check the sign.' }],
+  });
+  assert.equal(first.instructions, second.instructions, 'creating the first memory must not change instructions');
+  assert.deepEqual(first.input.slice(0, 2), second.input.slice(0, 2));
+  assert.match(JSON.stringify(second.input[2]), /New tutor observations/);
+  assert.deepEqual(second.input.at(-1), { role: 'user', content: 'Explain that step.' });
+  assert.doesNotMatch(JSON.stringify(second.input.slice(2)), /prompt_cache_breakpoint|input_image/);
+  const changed = await send({ canvasImage: 'new selection', canvasDetails: ['new detail'] });
+  assert.deepEqual(first.input[0], changed.input[0], 'book pages still match when the board changes');
+  assert.notDeepEqual(first.input[1], changed.input[1]);
+  assert.match(JSON.stringify(changed.input[1]), /new selection/);
+  assert.doesNotMatch(JSON.stringify(changed.input[1]), /base64,board"/);
+  assert.equal(second.promptCacheMode, undefined, 'ChatGPT-plan connections reject explicit cache controls');
+  assert.doesNotMatch(JSON.stringify(second.input), /prompt_cache_breakpoint/);
+  const empty = await send({ canvasImage: '', problemImage: undefined, canvasDetails: [], problemStatement: '', bookContext: undefined });
+  assert.deepEqual(empty.input, [{ role: 'user', content: 'Check my work.' }]);
 });
 
 for (const provider of ['anthropic', 'openai-compatible']) {

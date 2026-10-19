@@ -359,11 +359,14 @@ export interface TutorRequest extends TutorBoardImages {
 /** One request as the model gets it (planTutorRequest in src/lib/tutorPrompt.ts), for any provider. */
 export interface TutorPlan {
   systemPrompt: string;
-  /** The conversation's first user text (learner profile, book pages, check-in topics), or ''. */
-  preface: string;
+  /** Shared reference text (book pages or check-in topics), or ''. */
+  reference: string;
+  /** Fresh learner memory, kept separate from reusable reference material. */
+  profile: string;
   history: Pick<ChatMessage, 'role' | 'content'>[];
-  /** The latest user turn: labelled images and the question. */
-  latest: UserPart[];
+  /** The current problem and labelled board images, independent of the question and history. */
+  board: UserPart[];
+  question: string;
   maxTokens: number;
 }
 
