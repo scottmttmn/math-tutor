@@ -21,6 +21,13 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // Onyx's pen SDK for BOOX tablets (BooxPenPlugin) is only published here, and only over http,
+        // so this repository may serve Onyx's own packages and nothing else.
+        maven {
+            url "http://repo.boox.com/repository/maven-public/"
+            allowInsecureProtocol = true
+            content { includeGroupByRegex "com\\.onyx\\..*" }
+        }
     }
 }
 
