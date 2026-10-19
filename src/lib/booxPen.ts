@@ -23,6 +23,20 @@ export function strokePoints(flat: number[]): BooxPenPoint[] {
   return points;
 }
 
+/** The stroke's path with points added so that none are more than `step` CSS px apart. */
+export function sweep(points: BooxPenPoint[], step: number): BooxPenPoint[] {
+  const result = points.slice(0, 1);
+  for (let i = 1; i < points.length; i++) {
+    const [a, b] = [points[i - 1], points[i]];
+    const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
+    for (let n = 1; n <= steps; n++) {
+      const t = n / steps;
+      result.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, pressure: a.pressure + (b.pressure - a.pressure) * t, ms: a.ms + (b.ms - a.ms) * t });
+    }
+  }
+  return result;
+}
+
 /** The pen test's numbers for one SDK stroke. The SDK doesn't say when the page got each sample. */
 export function strokeStats(points: BooxPenPoint[]): PenTestStats | null {
   if (points.length < 2) return null;
