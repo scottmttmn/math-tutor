@@ -2,7 +2,7 @@
 // (github.com/openai/sign-in-with-chatgpt-devkit @ f723814, packages/local/src).
 // Changes: relative imports drop the .js suffix so Next's bundler resolves them;
 // streamResponse validates and forwards input_image parts, and returns the token
-// input/output/reasoning usage reported in response.completed, and forwards maxOutputTokens as max_output_tokens.
+// input/output/cached-input/reasoning usage reported in response.completed, and forwards maxOutputTokens as max_output_tokens.
 // Licensed under the Sign-in with ChatGPT DevKit Noncommercial License v1.0; see ./LICENSE.
 
 import { apiError, ChatGPTError, fetchRemote, isObject, jsonResponse } from "./errors";
@@ -87,10 +87,12 @@ export async function streamResponse(
       completed = true;
       const reported = isObject(event.response) && isObject(event.response.usage) ? event.response.usage : undefined;
       if (reported && typeof reported.input_tokens === "number" && typeof reported.output_tokens === "number") {
+        const cached = isObject(reported.input_tokens_details) ? reported.input_tokens_details.cached_tokens : undefined;
         const reasoning = isObject(reported.output_tokens_details) ? reported.output_tokens_details.reasoning_tokens : undefined;
         usage = {
           inputTokens: reported.input_tokens,
           outputTokens: reported.output_tokens,
+          ...(typeof cached === "number" ? { cachedInputTokens: cached } : {}),
           ...(typeof reasoning === "number" ? { reasoningTokens: reasoning } : {}),
         };
       }

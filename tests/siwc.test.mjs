@@ -41,7 +41,7 @@ async function fakeOpenAI() {
         return new Response([
           'data: {"type":"response.output_text.delta","delta":"Try "}\n\n',
           'data: {"type":"response.output_text.delta","delta":"factoring."}\n\n',
-          'data: {"type":"response.completed","response":{"usage":{"input_tokens":12,"output_tokens":13,"output_tokens_details":{"reasoning_tokens":10}}}}\n\n',
+          'data: {"type":"response.completed","response":{"usage":{"input_tokens":12,"output_tokens":13,"input_tokens_details":{"cached_tokens":8},"output_tokens_details":{"reasoning_tokens":10}}}}\n\n',
         ].join(''), { status: 200, headers: { 'content-type': 'text/event-stream' } });
       default:
         return json({ error: 'not_found' }, 404);
@@ -102,7 +102,7 @@ test('signs in through the loopback callback, lists models, streams a reply, ref
   let text = '';
   const reply = await chatgpt.streamResponse({ model: 'gpt-sol', input: 'Help', onDelta: (delta) => { text += delta; } });
   assert.equal(text, 'Try factoring.');
-  assert.deepEqual(reply.usage, { inputTokens: 12, outputTokens: 13, reasoningTokens: 10 });
+  assert.deepEqual(reply.usage, { inputTokens: 12, outputTokens: 13, cachedInputTokens: 8, reasoningTokens: 10 });
   assert.equal(openai.calls.at(-1).headers.authorization, 'Bearer access-1');
 
   // An access token about to expire is refreshed before the request.
@@ -116,6 +116,21 @@ test('signs in through the loopback callback, lists models, streams a reply, ref
   assert.equal(openai.calls.at(-1).body.token, 'refresh-2');
   assert.equal(store.peek().profiles[0].credentials, undefined);
 });
+
+for (const inputDetails of [undefined, null, {}, { cached_tokens: null }, { cached_tokens: 0 }]) {
+  test(`ChatGPT cached input preserves zero and leaves missing metadata unknown: ${JSON.stringify(inputDetails)}`, async () => {
+    const errors = load('src/lib/siwc/errors.ts');
+    errors.setRemoteFetch(async () => new Response(`data: ${JSON.stringify({ type: 'response.completed', response: {
+      usage: { input_tokens: 12, output_tokens: 13, input_tokens_details: inputDetails },
+    } })}\n\n`, { headers: { 'content-type': 'text/event-stream' } }));
+    const { streamResponse } = load('src/lib/siwc/responses.ts', { './errors': errors });
+    const reply = await streamResponse('test-access', { model: 'test', input: 'Help' }, new AbortController().signal);
+    assert.deepEqual(reply.usage, {
+      inputTokens: 12, outputTokens: 13,
+      ...(inputDetails?.cached_tokens === 0 ? { cachedInputTokens: 0 } : {}),
+    });
+  });
+}
 
 test('the Node loopback ignores other requests and hands back the matching callback', async () => {
   const { listenForCallback } = load('src/lib/siwc/loopback.ts');

@@ -128,6 +128,7 @@ export function streamAnthropicResponse(modelConfig: ModelConfig, plan: TutorPla
         if (reported) controller.enqueue(sse({ type: 'usage', usage: {
           inputTokens: reported.input_tokens + (reported.cache_creation_input_tokens ?? 0) + (reported.cache_read_input_tokens ?? 0),
           outputTokens: reported.output_tokens,
+          ...(typeof reported.cache_read_input_tokens === 'number' ? { cachedInputTokens: reported.cache_read_input_tokens } : {}),
           provider: 'anthropic',
         } }));
         if (stopReason === 'max_tokens' || stopReason === 'model_context_window_exceeded') controller.enqueue(sse({ type: 'error', error: 'The tutor ran out of room before finishing its reply. Please ask again.' }));
@@ -162,9 +163,12 @@ function compatibleUsage(chunk: unknown): TokenUsage | undefined {
     || typeof reported.prompt_tokens !== 'number' || typeof reported.completion_tokens !== 'number') return;
   const details = 'completion_tokens_details' in reported ? reported.completion_tokens_details : undefined;
   const reasoning = details && typeof details === 'object' && 'reasoning_tokens' in details ? details.reasoning_tokens : undefined;
+  const inputDetails = 'prompt_tokens_details' in reported ? reported.prompt_tokens_details : undefined;
+  const cached = inputDetails && typeof inputDetails === 'object' && 'cached_tokens' in inputDetails ? inputDetails.cached_tokens : undefined;
   return {
     inputTokens: reported.prompt_tokens,
     outputTokens: reported.completion_tokens,
+    ...(typeof cached === 'number' ? { cachedInputTokens: cached } : {}),
     ...(typeof reasoning === 'number' ? { reasoningTokens: reasoning } : {}),
     provider: 'openai-compatible',
   };
