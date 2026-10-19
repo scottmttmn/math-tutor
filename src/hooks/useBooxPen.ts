@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { b64Vecs, createShapeId, DefaultColorStyle, DefaultDashStyle, DefaultSizeStyle, useValue, type Editor, type TLDrawShape, type TLShapePartial } from 'tldraw';
-import { BooxPen, booxPenAvailable, boxOf, overlaps, strokePoints } from '@/lib/booxPen';
+import { BooxPen, booxPenAvailable, boxOf, overlaps, strokePoints, sweep } from '@/lib/booxPen';
 import { deviceToggle } from '@/hooks/useDeviceToggle';
 
 /** Board → BOOX pen (experiment), remembered on this device; only offered on a BOOX tablet. */
@@ -49,6 +49,9 @@ export function useBooxPen(editor: Editor | null) {
     const root = editor.getContainer();
     let stopped = false;
     let started = false;
+    // Until the SDK has really started (and if it never does) the pen stays tldraw's.
+    let running = false;
+    let failed = false;
     let paused = false;
     let lastRegion = '';
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -67,7 +70,7 @@ export function useBooxPen(editor: Editor | null) {
     };
 
     const sync = () => {
-      if (stopped) return;
+      if (stopped || failed) return;
       const area = measure();
       const covered = Boolean(area) && [...document.querySelectorAll(OVERLAYS)].some((element) => {
         const box = boxOf(element.getBoundingClientRect());
@@ -81,7 +84,10 @@ export function useBooxPen(editor: Editor | null) {
       if (!started) {
         started = true;
         lastRegion = key;
-        void BooxPen.start({ ...area, width: RAW_WIDTH }).catch(() => { started = false; });
+        void BooxPen.start({ ...area, width: RAW_WIDTH }).then(
+          () => { running = true; },
+          () => { started = false; failed = true; },
+        );
         return;
       }
       if (key !== lastRegion) {
@@ -114,6 +120,7 @@ export function useBooxPen(editor: Editor | null) {
 
     // The SDK has the pen on the canvas; if the WebView still hears it, tldraw mustn't draw it twice.
     const blockPen = (event: PointerEvent) => {
+      if (!running || paused) return;
       if (event.pointerType !== 'pen' || !(event.target instanceof Element) || !event.target.closest('.tl-canvas')) return;
       event.stopPropagation();
       event.preventDefault();
@@ -146,7 +153,8 @@ export function useBooxPen(editor: Editor | null) {
     });
     listen('erase', (flat) => {
       const margin = ERASER_REACH / editor.getZoomLevel();
-      const hit = new Set(strokePoints(flat).flatMap(({ x, y }) =>
+      // Samples of a fast stroke are far apart, so test the path between them too.
+      const hit = new Set(sweep(strokePoints(flat), ERASER_REACH / 2).flatMap(({ x, y }) =>
         editor.getShapesAtPoint(editor.screenToPage({ x, y }), { margin, hitInside: false })
           .filter((shape) => shape.type === 'draw' && !shape.isLocked)
           .map((shape) => shape.id)));

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import load from './load-typescript.mjs';
 
 const capacitor = { Capacitor: { isNativePlatform: () => false, getPlatform: () => 'web' }, registerPlugin: () => ({}) };
-const { booxPenAvailable, boxOf, overlaps, strokePoints, strokeStats } = load('src/lib/booxPen.ts', { '@capacitor/core': capacitor });
+const { booxPenAvailable, boxOf, overlaps, strokePoints, strokeStats, sweep } = load('src/lib/booxPen.ts', { '@capacitor/core': capacitor });
 
 test('the plugin\'s flat stroke becomes points, dropping a partial sample', () => {
   assert.deepEqual(strokePoints([1, 2, 0.5, 0, 3, 4, 1, 8, 9]), [
@@ -27,4 +27,11 @@ test('hidden elements have no box, and only overlapping controls are excluded', 
 
 test('outside the Android app the BOOX pen is never offered', async () => {
   assert.equal(await booxPenAvailable(), false);
+});
+
+test('a fast stroke is filled in between samples, so the eraser follows its whole path', () => {
+  const path = sweep(strokePoints([0, 0, 0, 0, 10, 0, 1, 10]), 3);
+  assert.equal(path.length, 5);
+  assert.ok(path.every((point, i) => i === 0 || point.x - path[i - 1].x <= 3));
+  assert.deepEqual(path.at(-1), { x: 10, y: 0, pressure: 1, ms: 10 });
 });

@@ -31,6 +31,7 @@ function fakeBooxBridge() {
     async nativePromise(plugin, method, options) {
       if (plugin !== 'BooxPen') throw new Error(`${plugin} is not stood in for`);
       calls.push({ method, options });
+      if (method === 'start' && window.__failStart) throw new Error('The BOOX pen couldn\'t start.');
       return method === 'status' ? { onyx: true, active: false } : undefined;
     },
     nativeCallback(plugin, method, options, callback) {
@@ -43,6 +44,18 @@ function fakeBooxBridge() {
       return Promise.resolve(id);
     },
   };
+}
+
+/** Whether a pen pointerdown on the canvas is stopped before tldraw sees it. */
+function penEventBlocked(target) {
+  return target.evaluate(() => {
+    const canvas = document.querySelector('.tl-canvas');
+    const { left, top } = canvas.getBoundingClientRect();
+    const event = new PointerEvent('pointerdown', { pointerType: 'pen', bubbles: true, cancelable: true, clientX: left + 50, clientY: top + 50 });
+    canvas.dispatchEvent(event);
+    canvas.dispatchEvent(new PointerEvent('pointerup', { pointerType: 'pen', bubbles: true, cancelable: true, clientX: left + 50, clientY: top + 50 }));
+    return event.defaultPrevented;
+  });
 }
 
 try {
@@ -84,8 +97,11 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'resume'));
 
-  // The eraser end erases the stroke it crosses; undo brings it back.
-  await page.evaluate(([x, y]) => window.__boox.emit('erase', [x, y, 0.5, 0, x + 4, y + 2, 0.5, 8]), [box.x + 300, box.y + 240]);
+  // While the SDK has the pen, pen events the WebView still hears don't reach tldraw.
+  assert.equal(await penEventBlocked(page), true);
+
+  // The eraser end erases the stroke it crosses, even between two far-apart samples; undo brings it back.
+  await page.evaluate(([x, y]) => window.__boox.emit('erase', [x, y - 80, 0.5, 0, x, y + 80, 0.5, 8]), [box.x + 300, box.y + 240]);
   await page.waitForFunction(() => document.querySelectorAll('[data-shape-type="draw"]').length === 0);
   await page.keyboard.press('Control+z');
   await page.locator('[data-shape-type="draw"]').first().waitFor();
@@ -103,6 +119,24 @@ try {
   for (let i = 0; i <= 30; i += 1) testStroke.push(testCanvas.x + 100 + i * 6, testCanvas.y + 100, 0.5, i * 4);
   await page.evaluate((points) => window.__boox.emit('stroke', points), testStroke);
   await page.getByText(/Last stroke: \d+ samples\/s · drawn by the BOOX pen SDK · longest gap 4 ms/).waitFor();
+  // A rotation resizes the canvas without reloading the app, so the SDK's region follows it.
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'setRegion' && call.options.region.w < 800));
+
+  // If the SDK can't start on a tablet, the pen stays tldraw's instead of drawing nothing.
+  const failing = await browser.newPage({ viewport: { width: 1024, height: 768 } });
+  // tldraw gets the made-up pen event here and can't capture its pointer, which is fine.
+  failing.on('pageerror', (error) => { if (!error.message.includes('setPointerCapture')) errors.push(error.message); });
+  await failing.addInitScript(fakeBooxBridge);
+  await failing.addInitScript(() => { window.__failStart = true; });
+  await failing.goto(`${origin}/board?new=problem`);
+  await failing.locator('.tl-canvas').waitFor();
+  await failing.getByRole('group', { name: 'Board controls' }).getByRole('button', { name: 'Board menu' }).click();
+  await failing.getByRole('menuitemcheckbox', { name: 'BOOX pen (experiment)', exact: true }).click();
+  await failing.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'start'));
+  await failing.waitForTimeout(200);
+  assert.equal(await penEventBlocked(failing), false);
+  assert.equal((await failing.evaluate(() => window.__boox.calls.filter((call) => call.method === 'start').length)), 1, 'a failed start is not retried on every change');
 
   // Anywhere else (a browser, or the app on another tablet) it isn't offered.
   const plain = await browser.newPage({ viewport: { width: 1024, height: 768 } });
