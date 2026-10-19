@@ -27,6 +27,8 @@ export type ChatRole = 'user' | 'assistant';
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
+  /** Part of inputTokens reused from cache, not cache writes. Omitted when not reported. */
+  cachedInputTokens?: number;
   /** Part of outputTokens, not additional tokens. Omitted when the provider does not report it. */
   reasoningTokens?: number;
   /** Older saved usage came only from the ChatGPT plan. */

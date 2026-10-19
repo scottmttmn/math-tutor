@@ -114,17 +114,34 @@ test('Anthropic usage includes cache reads/writes and takes cumulative counts wi
   })());
   const events = streamEvents(await (await request()).text());
   assert.deepEqual(events.filter((event) => event.type === 'usage'), [
-    { type: 'usage', usage: { inputTokens: 480, outputTokens: 20, provider: 'anthropic' } },
+    { type: 'usage', usage: { inputTokens: 480, outputTokens: 20, cachedInputTokens: 350, provider: 'anthropic' } },
   ]);
   assert.equal(events.at(-1).type, 'message_stop');
 });
 
-for (const metadata of ['standard', 'groq', 'no reasoning', 'zero reasoning', 'missing']) {
+for (const cached of [0, null, undefined]) {
+  test(`Anthropic cache reads stay distinct from writes: ${cached}`, async () => {
+    const { request } = routeHarness(false, undefined, () => (async function* () {
+      yield { type: 'message_start', message: { usage: {
+        input_tokens: 30, cache_creation_input_tokens: 100, cache_read_input_tokens: cached, output_tokens: 1,
+      } } };
+      yield { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 20 } };
+    })());
+    const events = streamEvents(await (await request()).text());
+    assert.deepEqual(events.find((event) => event.type === 'usage')?.usage, {
+      inputTokens: 130, outputTokens: 20, provider: 'anthropic',
+      ...(cached === 0 ? { cachedInputTokens: 0 } : {}),
+    });
+  });
+}
+
+for (const metadata of ['standard', 'groq', 'no reasoning', 'zero reasoning', 'no cache', 'zero cache', 'null cache', 'missing']) {
   test(`compatible streaming usage: ${metadata}`, async () => {
     const { request, calls } = routeHarness(false, () => (async function* () {
       yield { choices: [{ delta: { content: 'A hint.' } }] };
       const usage = { prompt_tokens: 20000, completion_tokens: 734,
         ...(metadata === 'no reasoning' ? {} : { completion_tokens_details: { reasoning_tokens: metadata === 'zero reasoning' ? 0 : 500 } }),
+        ...(metadata === 'no cache' ? {} : { prompt_tokens_details: { cached_tokens: metadata === 'null cache' ? null : metadata === 'zero cache' ? 0 : 8000 } }),
       };
       if (metadata !== 'missing') yield { choices: [], ...(metadata === 'groq' ? { x_groq: { usage } } : { usage }) };
     })());
@@ -135,6 +152,7 @@ for (const metadata of ['standard', 'groq', 'no reasoning', 'zero reasoning', 'm
     if (metadata === 'missing') assert.equal(usage, undefined);
     else assert.deepEqual(usage, { inputTokens: 20000, outputTokens: 734, provider: 'openai-compatible',
       ...(metadata === 'no reasoning' ? {} : { reasoningTokens: metadata === 'zero reasoning' ? 0 : 500 }),
+      ...(['no cache', 'null cache'].includes(metadata) ? {} : { cachedInputTokens: metadata === 'zero cache' ? 0 : 8000 }),
     });
     assert.equal(events.at(-1).type, 'message_stop');
   });

@@ -178,7 +178,7 @@ try {
     }
     await route.fulfill({ status: 200, headers: { ...cors, 'Content-Type': 'text/event-stream' }, body: sseFrames([
       ['', { type: 'response.output_text.delta', delta: 'What is 2x on its own?' }],
-      ['', { type: 'response.completed', response: { usage: { input_tokens: 120, output_tokens: 9 } } }],
+      ['', { type: 'response.completed', response: { usage: { input_tokens: 120, output_tokens: 9, input_tokens_details: { cached_tokens: 80 } } } }],
     ]) });
   });
   await askTutor();
@@ -204,6 +204,7 @@ try {
   await askTutor();
   await app.getByText('What is 2x on its own?').waitFor();
   await app.getByText('120 input · 9 output', { exact: true }).waitFor();
+  await app.getByText('Input includes 80 cached tokens', { exact: true }).waitFor();
   await app.getByRole('link', { name: 'Manage ChatGPT usage' }).waitFor();
   const reply = openaiCalls.find((call) => call.url.endsWith('/v1/responses'));
   assert.equal(reply.headers.authorization, 'Bearer chatgpt-access-1');

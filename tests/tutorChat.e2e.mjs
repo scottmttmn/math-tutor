@@ -7,19 +7,22 @@ import { chromium } from 'playwright';
 
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const reply = String.raw`**Modulus:** \(a_1 + b_2\), $x^2$, \[\frac{1}{2}\], $$\sqrt{z}$$`;
-const frames = [
+const replyFrames = (cachedInputTokens) => [
   { type: 'model', model: 'gemini-3.7-flash' },
   { type: 'text_delta', content: reply.slice(0, 20) },
   { type: 'text_delta', content: reply.slice(20) },
-  { type: 'usage', usage: { inputTokens: 20000, outputTokens: 734, reasoningTokens: 500, provider: 'openai-compatible' } },
+  { type: 'usage', usage: { inputTokens: 20000, outputTokens: 734, cachedInputTokens, reasoningTokens: 500, provider: 'openai-compatible' } },
   { type: 'message_stop' },
 ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join('');
+const frames = replyFrames(8000);
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: frames }));
+  const cachedCounts = [8000, 0, undefined];
+  let replyIndex = 0;
+  await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: replyFrames(cachedCounts[replyIndex++]) }));
   await page.goto(`${origin}/board?new=note`);
   await page.locator('.tl-canvas').waitFor();
   await chooseTutor(page);
@@ -30,6 +33,7 @@ try {
   await page.getByText('Answered with gemini-3.7-flash after a quota limit').waitFor();
   await page.getByText('20,734 tokens this request', { exact: true }).waitFor();
   await page.getByText('20,000 input · 734 output (including 500 reasoning)', { exact: true }).waitFor();
+  await page.getByText('Input includes 8,000 cached tokens', { exact: true }).waitFor();
   assert.equal(await page.getByRole('link', { name: 'Manage ChatGPT usage' }).count(), 0);
 
   const box = page.getByPlaceholder('Ask your own question…');
@@ -52,17 +56,28 @@ try {
   assert.equal(JSON.parse((await sent).postData()).userQuestion, 'Explain\nmodulus.');
   assert.equal(await box.inputValue(), '');
   await page.locator('.tutor-content').nth(1).locator('.katex').nth(3).waitFor();
+  await page.getByText('Input includes 0 cached tokens', { exact: true }).waitFor();
 
   await page.reload();
   await openTutor(page);
   await page.getByText('Answered with gemini-3.7-flash after a quota limit').first().waitFor();
   assert.equal(await chat().locator('.katex').count(), 4);
   await page.getByText('20,000 input · 734 output (including 500 reasoning)', { exact: true }).first().waitFor();
+  await page.getByText('Input includes 8,000 cached tokens', { exact: true }).first().waitFor();
+  await page.getByText('Input includes 0 cached tokens', { exact: true }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByText('20,000 input · 734 output (including 500 reasoning)', { exact: true }).last().scrollIntoViewIfNeeded();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await page.screenshot({ path: join(tmpdir(), 'tutor-math-mobile.png') });
   console.log('PASS chat math, wrapping follow-ups, fallback metadata, reload, and mobile layout');
+
+  // Missing cache metadata (also absent on older saved replies) must not be displayed as zero.
+  await box.fill('Explain again.');
+  await page.getByRole('button', { name: 'Send', exact: true }).and(page.locator(':enabled')).waitFor({ timeout: 10_000 });
+  await box.press('Enter');
+  await page.getByText('20,734 tokens this request', { exact: true }).nth(2).waitFor();
+  assert.equal(await page.getByText(/Input includes .* cached tokens/).count(), 2);
+  console.log('PASS zero and missing cached-input counts');
 
   // A board written while zoomed out spans a large page area; its snapshot must stay small.
   const wide = await browser.newPage({ viewport: { width: 1440, height: 960 } });

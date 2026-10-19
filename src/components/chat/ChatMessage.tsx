@@ -35,6 +35,9 @@ export default function ChatMessage({ message }: Props) {
               {message.usage.inputTokens.toLocaleString()} input · {message.usage.outputTokens.toLocaleString()} output
               {message.usage.reasoningTokens !== undefined && <> (including {message.usage.reasoningTokens.toLocaleString()} reasoning)</>}
             </div>
+            {message.usage.cachedInputTokens !== undefined && (
+              <div>Input includes {message.usage.cachedInputTokens.toLocaleString()} cached tokens</div>
+            )}
             {(message.usage.provider === undefined || message.usage.provider === 'chatgpt') && (
               <a href={CHATGPT_USAGE_URL} target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-700">
                 Manage ChatGPT usage
