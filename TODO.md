@@ -69,6 +69,8 @@ Pen, Highlight, Eraser and Undo work directly on PDF pages; ink is saved per pag
 
 ### Boards and tutor controls
 
+- [x] Break down each reply's reported token usage into input, output and total across providers, with reasoning shown as part of output when reported.
+
 Problem and Notes boards use tldraw, autosave, restore after reload, and start at pen size S / solid dash. Paper choices are Blank, Lined and Grid. **Add picture** accepts an image or a PDF's first page; **Put on board** places it behind the writing. This replaces the old Single problem flow.
 
 The compact toolbar has Full screen, current Paper, sweep Clear, a Board menu, Favorite, Solved and one **Ask tutor** toggle. Board holds Hide drawing tools, PNG/PDF export and, on free boards, TeX write-up. **Show tools** restores hidden tools. Pen styles collapse behind a remembered color/size chip, opening the native controls on tap and closing on a stroke or Esc.

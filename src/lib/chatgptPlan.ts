@@ -97,7 +97,7 @@ export function streamChatGPTResponse(
         if (cancelled) return;
         if (usage) {
           controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ type: 'usage', usage })}\n\n`)
+            encoder.encode(`data: ${JSON.stringify({ type: 'usage', usage: { ...usage, provider: 'chatgpt' } })}\n\n`)
           );
         }
         controller.enqueue(

@@ -2,7 +2,7 @@
 // (github.com/openai/sign-in-with-chatgpt-devkit @ f723814, packages/local/src).
 // Changes: relative imports drop the .js suffix so Next's bundler resolves them;
 // ResponseInputMessage.content also accepts input_text / input_image parts;
-// streamResponse also returns token usage (ResponseUsage); StreamResponseOptions.maxOutputTokens;
+// streamResponse also returns input/output/reasoning token usage (ResponseUsage); StreamResponseOptions.maxOutputTokens;
 // ChatGPTConfig takes the credential store and the loopback listener (CredentialStore,
 // CallbackListener) instead of building them, so the SDK also runs in a browser.
 // Licensed under the Sign-in with ChatGPT DevKit Noncommercial License v1.0; see ./LICENSE.
@@ -106,6 +106,8 @@ export interface ResponseInputMessage {
 export interface ResponseUsage {
   inputTokens: number;
   outputTokens: number;
+  /** Math Tutor: reasoning is a subset of outputTokens, when reported. */
+  reasoningTokens?: number;
 }
 
 export interface StreamResponseOptions {

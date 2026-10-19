@@ -41,7 +41,7 @@ async function fakeOpenAI() {
         return new Response([
           'data: {"type":"response.output_text.delta","delta":"Try "}\n\n',
           'data: {"type":"response.output_text.delta","delta":"factoring."}\n\n',
-          'data: {"type":"response.completed","response":{"usage":{"input_tokens":12,"output_tokens":3}}}\n\n',
+          'data: {"type":"response.completed","response":{"usage":{"input_tokens":12,"output_tokens":13,"output_tokens_details":{"reasoning_tokens":10}}}}\n\n',
         ].join(''), { status: 200, headers: { 'content-type': 'text/event-stream' } });
       default:
         return json({ error: 'not_found' }, 404);
@@ -102,7 +102,7 @@ test('signs in through the loopback callback, lists models, streams a reply, ref
   let text = '';
   const reply = await chatgpt.streamResponse({ model: 'gpt-sol', input: 'Help', onDelta: (delta) => { text += delta; } });
   assert.equal(text, 'Try factoring.');
-  assert.deepEqual(reply.usage, { inputTokens: 12, outputTokens: 3 });
+  assert.deepEqual(reply.usage, { inputTokens: 12, outputTokens: 13, reasoningTokens: 10 });
   assert.equal(openai.calls.at(-1).headers.authorization, 'Bearer access-1');
 
   // An access token about to expire is refreshed before the request.
