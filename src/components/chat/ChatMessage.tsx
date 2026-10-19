@@ -30,10 +30,16 @@ export default function ChatMessage({ message }: Props) {
         <TutorContent content={message.content} markdown={!isUser} />
         {message.usage && (
           <div className="mt-1.5 pt-1.5 border-t border-gray-200 text-xs text-gray-500">
-            {(message.usage.inputTokens + message.usage.outputTokens).toLocaleString()} tokens on your ChatGPT plan ·{' '}
-            <a href={CHATGPT_USAGE_URL} target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-700">
-              Manage usage
-            </a>
+            <div>{(message.usage.inputTokens + message.usage.outputTokens).toLocaleString()} tokens this request</div>
+            <div>
+              {message.usage.inputTokens.toLocaleString()} input · {message.usage.outputTokens.toLocaleString()} output
+              {message.usage.reasoningTokens !== undefined && <> (including {message.usage.reasoningTokens.toLocaleString()} reasoning)</>}
+            </div>
+            {(message.usage.provider === undefined || message.usage.provider === 'chatgpt') && (
+              <a href={CHATGPT_USAGE_URL} target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-700">
+                Manage ChatGPT usage
+              </a>
+            )}
           </div>
         )}
         {!message.content && (

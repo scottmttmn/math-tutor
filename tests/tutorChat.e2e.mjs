@@ -11,6 +11,7 @@ const frames = [
   { type: 'model', model: 'gemini-3.7-flash' },
   { type: 'text_delta', content: reply.slice(0, 20) },
   { type: 'text_delta', content: reply.slice(20) },
+  { type: 'usage', usage: { inputTokens: 20000, outputTokens: 734, reasoningTokens: 500, provider: 'openai-compatible' } },
   { type: 'message_stop' },
 ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join('');
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
@@ -27,6 +28,9 @@ try {
   assert.equal(await chat().locator('.katex').count(), 4);
   assert.equal(await chat().locator('.katex-display').count(), 2);
   await page.getByText('Answered with gemini-3.7-flash after a quota limit').waitFor();
+  await page.getByText('20,734 tokens this request', { exact: true }).waitFor();
+  await page.getByText('20,000 input · 734 output (including 500 reasoning)', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('link', { name: 'Manage ChatGPT usage' }).count(), 0);
 
   const box = page.getByPlaceholder('Ask your own question…');
   const oneLine = (await box.boundingBox()).height;
@@ -53,7 +57,9 @@ try {
   await openTutor(page);
   await page.getByText('Answered with gemini-3.7-flash after a quota limit').first().waitFor();
   assert.equal(await chat().locator('.katex').count(), 4);
+  await page.getByText('20,000 input · 734 output (including 500 reasoning)', { exact: true }).first().waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByText('20,000 input · 734 output (including 500 reasoning)', { exact: true }).last().scrollIntoViewIfNeeded();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await page.screenshot({ path: join(tmpdir(), 'tutor-math-mobile.png') });
   console.log('PASS chat math, wrapping follow-ups, fallback metadata, reload, and mobile layout');

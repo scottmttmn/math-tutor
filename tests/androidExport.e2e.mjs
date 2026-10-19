@@ -160,6 +160,7 @@ try {
     await route.fulfill({ status: 200, headers: { ...cors, 'Content-Type': 'text/event-stream' }, body: sseFrames([
       ['', { id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'gemini-3.8-flash', choices: [{ index: 0, delta: { role: 'assistant', content: 'Look at the constant term.' }, finish_reason: null }] }],
       ['', { id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'gemini-3.8-flash', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }],
+      ['', { choices: [], usage: { prompt_tokens: 200, completion_tokens: 30, completion_tokens_details: { reasoning_tokens: 10 } } }],
       ['', '[DONE]'],
     ]) });
   });
@@ -202,6 +203,8 @@ try {
   await settings.getByRole('button', { name: 'Save', exact: true }).click();
   await askTutor();
   await app.getByText('What is 2x on its own?').waitFor();
+  await app.getByText('120 input · 9 output', { exact: true }).waitFor();
+  await app.getByRole('link', { name: 'Manage ChatGPT usage' }).waitFor();
   const reply = openaiCalls.find((call) => call.url.endsWith('/v1/responses'));
   assert.equal(reply.headers.authorization, 'Bearer chatgpt-access-1');
   assert.equal(reply.body.model, 'gpt-sol');
@@ -223,6 +226,7 @@ try {
   assert.ok(!(await app.evaluate(() => JSON.stringify({ ...localStorage }))).includes('sk-ant-test-key'));
   await askTutor();
   await app.getByText('What could you subtract from both sides?').waitFor();
+  await app.getByText('10 input · 8 output', { exact: true }).waitFor();
   assert.equal(providerCalls.length, 1);
   assert.equal(providerCalls[0].headers['x-api-key'], 'sk-ant-test-key');
   assert.match(providerCalls[0].body.system, /The answer is theirs to find/);
@@ -238,6 +242,7 @@ try {
   await app.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: 'Save', exact: true }).click();
   await askTutor();
   await app.getByText('Look at the constant term.').waitFor();
+  await app.getByText('200 input · 30 output (including 10 reasoning)', { exact: true }).waitFor();
   assert.equal(providerCalls[1].headers.authorization, 'Bearer gemini-test-key');
   assert.match(providerCalls[1].url, /\/v1beta\/openai\/chat\/completions$/);
   assert.deepEqual(await app.evaluate(() => Object.keys(window.deviceKeys).sort()), ['anthropic', 'chatgpt', 'gemini']);

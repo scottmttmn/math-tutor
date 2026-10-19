@@ -103,6 +103,54 @@ function routeHarness(providerError = false, openAIStream, anthropicStream) {
   return { calls, clients, request, advanceTime: (ms = 5000) => { now += ms; } };
 }
 
+const streamEvents = (text) => text.trim().split('\n\n').map((frame) => JSON.parse(frame.slice('data: '.length)));
+
+test('Anthropic usage includes cache reads/writes and takes cumulative counts without adding deltas', async () => {
+  const { request } = routeHarness(false, undefined, () => (async function* () {
+    yield { type: 'message_start', message: { usage: { input_tokens: 30, cache_creation_input_tokens: 100, cache_read_input_tokens: 200, output_tokens: 1 } } };
+    yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Check the sign.' } };
+    yield { type: 'message_delta', delta: { stop_reason: null }, usage: { output_tokens: 10 } };
+    yield { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: 350, output_tokens: 20 } };
+  })());
+  const events = streamEvents(await (await request()).text());
+  assert.deepEqual(events.filter((event) => event.type === 'usage'), [
+    { type: 'usage', usage: { inputTokens: 480, outputTokens: 20, provider: 'anthropic' } },
+  ]);
+  assert.equal(events.at(-1).type, 'message_stop');
+});
+
+for (const metadata of ['standard', 'groq', 'no reasoning', 'zero reasoning', 'missing']) {
+  test(`compatible streaming usage: ${metadata}`, async () => {
+    const { request, calls } = routeHarness(false, () => (async function* () {
+      yield { choices: [{ delta: { content: 'A hint.' } }] };
+      const usage = { prompt_tokens: 20000, completion_tokens: 734,
+        ...(metadata === 'no reasoning' ? {} : { completion_tokens_details: { reasoning_tokens: metadata === 'zero reasoning' ? 0 : 500 } }),
+      };
+      if (metadata !== 'missing') yield { choices: [], ...(metadata === 'groq' ? { x_groq: { usage } } : { usage }) };
+    })());
+    const events = streamEvents(await (await request({ modelConfig: { provider: 'openai-compatible', model: 'test', baseUrl: 'http://localhost/v1' } })).text());
+    assert.deepEqual(calls[0].stream_options, { include_usage: true });
+    assert.equal(events[0].content, 'A hint.');
+    const usage = events.find((event) => event.type === 'usage')?.usage;
+    if (metadata === 'missing') assert.equal(usage, undefined);
+    else assert.deepEqual(usage, { inputTokens: 20000, outputTokens: 734, provider: 'openai-compatible',
+      ...(metadata === 'no reasoning' ? {} : { reasoningTokens: metadata === 'zero reasoning' ? 0 : 500 }),
+    });
+    assert.equal(events.at(-1).type, 'message_stop');
+  });
+}
+
+test('a compatible server that rejects usage options still streams its reply', async () => {
+  const { request, calls } = routeHarness(false, (options) => {
+    if (options.stream_options) throw Object.assign(new Error('Unknown parameter: stream_options'), { status: 400 });
+    return (async function* () { yield { choices: [{ delta: { content: 'A hint.' } }] }; })();
+  });
+  const events = streamEvents(await (await request({ modelConfig: { provider: 'openai-compatible', model: 'test', baseUrl: 'http://localhost/v1' } })).text());
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].stream_options, undefined);
+  assert.deepEqual(events, [{ type: 'text_delta', content: 'A hint.' }, { type: 'message_stop' }]);
+});
+
 test('saved Gemini preset moves to the current model without changing custom choices', () => {
   const values = new Map();
   global.window = new EventTarget();

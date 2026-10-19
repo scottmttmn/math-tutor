@@ -23,10 +23,14 @@ export interface Stroke {
 
 export type ChatRole = 'user' | 'assistant';
 
-/** Tokens one tutor answer used, as reported by the provider. Only the ChatGPT plan path reports it today. */
+/** Tokens one tutor request used, as reported by its provider (including cached input). */
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
+  /** Part of outputTokens, not additional tokens. Omitted when the provider does not report it. */
+  reasoningTokens?: number;
+  /** Older saved usage came only from the ChatGPT plan. */
+  provider?: Provider;
 }
 
 export interface ChatMessage {

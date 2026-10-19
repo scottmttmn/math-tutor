@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
-import type { ApiKeySource, ModelConfig, TutorPlan, TutorStreamEvent } from '@/types';
+import type { ApiKeySource, ModelConfig, TokenUsage, TutorPlan, TutorStreamEvent } from '@/types';
 import { isGeminiEndpoint } from '@/lib/modelConfig';
 import { createGeminiFallback, isQuotaError } from '@/lib/geminiFallback';
 
@@ -106,15 +106,30 @@ export function streamAnthropicResponse(modelConfig: ModelConfig, plan: TutorPla
     async start(controller) {
       try {
         let stopReason: string | null | undefined;
+        let reported: Anthropic.Usage | undefined;
         for await (const event of stream) {
           if (cancelled) break;
-          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+          if (event.type === 'message_start') {
+            reported = { ...event.message.usage };
+          } else if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
             controller.enqueue(sse({ type: 'text_delta', content: event.delta.text }));
           } else if (event.type === 'message_delta') {
             stopReason = event.delta.stop_reason;
+            // Delta counts are cumulative; missing/null fields keep their message_start values.
+            if (reported) {
+              reported.output_tokens = event.usage.output_tokens;
+              reported.input_tokens = event.usage.input_tokens ?? reported.input_tokens;
+              reported.cache_creation_input_tokens = event.usage.cache_creation_input_tokens ?? reported.cache_creation_input_tokens;
+              reported.cache_read_input_tokens = event.usage.cache_read_input_tokens ?? reported.cache_read_input_tokens;
+            }
           }
         }
         if (cancelled) return;
+        if (reported) controller.enqueue(sse({ type: 'usage', usage: {
+          inputTokens: reported.input_tokens + (reported.cache_creation_input_tokens ?? 0) + (reported.cache_read_input_tokens ?? 0),
+          outputTokens: reported.output_tokens,
+          provider: 'anthropic',
+        } }));
         if (stopReason === 'max_tokens' || stopReason === 'model_context_window_exceeded') controller.enqueue(sse({ type: 'error', error: 'The tutor ran out of room before finishing its reply. Please ask again.' }));
         else if (stopReason === 'refusal') controller.enqueue(sse({ type: 'error', error: 'The model declined to answer this one. Try rephrasing, or another model in Settings.' }));
         else controller.enqueue(sse({ type: 'message_stop' }));
@@ -134,6 +149,32 @@ export function missingGeminiKey(source: ApiKeySource): string {
   return source === 'device'
     ? 'Add your Gemini API key in Settings → Tutor.'
     : 'Gemini API key is missing. Add GEMINI_API_KEY to .env.local and restart the server.';
+}
+
+/** Standard compatible usage, or Groq's usage on older streaming responses. */
+function compatibleUsage(chunk: unknown): TokenUsage | undefined {
+  if (!chunk || typeof chunk !== 'object') return;
+  let reported = 'usage' in chunk ? chunk.usage : undefined;
+  if (!reported && 'x_groq' in chunk && chunk.x_groq && typeof chunk.x_groq === 'object') {
+    reported = 'usage' in chunk.x_groq ? chunk.x_groq.usage : undefined;
+  }
+  if (!reported || typeof reported !== 'object' || !('prompt_tokens' in reported) || !('completion_tokens' in reported)
+    || typeof reported.prompt_tokens !== 'number' || typeof reported.completion_tokens !== 'number') return;
+  const details = 'completion_tokens_details' in reported ? reported.completion_tokens_details : undefined;
+  const reasoning = details && typeof details === 'object' && 'reasoning_tokens' in details ? details.reasoning_tokens : undefined;
+  return {
+    inputTokens: reported.prompt_tokens,
+    outputTokens: reported.completion_tokens,
+    ...(typeof reasoning === 'number' ? { reasoningTokens: reasoning } : {}),
+    provider: 'openai-compatible',
+  };
+}
+
+/** A custom server may support chat streaming but reject the optional usage request. */
+function rejectsStreamUsage(error: unknown): boolean {
+  if (!error || typeof error !== 'object' || !('status' in error) || ![400, 422].includes(Number(error.status))) return false;
+  return error instanceof Error && /stream_options|include_usage/i.test(error.message)
+    && /unsupported|not supported|unknown|unrecognized|not allowed|extra inputs|not permitted/i.test(error.message);
 }
 
 export function streamOpenAIResponse(modelConfig: ModelConfig, plan: TutorPlan, { apiKey, source, onFinish = () => {} }: ProviderOptions): ReadableStream {
@@ -177,15 +218,22 @@ export function streamOpenAIResponse(modelConfig: ModelConfig, plan: TutorPlan, 
         for (let index = 0; index < models.length; index++) {
           const model = models[index];
           try {
-            const stream = await openai.chat.completions.create({
+            const request = {
               model,
               max_tokens: plan.maxTokens,
               ...(isGemini ? { reasoning_effort: 'low' as const } : {}),
               messages,
-              stream: true,
-            }, { signal: abort.signal });
+              stream: true as const,
+            };
+            const stream = await openai.chat.completions.create({ ...request, stream_options: { include_usage: true } }, { signal: abort.signal })
+              .catch((error: unknown) => {
+                if (!rejectsStreamUsage(error)) throw error;
+                return openai.chat.completions.create(request, { signal: abort.signal });
+              });
+            let usage: TokenUsage | undefined;
             for await (const chunk of stream) {
               if (cancelled) break;
+              usage = compatibleUsage(chunk) ?? usage;
               const delta = chunk.choices[0]?.delta?.content;
               if (delta) {
                 if (!emittedText && model !== modelConfig.model) {
@@ -195,6 +243,7 @@ export function streamOpenAIResponse(modelConfig: ModelConfig, plan: TutorPlan, 
                 controller.enqueue(sse({ type: 'text_delta', content: delta }));
               }
             }
+            if (!cancelled && usage) controller.enqueue(sse({ type: 'usage', usage }));
             break;
           } catch (error) {
             if (!isGemini || cancelled || emittedText || !isQuotaError(error)) throw error;
