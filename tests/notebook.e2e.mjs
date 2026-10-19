@@ -32,6 +32,15 @@ try {
       return paper && canvas && Math.abs(paper.getBoundingClientRect().width - (canvas.getBoundingClientRect().width - 32)) < 2;
     }, null, { timeout: 5000 });
   }
+  // The page has a top: scrolling up stops with its edge just below the board's top.
+  async function assertTop() {
+    const box = await canvas.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + 250);
+    for (let step = 0; step < 5; step += 1) await page.mouse.wheel(0, -2000);
+    await page.waitForTimeout(250);
+    const top = (await paper.boundingBox()).y;
+    assert.ok(Math.abs(top - (box.y + 16)) < 2, `the notebook stops at its top (page ${top}, board ${box.y})`);
+  }
   async function draw(x, y) {
     const box = await canvas.boundingBox();
     await page.getByTestId('tools.draw').click();
@@ -64,6 +73,7 @@ try {
   await paper.waitFor();
   assert.equal(await paper.getAttribute('data-page-width'), '960');
   await assertFit();
+  await assertTop();
   await page.getByPlaceholder("Type the math problem you're working on...").fill('Notebook experiment');
   await controls.getByRole('button', { name: 'Paper: Blank' }).click();
   await page.getByRole('menuitemradio', { name: 'Lined', exact: true }).click();
@@ -83,6 +93,8 @@ try {
   await page.waitForTimeout(250);
   await assertFit();
   assert.ok(Math.abs((await stroke.boundingBox()).x - afterPan.x) < 1, 'horizontal scrolling stays on the page at writing scale');
+  await assertTop();
+  assert.ok(Math.abs((await stroke.boundingBox()).y - beforePan.y) < 2, 'scrolling back up returns to the top of the page');
 
   await page.keyboard.press('ControlOrMeta+=');
   await page.waitForTimeout(400);
@@ -203,6 +215,8 @@ try {
   const wide = await page.locator('.tl-shape').boundingBox();
   const widePaper = await paper.boundingBox();
   assert.ok(wide.x > widePaper.x && wide.x + wide.width < widePaper.x + widePaper.width, 'old work fits inside its widened page');
+  await assertTop();
+  assert.ok((await page.locator('.tl-shape').boundingBox()).y > (await paper.boundingBox()).y, 'work above the old top raises the page top so it stays reachable');
   const wideShapes = await savedShapes();
   await toggle(); await toggle();
   assert.deepEqual(await savedShapes(), wideShapes, 'entering notebook does not rewrite legacy ink');
@@ -234,10 +248,11 @@ try {
   const pictureBox = await page.locator('.tl-image').boundingBox();
   const pageBox = await paper.boundingBox();
   assert.ok(pictureBox.x >= pageBox.x && pictureBox.x + pictureBox.width <= pageBox.x + pageBox.width, 'a new problem picture fits the paper at any zoom');
+  assert.ok(pictureBox.y >= pageBox.y, 'the picture sits on the page, below its top');
   await page.getByRole('button', { name: 'Put on board', exact: true }).click();
   assert.equal(await page.locator('.tl-image').count(), 1);
   assert.deepEqual(errors, []);
-  console.log('PASS notebook opt-in, vertical scroll, horizontal containment, zoom/Fit width, resize/full screen, hidden tools, reload, unchanged ink/captures, wide legacy boards and New');
+  console.log('PASS notebook opt-in, page top, vertical scroll, horizontal containment, zoom/Fit width, resize/full screen, hidden tools, reload, unchanged ink/captures, wide legacy boards and New');
 } finally {
   await browser.close();
 }

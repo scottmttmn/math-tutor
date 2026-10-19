@@ -28,11 +28,13 @@ function PaperBackground() {
   const lines = paper === 'blank' ? null : paperLines(camera, paper === 'grid' ? GRID_SPACING : LINE_SPACING);
   const left = page ? (page.x + camera.x) * camera.z : 0;
   const width = page ? page.w * camera.z : '100%';
+  // The page's top edge; above it is the gray desk. Below, the svg clips the page.
+  const top = page ? Math.max(0, (page.y + camera.y) * camera.z) : 0;
   return (
     <div className={`tl-background ${page ? 'bg-gray-200!' : ''}`} data-paper={paper} data-notebook={page ? 'true' : undefined}>
       {(lines || page) && (
         <svg className="absolute inset-0 w-full h-full" aria-hidden="true">
-          {page && <rect data-testid="notebook-paper" data-page-width={page.w} x={left} width={width} height="100%" fill="white" stroke="#9ca3af" />}
+          {page && <rect data-testid="notebook-paper" data-page-width={page.w} data-page-top={page.y} x={left} y={top} width={width} height="100%" fill="white" stroke="#9ca3af" />}
           {lines && (
             <>
               <defs>
@@ -40,7 +42,7 @@ function PaperBackground() {
                   <path d={paper === 'grid' ? `M0 0.5H${lines.gap}M0.5 0V${lines.gap}` : `M0 0.5H${lines.gap}`} stroke="#c4c8ce" strokeWidth="1" fill="none" />
                 </pattern>
               </defs>
-              <rect x={left} width={width} height="100%" fill={`url(#${patternId})`} />
+              <rect x={left} y={top} width={width} height="100%" fill={`url(#${patternId})`} />
             </>
           )}
         </svg>
