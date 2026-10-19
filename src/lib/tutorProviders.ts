@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import type { ApiKeySource, ModelConfig, TokenUsage, TutorPlan, TutorStreamEvent } from '@/types';
 import { isGeminiEndpoint } from '@/lib/modelConfig';
 import { createGeminiFallback, isQuotaError } from '@/lib/geminiFallback';
+import { latestUserParts } from '@/lib/tutorPrompt';
 
 // The API-key providers, streamed as the tutor's SSE events. The server route runs these with keys
 // from .env.local; the Android app runs them in the WebView with keys saved on the tablet (`browser`).
@@ -78,15 +79,16 @@ function cleanMessages(messages: Anthropic.MessageParam[]): Anthropic.MessagePar
 
 export function streamAnthropicResponse(modelConfig: ModelConfig, plan: TutorPlan, { apiKey, source, onFinish = () => {} }: ProviderOptions): ReadableStream {
   // The profile and book pages open the conversation, so every question on the board shares them as a cached prefix.
-  const messages: Anthropic.MessageParam[] = plan.preface
-    ? [{ role: 'user', content: [{ type: 'text', text: plan.preface, cache_control: { type: 'ephemeral' } }] }]
+  const preface = [plan.profile, plan.reference].filter(Boolean).join('\n\n');
+  const messages: Anthropic.MessageParam[] = preface
+    ? [{ role: 'user', content: [{ type: 'text', text: preface, cache_control: { type: 'ephemeral' } }] }]
     : [];
   for (const msg of plan.history) {
     messages.push({ role: msg.role === 'user' ? 'user' : 'assistant', content: msg.content });
   }
   messages.push({
     role: 'user',
-    content: plan.latest.map((part): Anthropic.ContentBlockParam => (
+    content: latestUserParts(plan).map((part): Anthropic.ContentBlockParam => (
       part.type === 'image'
         ? { type: 'image', source: { type: 'base64', media_type: 'image/png', data: part.data } }
         : { type: 'text', text: part.text }
@@ -194,7 +196,8 @@ export function streamOpenAIResponse(modelConfig: ModelConfig, plan: TutorPlan, 
   const messages: OpenAI.ChatCompletionMessageParam[] = [
     { role: 'system', content: plan.systemPrompt },
   ];
-  if (plan.preface) messages.push({ role: 'user', content: plan.preface });
+  const preface = [plan.profile, plan.reference].filter(Boolean).join('\n\n');
+  if (preface) messages.push({ role: 'user', content: preface });
   for (const msg of plan.history) {
     if (msg.role === 'user') {
       messages.push({ role: 'user', content: msg.content });
@@ -204,7 +207,7 @@ export function streamOpenAIResponse(modelConfig: ModelConfig, plan: TutorPlan, 
   }
   messages.push({
     role: 'user',
-    content: plan.latest.map((part): OpenAI.ChatCompletionContentPart => (
+    content: latestUserParts(plan).map((part): OpenAI.ChatCompletionContentPart => (
       part.type === 'image'
         ? { type: 'image_url', image_url: { url: `data:image/png;base64,${part.data}` } }
         : { type: 'text', text: part.text }

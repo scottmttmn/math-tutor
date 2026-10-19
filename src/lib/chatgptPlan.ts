@@ -61,19 +61,25 @@ export function streamChatGPTResponse(
   plan: TutorPlan,
   onFinish: () => void = () => {},
 ): ReadableStream {
-  const input: ResponseInputMessage[] = [
-    ...(plan.preface ? [{ role: 'user' as const, content: plan.preface }] : []),
-    ...plan.history
-      .filter((msg) => msg.content)
-      .map((msg): ResponseInputMessage => ({ role: msg.role === 'user' ? 'user' : 'assistant', content: msg.content })),
-  ];
-
-  const parts = plan.latest.map((part): ResponseContentPart => (
+  // Keep shared material ahead of changing memory/history. The ChatGPT-plan endpoint rejects
+  // explicit cache controls, so preserve these message boundaries for automatic cache reuse.
+  const input: ResponseInputMessage[] = [];
+  const addReference = (content: ResponseContentPart[]) => {
+    if (!content.length) return;
+    input.push({ role: 'user', content });
+  };
+  if (plan.reference) addReference([{ type: 'input_text', text: plan.reference }]);
+  const board = plan.board.map((part): ResponseContentPart => (
     part.type === 'image'
       ? { type: 'input_image', image_url: `data:image/png;base64,${part.data}` }
       : { type: 'input_text', text: part.text }
   ));
-  input.push({ role: 'user', content: parts });
+  if (board.length) addReference([{ type: 'input_text', text: 'Current board and problem for this question (earlier conversation may refer to older work):' }, ...board]);
+  if (plan.profile) input.push({ role: 'user', content: plan.profile });
+  input.push(...plan.history
+    .filter((msg) => msg.content)
+    .map((msg): ResponseInputMessage => ({ role: msg.role === 'user' ? 'user' : 'assistant', content: msg.content })));
+  input.push({ role: 'user', content: plan.question });
 
   const encoder = new TextEncoder();
   const abort = new AbortController();

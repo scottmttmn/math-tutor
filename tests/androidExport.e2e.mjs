@@ -89,7 +89,7 @@ try {
     window.saveAnswers = [];
     window.deviceKeys = {};
     // The student picked the ChatGPT plan but hasn't signed in on the tablet yet.
-    if (!localStorage.getItem('mathTutor_modelConfig')) localStorage.setItem('mathTutor_modelConfig', JSON.stringify({ provider: 'chatgpt', model: 'gpt-sol', baseUrl: '' }));
+    if (!localStorage.getItem('mathTutor_modelConfig')) localStorage.setItem('mathTutor_modelConfig', JSON.stringify({ provider: 'chatgpt', model: 'gpt-6.1-sol', baseUrl: '' }));
     let callback;
     window.androidBridge = { postMessage() {} };
     window.Capacitor = {
@@ -174,7 +174,7 @@ try {
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { ...cors, 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' } });
     openaiCalls.push({ url: request.url(), headers: request.headers(), body: request.postDataJSON() });
     if (request.url().endsWith('/v1/models')) {
-      return route.fulfill({ status: 200, headers: { ...cors, 'Content-Type': 'application/json' }, body: JSON.stringify({ models: [{ slug: 'gpt-sol', display_name: 'Sol', visibility: 'list' }] }) });
+      return route.fulfill({ status: 200, headers: { ...cors, 'Content-Type': 'application/json' }, body: JSON.stringify({ models: [{ slug: 'gpt-6.1-sol', display_name: 'Sol', visibility: 'list' }] }) });
     }
     await route.fulfill({ status: 200, headers: { ...cors, 'Content-Type': 'text/event-stream' }, body: sseFrames([
       ['', { type: 'response.output_text.delta', delta: 'What is 2x on its own?' }],
@@ -208,9 +208,16 @@ try {
   await app.getByRole('link', { name: 'Manage ChatGPT usage' }).waitFor();
   const reply = openaiCalls.find((call) => call.url.endsWith('/v1/responses'));
   assert.equal(reply.headers.authorization, 'Bearer chatgpt-access-1');
-  assert.equal(reply.body.model, 'gpt-sol');
+  assert.equal(reply.body.model, 'gpt-6.1-sol');
   assert.match(reply.body.instructions, /The answer is theirs to find/);
-  assert.ok(reply.body.input.at(-1).content.some((part) => part.type === 'input_image'));
+  assert.ok(reply.body.input[0].content.some((part) => part.type === 'input_image'));
+  assert.equal(reply.body.prompt_cache_options, undefined);
+  assert.doesNotMatch(JSON.stringify(reply.body.input), /prompt_cache_breakpoint/);
+  await askTutor();
+  await app.getByText('What is 2x on its own?').nth(1).waitFor();
+  const repeated = openaiCalls.filter((call) => call.url.endsWith('/v1/responses'))[1];
+  assert.deepEqual(repeated.body.input[0], reply.body.input[0], 'the same board remains a reusable prefix before the growing history');
+  assert.ok(repeated.body.input.length > reply.body.input.length);
   console.log('PASS in the app, Sign in with ChatGPT comes back to the tablet and the tutor answers on the plan');
 
   await openTutorSettings();

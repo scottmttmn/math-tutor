@@ -120,9 +120,9 @@ test('a board of several tells the tutor the others are on it', () => {
   const plan = planTutorRequest({
     problemStatement: 'Exercise 12 · Book, p. 4', chatHistory: [], canvasImage: '', modelConfig: {}, userQuestion: 'A hint?', otherProblems: ['Exercise 11', 'Exercise 13'],
   });
-  assert.match(plan.latest.at(-1).text, /My board also holds Exercise 11, Exercise 13; earlier messages may be about them\./);
+  assert.match(plan.board.at(-1).text, /My board also holds Exercise 11, Exercise 13; earlier messages may be about them\./);
   const one = planTutorRequest({ problemStatement: 'Exercise 12', chatHistory: [], canvasImage: '', modelConfig: {}, userQuestion: 'A hint?' });
-  assert.doesNotMatch(one.latest.at(-1).text, /also holds/);
+  assert.doesNotMatch(one.board.at(-1).text, /also holds/);
 });
 
 test('without a shared board nothing changes', () => {
