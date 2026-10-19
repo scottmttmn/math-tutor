@@ -16,6 +16,10 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    packagingOptions {
+        // Onyx's pen SDK brings its own copy of the C++ runtime.
+        pickFirst 'lib/*/libc++_shared.so'
+    }
     buildTypes {
         release {
             minifyEnabled false
@@ -36,6 +40,9 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    // BOOX pen (BooxPenPlugin): Onyx's pen SDK, and the hidden-API exemption it needs on Android 11+.
+    implementation 'com.onyx.android.sdk:onyxsdk-pen:1.5.4.4'
+    implementation 'org.lsposed.hiddenapibypass:hiddenapibypass:4.3'
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

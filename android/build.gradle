@@ -21,6 +21,19 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // Onyx's pen SDK for BOOX tablets (BooxPenPlugin) is only published here, and only over http,
+        // so this repository may serve Onyx's packages and the few old ones they need that left
+        // Maven Central's reach with JCenter, and nothing else.
+        maven {
+            url "http://repo.boox.com/repository/maven-public/"
+            allowInsecureProtocol = true
+            content {
+                includeGroupByRegex "com\\.onyx\\..*"
+                includeGroup "pub.devrel"
+                includeGroup "com.tencent"
+                includeGroup "com.jakewharton.hugo.fix"
+            }
+        }
     }
 }
 

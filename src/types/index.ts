@@ -398,8 +398,8 @@ export interface TutorStreamEvent {
 export interface PenTestStats {
   /** Pen samples per second, coalesced ones included. */
   samplesPerSecond: number;
-  /** Average time from a pen sample to the page handling it, in ms (screen refresh not included). */
-  inputDelayMs: number;
+  /** Average time from a pen sample to the page handling it, in ms (screen refresh not included); unknown with the BOOX pen SDK. */
+  inputDelayMs?: number;
   /** Longest gap between two handled events, in ms (a stall shows up here). */
   worstGapMs: number;
 }
@@ -551,6 +551,40 @@ export interface DeviceKeysPlugin {
   get(options: { name: DeviceKeyName | 'chatgpt' }): Promise<{ value?: string }>;
   set(options: { name: DeviceKeyName | 'chatgpt'; value: string }): Promise<void>;
   remove(options: { name: DeviceKeyName | 'chatgpt' }): Promise<void>;
+}
+
+/** A box in CSS px relative to the app's WebView (the page's viewport). */
+export interface BooxPenBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** One sample of a BOOX pen stroke: CSS px in the viewport, pressure 0–1, ms since the stroke began. */
+export interface BooxPenPoint {
+  x: number;
+  y: number;
+  pressure: number;
+  ms: number;
+}
+
+/**
+ * Onyx's pen SDK on BOOX tablets (android/…/BooxPenPlugin.java): inside `region` the e-ink
+ * controller draws the stylus itself, and each finished stroke arrives as a `stroke` event
+ * (`erase` for the pen's eraser end) with points flattened as [x, y, pressure, ms, …].
+ * Everything but status() is refused on other devices.
+ */
+export interface BooxPenPlugin {
+  status(): Promise<{ onyx: boolean; active: boolean }>;
+  start(options: { region: BooxPenBox; exclude?: BooxPenBox[]; width: number }): Promise<void>;
+  setRegion(options: { region: BooxPenBox; exclude?: BooxPenBox[] }): Promise<void>;
+  pause(): Promise<void>;
+  resume(): Promise<void>;
+  /** Lets the screen show the page's own drawing again (raw drawing holds it back). */
+  refresh(): Promise<void>;
+  stop(): Promise<void>;
+  addListener(event: 'stroke' | 'erase', listener: (data: { points: number[] }) => void): Promise<{ remove: () => Promise<void> }>;
 }
 
 /** The Android app's side of Sign in with ChatGPT (android/…/ChatGPTSignInPlugin.java). */
