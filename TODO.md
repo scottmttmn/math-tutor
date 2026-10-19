@@ -72,6 +72,7 @@ Pen, Highlight, Eraser and Undo work directly on PDF pages; ink is saved per pag
 - [x] Break down each reply's reported token usage into input, output and total across providers, with reasoning shown as part of output when reported.
 - [x] Show how many input tokens were reused from cache when the provider reports it, including an explicit zero without adding cached tokens to the total again.
 - [x] Keep ChatGPT's reference pages and current board ahead of changing memory/history to preserve reusable context; use only the automatic caching supported by the ChatGPT-plan connection.
+- [ ] Demonstrate actual cache reuse on the ChatGPT-plan connection. Live Sol 6.1 checks still reported zero cached tokens on identical 12,948-input-token requests, and the connection rejects explicit cache controls; request ordering alone has not shown savings.
 
 Problem and Notes boards use tldraw, autosave, restore after reload, and start at pen size S / solid dash. Paper choices are Blank, Lined and Grid. **Add picture** accepts an image or a PDF's first page; **Put on board** places it behind the writing. This replaces the old Single problem flow.
 
