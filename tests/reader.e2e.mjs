@@ -398,6 +398,9 @@ try {
 
   assert.deepEqual(browserErrors, []);
   console.log('PASS no browser exceptions');
+} catch (error) {
+  console.error('Reader browser exceptions:', browserErrors);
+  throw error;
 } finally {
   await browser.close();
   await rm(folder, { recursive: true, force: true });

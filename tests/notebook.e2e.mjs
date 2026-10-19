@@ -89,6 +89,13 @@ try {
   assert.ok((await paper.boundingBox()).width > box.width, 'zoom remains available for inspection');
   await fit.click();
   await assertFit();
+  // Shelf swaps keep the editor mounted but hidden. A zero-size viewport must not make
+  // fit-x constraints produce zero/NaN camera coordinates before the board reappears.
+  await page.locator('.tl-container').evaluate((element) => { element.style.display = 'none'; });
+  await page.waitForTimeout(200);
+  await page.locator('.tl-container').evaluate((element) => { element.style.removeProperty('display'); });
+  await assertFit();
+  assert.deepEqual(errors, [], 'hiding the mounted notebook does not crash the editor');
   await page.setViewportSize({ width: 700, height: 1000 });
   await assertFit();
   assert.equal(await paper.getAttribute('data-page-width'), '960', 'resizing does not rescale the document');
@@ -114,6 +121,13 @@ try {
   await page.getByRole('button', { name: 'Show tools', exact: true }).click();
   await toggle();
   await paper.waitFor({ state: 'detached' });
+  const pattern = page.locator('.tl-background pattern');
+  const infiniteX = Number(await pattern.getAttribute('x'));
+  const infiniteBox = await canvas.boundingBox();
+  await page.mouse.move(infiniteBox.x + infiniteBox.width / 2, infiniteBox.y + 200);
+  await page.mouse.wheel(150, 0);
+  await page.waitForTimeout(250);
+  assert.ok(Math.abs(Number(await pattern.getAttribute('x')) - infiniteX) > 1, 'turning notebook off restores horizontal navigation');
   assert.deepEqual(await savedShapes(), originalShapes, 'camera controls and notebook mode leave ink unchanged');
   await toggle();
   await page.reload();
@@ -137,12 +151,27 @@ try {
   await page.keyboard.press('ControlOrMeta+=');
   const secondImage = await ask();
   assert.equal(secondImage, firstImage, 'the tutor receives the same ink at a different camera zoom');
+  await page.getByRole('button', { name: 'Close tutor', exact: true }).click();
+  await fit.click();
   if (process.env.BOARD_SCREENSHOT_DIR) {
-    await page.getByRole('button', { name: 'Close tutor', exact: true }).click();
-    await fit.click();
     await mkdir(process.env.BOARD_SCREENSHOT_DIR, { recursive: true });
     await page.screenshot({ path: join(process.env.BOARD_SCREENSHOT_DIR, 'notebook-700.png') });
   }
+  await savedShapes();
+  await page.reload();
+  await paper.waitFor();
+  await assertFit();
+  await stroke.waitFor();
+  await page.getByTestId('tools.select').click();
+  const ink = await stroke.boundingBox();
+  await page.mouse.click(ink.x + ink.width - 4, ink.y + ink.height - 2.5);
+  await page.getByTestId('quick-actions.delete').and(page.locator(':enabled')).waitFor();
+  for (let step = 0; step < 85; step += 1) await page.keyboard.press('Shift+ArrowRight');
+  await page.waitForFunction(() => Number(document.querySelector('[data-testid="notebook-paper"]')?.getAttribute('data-page-width')) > 960);
+  await assertFit();
+  const movedInk = await stroke.boundingBox();
+  const expandedPage = await paper.boundingBox();
+  assert.ok(movedInk.x + movedInk.width < expandedPage.x + expandedPage.width, 'nudging ink beyond the page expands the notebook so it stays reachable');
 
   // Existing wide/negative-coordinate work remains intact and gets enough horizontal room.
   await savedShapes();
