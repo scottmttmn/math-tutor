@@ -7,6 +7,8 @@ import type { CanvasLoad } from '@/context/CanvasContext';
 const PAGE_WIDTH = 960;
 const PAGE_MARGIN = 32;
 const VIEW_MARGIN = 16;
+// The page has a top but no bottom: deep enough that nobody writes to its end.
+const PAGE_DEPTH = 1_000_000;
 
 /** Return to the writing scale while keeping the same line at the top of the view. */
 export function fitNotebookWidth(editor: Editor, top = editor.getViewportPageBounds().minY) {
@@ -18,7 +20,7 @@ export function fitNotebookWidth(editor: Editor, top = editor.getViewportPageBou
   editor.setCamera({ x: VIEW_MARGIN / z - page.x, y: -top, z });
 }
 
-/** Constrain horizontal navigation, leaving the vertical notebook continuous and zoom available. */
+/** Constrain navigation to the page: its sides and top, leaving it continuous downward and zoom available. */
 export function useNotebookCamera(editor: Editor | null, enabled: boolean, pendingLoad: CanvasLoad | null) {
   const [page, setPage] = useState<Box | null>(null);
 
@@ -36,14 +38,15 @@ export function useNotebookCamera(editor: Editor | null, enabled: boolean, pendi
     // New boards have one consistent width. Existing work gets a wider page when necessary.
     const left = content ? Math.min(0, content.minX - PAGE_MARGIN) : 0;
     const right = content ? Math.max(PAGE_WIDTH, content.maxX + PAGE_MARGIN) : PAGE_WIDTH;
-    let bounds = new Box(left, 0, right - left, PAGE_WIDTH);
+    const top = content ? Math.min(0, content.minY - PAGE_MARGIN) : 0;
+    let bounds = new Box(left, top, right - left, PAGE_DEPTH);
     setPage(bounds);
     const options = (): Partial<TLCameraOptions> => ({
       wheelBehavior: 'pan',
       zoomSteps: [0.5, 0.75, 1, 1.5, 2, 3, 4],
       constraints: {
-        bounds, padding: { x: VIEW_MARGIN, y: 0 }, origin: { x: 0.5, y: 0 },
-        initialZoom: 'fit-x', baseZoom: 'fit-x', behavior: { x: 'contain', y: 'free' },
+        bounds, padding: { x: VIEW_MARGIN, y: VIEW_MARGIN }, origin: { x: 0.5, y: 0 },
+        initialZoom: 'fit-x', baseZoom: 'fit-x', behavior: { x: 'contain', y: 'contain' },
       },
     });
     const fitZoom = () => (editor.getViewportScreenBounds().w - VIEW_MARGIN * 2) / bounds.w;
@@ -94,16 +97,20 @@ export function useNotebookCamera(editor: Editor | null, enabled: boolean, pendi
       clearTimeout(timer);
       timer = setTimeout(() => {
         const work = editor.getCurrentPageBounds();
-        if (!work || work.minX >= bounds.minX && work.maxX <= bounds.maxX) return;
+        if (!work || work.minX >= bounds.minX && work.maxX <= bounds.maxX && work.minY >= bounds.minY) return;
         const x = work.minX < bounds.minX ? work.minX - PAGE_MARGIN : bounds.minX;
         const maxX = work.maxX > bounds.maxX ? work.maxX + PAGE_MARGIN : bounds.maxX;
+        const y = Math.min(bounds.minY, work.minY - PAGE_MARGIN);
         const wasFit = Math.abs(editor.getZoomLevel() - lastFitZoom) < 0.001;
-        const top = editor.getViewportPageBounds().minY;
-        bounds = new Box(x, 0, maxX - x, PAGE_WIDTH);
+        const view = editor.getViewportPageBounds().minY;
+        // Work placed above the page (a problem picture above the work) raises its top; a view
+        // held at the old top follows it up.
+        const atTop = view <= bounds.minY;
+        bounds = new Box(x, y, maxX - x, PAGE_DEPTH);
         setPage(bounds);
         if (!suspended) {
           editor.setCameraOptions(options());
-          if (wasFit) fitNotebookWidth(editor, top);
+          if (wasFit) fitNotebookWidth(editor, atTop ? y : view);
           lastFitZoom = fitZoom();
         }
       }, 250);
