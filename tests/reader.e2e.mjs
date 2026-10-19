@@ -373,6 +373,10 @@ try {
   await page.getByTestId('page-overlay').waitFor({ state: 'hidden' });
   const boardBox = await page.locator('.tl-canvas').boundingBox();
   assert.ok(boardBox.height > 600, `the board takes the screen (${boardBox.height}px tall)`);
+  await page.getByRole('button', { name: 'Board menu', exact: true }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Notebook mode (experiment)', exact: true }).click();
+  await page.getByTestId('notebook-paper').waitFor();
+  await page.getByRole('button', { name: 'Fit width', exact: true }).click();
   await page.getByRole('button', { name: 'Page 3', exact: true }).click();
   await page.getByTestId('page-overlay').waitFor();
   await page.locator('.tl-canvas').waitFor({ state: 'hidden' });
@@ -384,10 +388,19 @@ try {
   await page.locator('.tl-canvas').waitFor();
   await page.getByTestId('page-overlay').waitFor({ state: 'hidden' });
   assert.equal(await page.locator('.tl-image').count(), 1, 'put on the board once');
+  await page.getByTestId('notebook-paper').waitFor();
+  await page.getByRole('button', { name: 'Put on board', exact: true }).click();
+  assert.equal(await page.locator('.tl-image').count(), 1, 'notebook navigation does not duplicate the problem picture');
+  await page.getByRole('button', { name: 'Board menu', exact: true }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Notebook mode (experiment)', exact: true }).click();
+  await page.getByTestId('notebook-paper').waitFor({ state: 'detached' });
   console.log('PASS on an upright tablet the exercise opens on its board, swapping with the page');
 
   assert.deepEqual(browserErrors, []);
   console.log('PASS no browser exceptions');
+} catch (error) {
+  console.error('Reader browser exceptions:', browserErrors);
+  throw error;
 } finally {
   await browser.close();
   await rm(folder, { recursive: true, force: true });

@@ -17,6 +17,7 @@ Every change goes through a branch and a PR (see CLAUDE.md, "Workflow and CI"). 
 - [ ] Dedicated PDF zoom controls beyond the current fit-to-width page and browser pinch zoom. The drawing board already has tldraw's zoom controls.
 - [ ] Save a PDF with its page ink and highlights included. Board PNG/PDF export and full backups already exist.
 - [ ] An optional default paper setting for new boards. Today each board remembers its paper; new Problems start Blank and Notes start Lined.
+- [ ] Evaluate notebook mode on real problem solving: writing comfort, zoom habits and tutor handwriting recognition. New boards use a fixed width; existing wide work keeps its room. Token savings are not assumed.
 
 ### Backup on the tablet
 
@@ -69,6 +70,7 @@ Pen, Highlight, Eraser and Undo work directly on PDF pages; ink is saved per pag
 
 ### Boards and tutor controls
 
+- [x] Offer an opt-in notebook experiment on free and Shelf boards: consistent writing width, paper edges, vertical scrolling, zoom and Fit width, remembered per device. Preserve existing ink and board sending.
 - [x] Break down each reply's reported token usage into input, output and total across providers, with reasoning shown as part of output when reported.
 - [x] Show how many input tokens were reused from cache when the provider reports it, including an explicit zero without adding cached tokens to the total again.
 - [x] Keep ChatGPT's reference pages and current board ahead of changing memory/history to preserve reusable context; use only the automatic caching supported by the ChatGPT-plan connection.

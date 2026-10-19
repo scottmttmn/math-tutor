@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { useCanvasState } from '@/context/CanvasContext';
 import { useRateLimit } from '@/hooks/useRateLimit';
+import { useNotebookMode } from '@/hooks/useNotebookMode';
 import { RATE_LIMIT_MS } from '@/lib/constants';
 import type { Paper, SessionType } from '@/types';
 import { PAPERS } from '@/lib/paper';
@@ -32,11 +33,13 @@ interface Props {
   onWriteUp?: () => void;
   /** Shows Paper, which picks the board's paper: blank, lined or grid. */
   paper?: { value: Paper; onChange: (paper: Paper) => void };
+  onFitWidth?: () => void;
   /** The Favorite button (FavoriteButton), shown beside Mark solved on problems. */
   favorite?: ReactNode;
 }
 
-export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp, paper, favorite }: Props) {
+export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp, paper, onFitWidth, favorite }: Props) {
+  const { notebook, toggleNotebook } = useNotebookMode();
   const { hasContent } = useCanvasState();
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
   const helpDisabled = isLimited || isStreaming;
@@ -81,6 +84,8 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
         <BroomIcon />
       </button>
 
+      {notebook && onFitWidth && <button onClick={onFitWidth} className={plain} title="Return to notebook writing width">Fit width</button>}
+
       {(tools || onWriteUp || onSaveAs) && (
         <MoreMenu
           label="Board menu"
@@ -90,6 +95,7 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
           above
           align="left"
           items={[
+            { label: 'Notebook mode (experiment)', role: 'menuitemcheckbox', checked: notebook, onSelect: toggleNotebook },
             ...(tools ? [{ label: 'Hide drawing tools', role: 'menuitemcheckbox' as const, checked: tools.hidden, onSelect: tools.toggle }] : []),
             ...(onWriteUp ? [{ label: 'TeX write-up…', separatorBefore: Boolean(tools), onSelect: onWriteUp }] : []),
             ...(onSaveAs ? [

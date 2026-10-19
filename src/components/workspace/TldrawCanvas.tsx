@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useImperativeHandle, useRef, useState, type RefObject } from 'react';
 import { AssetRecordType, Box, DefaultDashStyle, DefaultSizeStyle, Tldraw, createShapeId, useEditor, useValue, type Editor, type TLComponents, type TLShape, type TLShapeId } from 'tldraw';
 import 'tldraw/tldraw.css';
 import { getAssetUrls } from '@tldraw/assets/selfHosted';
@@ -11,26 +11,38 @@ import { TUTOR_IMAGE_SIDE, TUTOR_IMAGE_PADDING, tutorDetailBounds } from '@/lib/
 import type { Paper } from '@/types';
 import type { DrawingCanvasHandle } from './DrawingCanvas';
 import PenStylePanel from '@/components/workspace/PenStylePanel';
+import { useNotebookMode } from '@/hooks/useNotebookMode';
+import { fitNotebookWidth, useNotebookCamera } from '@/hooks/useNotebookCamera';
 
 const PaperContext = createContext<Paper>('blank');
+const NotebookContext = createContext<Box | null>(null);
 
 // The board's paper: ruled lines or a grid that move and zoom with the board. It is only a
 // background, so exports and what the tutor sees are the writing alone, and nothing snaps to it.
 function PaperBackground() {
   const paper = useContext(PaperContext);
+  const page = useContext(NotebookContext);
+  const patternId = useId();
   const editor = useEditor();
   const camera = useValue('camera', () => editor.getCamera(), [editor]);
   const lines = paper === 'blank' ? null : paperLines(camera, paper === 'grid' ? GRID_SPACING : LINE_SPACING);
+  const left = page ? (page.x + camera.x) * camera.z : 0;
+  const width = page ? page.w * camera.z : '100%';
   return (
-    <div className="tl-background" data-paper={paper}>
-      {lines && (
+    <div className={`tl-background ${page ? 'bg-gray-200!' : ''}`} data-paper={paper} data-notebook={page ? 'true' : undefined}>
+      {(lines || page) && (
         <svg className="absolute inset-0 w-full h-full" aria-hidden="true">
-          <defs>
-            <pattern id="board-paper" patternUnits="userSpaceOnUse" x={lines.x} y={lines.y} width={lines.gap} height={lines.gap}>
-              <path d={paper === 'grid' ? `M0 0.5H${lines.gap}M0.5 0V${lines.gap}` : `M0 0.5H${lines.gap}`} stroke="#c4c8ce" strokeWidth="1" fill="none" />
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#board-paper)" />
+          {page && <rect data-testid="notebook-paper" data-page-width={page.w} x={left} width={width} height="100%" fill="white" stroke="#9ca3af" />}
+          {lines && (
+            <>
+              <defs>
+                <pattern id={patternId} patternUnits="userSpaceOnUse" x={lines.x} y={lines.y} width={lines.gap} height={lines.gap}>
+                  <path d={paper === 'grid' ? `M0 0.5H${lines.gap}M0.5 0V${lines.gap}` : `M0 0.5H${lines.gap}`} stroke="#c4c8ce" strokeWidth="1" fill="none" />
+                </pattern>
+              </defs>
+              <rect x={left} width={width} height="100%" fill={`url(#${patternId})`} />
+            </>
+          )}
         </svg>
       )}
     </div>
@@ -103,7 +115,10 @@ async function placeProblemImage(editor: Editor, base64: string, key: string | t
   const existing = findProblemShape(editor, key);
   if (existing) {
     const bounds = editor.getShapePageBounds(existing);
-    if (bounds) editor.zoomToBounds(bounds, { animation: { duration: 200 }, targetZoom: 1 });
+    if (bounds) {
+      if (editor.getCameraOptions().constraints) fitNotebookWidth(editor, bounds.minY - PROBLEM_MARGIN);
+      else editor.zoomToBounds(bounds, { animation: { duration: 200 }, targetZoom: 1 });
+    }
     return false;
   }
   const src = `data:image/png;base64,${base64}`;
@@ -112,12 +127,13 @@ async function placeProblemImage(editor: Editor, base64: string, key: string | t
   // been opened meanwhile (this picture isn't its problem).
   if (findProblemShape(editor, key) || !stillCurrent()) return false;
   const viewport = editor.getViewportPageBounds();
+  const notebookPage = editor.getCameraOptions().constraints?.bounds;
   // Crops are rendered at twice their page size; never wider than most of the view.
-  const scale = Math.min(0.5, (viewport.w * 0.8) / natural.w);
+  const scale = Math.min(0.5, (notebookPage ? notebookPage.w - PROBLEM_MARGIN * 2 : viewport.w * 0.8) / natural.w);
   const w = natural.w * scale;
   const h = natural.h * scale;
   const content = editor.getCurrentPageBounds();
-  const x = content ? content.minX : viewport.minX + PROBLEM_MARGIN / editor.getZoomLevel();
+  const x = notebookPage ? notebookPage.x + PROBLEM_MARGIN : content ? content.minX : viewport.minX + PROBLEM_MARGIN / editor.getZoomLevel();
   const y = !content ? viewport.minY + PROBLEM_TOP / editor.getZoomLevel()
     : key === true ? content.minY - h - PROBLEM_MARGIN : content.maxY + PROBLEM_MARGIN * 2;
   const assetId = AssetRecordType.createId();
@@ -132,7 +148,8 @@ async function placeProblemImage(editor: Editor, base64: string, key: string | t
       props: { assetId, w, h },
     });
   });
-  if (content) editor.zoomToBounds(Box.Common([content, new Box(x, y, w, h)]), { animation: { duration: 200 }, targetZoom: 1 });
+  if (notebookPage) fitNotebookWidth(editor, y - PROBLEM_TOP);
+  else if (content) editor.zoomToBounds(Box.Common([content, new Box(x, y, w, h)]), { animation: { duration: 200 }, targetZoom: 1 });
   // Back to the pen, keeping the size and dash picked on this board.
   editor.setCurrentTool('draw');
   return true;
@@ -204,6 +221,9 @@ export default function TldrawCanvas({ handleRef, toolsHidden, paper }: { handle
     dispatch({ type: 'LOADED', document: editor.getSnapshot().document, hasContent: editor.getCurrentPageShapeIds().size > 0 });
   }, [editor, pendingLoad, dispatch]);
 
+  const { notebook } = useNotebookMode();
+  const { notebookPage, fitWidth } = useNotebookCamera(editor, notebook, pendingLoad);
+
   useEffect(() => {
     if (!editor) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -227,6 +247,7 @@ export default function TldrawCanvas({ handleRef, toolsHidden, paper }: { handle
   }, [editor, dispatch]);
 
   useImperativeHandle(handleRef, () => ({
+    fitWidth,
     captureForTutor: async () => {
       if (!editor || loadPending.current) throw new Error('The board is still loading. Please try again.');
       const board = loads.current;
@@ -302,11 +323,13 @@ export default function TldrawCanvas({ handleRef, toolsHidden, paper }: { handle
       editor.markHistoryStoppingPoint('clear');
       editor.deleteShapes([...editor.getCurrentPageShapeIds()]);
     },
-  }), [editor]);
+  }), [editor, fitWidth]);
 
   return (
     <PaperContext.Provider value={paper}>
-      <Tldraw assetUrls={assetUrls} components={components} options={{ maxPages: 1 }} onMount={handleMount} hideUi={toolsHidden} />
+      <NotebookContext.Provider value={notebookPage}>
+        <Tldraw assetUrls={assetUrls} components={components} options={{ maxPages: 1 }} onMount={handleMount} hideUi={toolsHidden} />
+      </NotebookContext.Provider>
     </PaperContext.Provider>
   );
 }
