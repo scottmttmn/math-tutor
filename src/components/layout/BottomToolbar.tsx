@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { useCanvasState } from '@/context/CanvasContext';
 import { useRateLimit } from '@/hooks/useRateLimit';
 import { useNotebookMode } from '@/hooks/useNotebookMode';
+import { useBooxPenAvailable, useBooxPenMode } from '@/hooks/useBooxPen';
 import { RATE_LIMIT_MS } from '@/lib/constants';
 import type { Paper, SessionType } from '@/types';
 import { PAPERS } from '@/lib/paper';
@@ -40,6 +41,8 @@ interface Props {
 
 export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp, paper, onFitWidth, favorite }: Props) {
   const { notebook, toggleNotebook } = useNotebookMode();
+  const [booxPen, toggleBooxPen] = useBooxPenMode();
+  const booxAvailable = useBooxPenAvailable();
   const { hasContent } = useCanvasState();
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
   const helpDisabled = isLimited || isStreaming;
@@ -96,6 +99,7 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
           align="left"
           items={[
             { label: 'Notebook mode (experiment)', role: 'menuitemcheckbox', checked: notebook, onSelect: toggleNotebook },
+            ...(booxAvailable ? [{ label: 'BOOX pen (experiment)', role: 'menuitemcheckbox' as const, checked: booxPen, onSelect: toggleBooxPen }] : []),
             ...(tools ? [{ label: 'Hide drawing tools', role: 'menuitemcheckbox' as const, checked: tools.hidden, onSelect: tools.toggle }] : []),
             ...(onWriteUp ? [{ label: 'TeX write-up…', separatorBefore: Boolean(tools), onSelect: onWriteUp }] : []),
             ...(onSaveAs ? [

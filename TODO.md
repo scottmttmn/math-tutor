@@ -37,7 +37,7 @@ Every change goes through a branch and a PR (see CLAUDE.md, "Workflow and CI"). 
 ## BOOX validation — waiting for the device
 
 - [ ] Test the actual app's small mathematical symbols, stroke latency, palm rejection, erasing, selection, undo, page movement and long reading sessions. The bare `/pen-test` page is available for comparison.
-- [ ] Use those results to decide whether tldraw is suitable and whether a native pen layer / BOOX SDK integration is needed. Keep canvas-specific polish small until then.
+- [ ] Use those results to decide whether tldraw is suitable and whether a native pen layer / BOOX SDK integration is needed. Keep canvas-specific polish small until then. A first BOOX SDK layer is built but untried: **BOOX pen SDK** on `/pen-test` and **Board → BOOX pen (experiment)**, both offered only on BOOX.
 - [ ] Try the installed Android app's tutor calls and Sign in with ChatGPT on the device, without a Mac.
 - [ ] Test backup/restore on the device and choose its long-term backup location or sync workflow.
 - [ ] Decide whether the pen panel should have fewer colors and no opacity for the monochrome screen.

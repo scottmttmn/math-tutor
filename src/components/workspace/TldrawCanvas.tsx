@@ -13,6 +13,7 @@ import type { DrawingCanvasHandle } from './DrawingCanvas';
 import PenStylePanel from '@/components/workspace/PenStylePanel';
 import { useNotebookMode } from '@/hooks/useNotebookMode';
 import { fitNotebookWidth, useNotebookCamera } from '@/hooks/useNotebookCamera';
+import { useBooxPen } from '@/hooks/useBooxPen';
 
 const PaperContext = createContext<Paper>('blank');
 const NotebookContext = createContext<Box | null>(null);
@@ -225,6 +226,7 @@ export default function TldrawCanvas({ handleRef, toolsHidden, paper }: { handle
 
   const { notebook } = useNotebookMode();
   const { notebookPage, fitWidth } = useNotebookCamera(editor, notebook, pendingLoad);
+  useBooxPen(editor);
 
   useEffect(() => {
     if (!editor) return;

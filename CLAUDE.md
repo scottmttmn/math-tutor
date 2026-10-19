@@ -97,6 +97,8 @@ src/
 │   ├── useLearnerProfile.ts   # Loads the tutor memory and saves it shortly after each change
 │   ├── useFavorite.ts         # The open board's Favorite star, kept in the tutor memory
 │   ├── useBackupStatus.ts     # Shared folder-backup state (starts the backup on first use)
+│   ├── useBooxPen.ts          # BOOX pen (experiment): Onyx's pen SDK draws the pen tool's strokes, which become tldraw ink
+│   ├── useDeviceToggle.ts     # deviceToggle(key): an on/off choice remembered per device (Notebook mode, BOOX pen)
 │   ├── useAddPdfs.ts          # Adds PDFs to the library (AppBar's Add a PDF, a drop on Home)
 │   └── useChatGPTConnection.ts# Sign in with ChatGPT state for SettingsModal
 ├── lib/
@@ -131,6 +133,7 @@ src/
 │   ├── tutorRequest.ts        # requestTutor: POST /api/tutor, or in the Android build tutorDirect.ts
 │   ├── tutorDirect.ts         # Android app: calls the provider from the tablet with the key saved on it
 │   ├── deviceKeys.ts          # Android app: API keys kept by the native DeviceKeys plugin
+│   ├── booxPen.ts             # Android app on BOOX: the BooxPen plugin (Onyx's pen SDK), its stroke points and boxes
 │   ├── tutorRequestGate.ts    # Server-side five-second / one-at-a-time tutor request gate
 │   ├── geminiFallback.ts      # Gemini Flash quota fallback chain
 │   ├── tutorContent.ts        # Splits tutor replies into text and LaTeX for KaTeX rendering
@@ -289,7 +292,7 @@ npm run start  # Production server
 npm run lint   # ESLint
 npm run typecheck  # tsc --noEmit
 npm test       # Unit tests
-npm run test:e2e   # Browser tests (boards, tutor chat, Shelf, Shelf reading, backup, tutor memory, check-in, TeX write-up, pen test; `npm run test:android:e2e` checks the Android bundle in out/); needs `npm run start -- -p 3100` running
+npm run test:e2e   # Browser tests (boards, tutor chat, Shelf, Shelf reading, backup, tutor memory, check-in, TeX write-up, pen test, BOOX pen; `npm run test:android:e2e` checks the Android bundle in out/); needs `npm run start -- -p 3100` running
 npm run handwriting  # Handwriting test: transcribe tests/handwriting/wacom/<page-id>.png with each model, score against tests/handwriting/pages.json (results in tests/handwriting/results/, gitignored). chatgpt:<model> entries go through the running app's /api/transcribe, so start the app and sign in first
 ```
 
@@ -307,6 +310,7 @@ npm run handwriting  # Handwriting test: transcribe tests/handwriting/wacom/<pag
 - **Tutor on the device:** the Android build sets `NEXT_PUBLIC_TUTOR_DIRECT=1` (`next.config.ts`), so `requestTutor` runs `tutorDirect.ts` instead of POSTing to `/api/tutor`: `planTutorRequest` plus the provider stream from `tutorProviders.ts` with `dangerouslyAllowBrowser`, answered as the same SSE `Response`. Providers must accept browser requests from `http://localhost` (Anthropic, OpenAI and Gemini do; an Ollama server needs `OLLAMA_ORIGINS`; the manifest allows cleartext traffic so an `http://` Ollama on the local network is reachable). There is no server gate; the browser's `useRateLimit` spaces requests. The ChatGPT plan works there too, through `chatgptDevice.ts` (see Sign in with ChatGPT).
 - **API keys on the device:** Settings → Tutor shows a key field for the chosen provider (Anthropic, Gemini, or one for OpenAI/Groq/custom, as on the server). The native `DeviceKeys` plugin (`DeviceKeysPlugin.java`) encrypts each with an AES-GCM key in the Android Keystore and keeps it in `device_keys.xml`, which `res/xml/backup_rules.xml` and `data_extraction_rules.xml` leave out of Android's backups; the app's own backups never include keys. Settings shows only whether a key is saved.
 - The hooks still turn a non-SSE reply into `TUTOR_UNAVAILABLE`, and cancel the reply's reader when a request is abandoned (in the app that aborts the provider call).
+- **BOOX pen (experiment, 2026-10-19, not yet tried on a device):** `BooxPenPlugin.java` wraps Onyx's pen SDK (`com.onyx.android.sdk:onyxsdk-pen` from `repo.boox.com`, http only, so `android/build.gradle` limits that repository to `com.onyx` packages; plus `hiddenapibypass`, as Onyx's demos do on Android 11+). It is inert unless `Build.MANUFACTURER` is ONYX (`status()` says `onyx: false`, everything else is refused). Inside a region of the WebView the e-ink controller draws the stylus itself; each finished stroke reaches the page as a `stroke` event (`erase` for the eraser end), points `[x, y, pressure, ms, …]` in CSS px. Raw drawing holds the screen's own updates back in the region, so the page calls `refresh()` after the board changes and `pause()` while a menu or dialog covers it. On boards, **Board → BOOX pen (experiment)** (offered only on BOOX, `math-tutor:booxPen`, `useBooxPen`) uses it while the pen tool is chosen: the region is `.tl-canvas` less tldraw's controls, each stroke becomes a draw shape in the pen's current style (one undo step), the eraser end deletes whole strokes, and pen events the WebView still gets on the canvas are stopped. `/pen-test` has a **BOOX pen SDK** toggle to compare with the browser. `tests/booxPen.e2e.mjs` stands in for the native bridge.
 - The WebView can't save `blob:` downloads, so `downloadBlob` (`src/lib/backup.ts`) sends files to the app's own `SaveFile` plugin (`android/app/src/main/java/com/scottmttmn/mathtutor/SaveFilePlugin.java`, registered in `MainActivity`), which opens Android's Save dialog. It resolves `false` when the dialog is cancelled, and then the backup isn't recorded.
 
 ### Linting
