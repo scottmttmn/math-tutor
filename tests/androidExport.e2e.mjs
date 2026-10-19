@@ -49,6 +49,17 @@ try {
   await page.goto(`${origin}/board?new=note`);
   await page.locator('.tl-canvas').waitFor();
   assert.equal(new URL(page.url()).pathname, '/board');
+  await page.getByRole('button', { name: 'Board menu', exact: true }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Notebook mode (experiment)', exact: true }).click();
+  await page.getByTestId('notebook-paper').waitFor();
+  await page.getByRole('button', { name: 'Fit width', exact: true }).click();
+  assert.equal(await page.getByTestId('notebook-paper').getAttribute('data-page-width'), '960');
+  await page.reload();
+  await page.getByTestId('notebook-paper').waitFor();
+  await page.getByRole('button', { name: 'Board menu', exact: true }).click();
+  assert.equal(await page.getByRole('menuitemcheckbox', { name: 'Notebook mode (experiment)', exact: true }).getAttribute('aria-checked'), 'true');
+  await page.getByRole('menuitemcheckbox', { name: 'Notebook mode (experiment)', exact: true }).click();
+  await page.getByTestId('notebook-paper').waitFor({ state: 'detached' });
   await page.goto(`${origin}/pen-test`);
   await page.getByTestId('pen-test-canvas').waitFor();
   assert.equal(new URL(page.url()).pathname, '/pen-test');

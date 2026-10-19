@@ -156,6 +156,7 @@ function AppContent() {
             onAskForHelp={(question) => void handleAskForHelp(question)}
             checkInLabel={checkIn ? (checkInStarted(chatHistory) ? 'Hand in answer' : 'Start check-in') : undefined}
             onClear={() => canvasHandle.current?.clear()}
+            onFitWidth={() => canvasHandle.current?.fitWidth()}
             isStreaming={isStreaming}
             isSolved={isSolved}
             onToggleSolved={() => sessionDispatch({ type: 'TOGGLE_SOLVED' })}

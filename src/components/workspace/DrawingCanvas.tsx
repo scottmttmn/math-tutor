@@ -6,6 +6,8 @@ import { useCanvasState } from '@/context/CanvasContext';
 import type { CanvasDocument, Paper, TutorBoardImages } from '@/types';
 
 export interface DrawingCanvasHandle {
+  /** Returns to the notebook's writing width, keeping the current line at the top. */
+  fitWidth: () => void;
   /** PNG (base64, no data: prefix) of the selected shapes, else the whole drawing; '' when nothing is drawn. */
   captureImage: () => Promise<string>;
   /** The selected shapes, else the board, with readable close-ups when its overview is downscaled. */

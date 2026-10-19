@@ -824,6 +824,7 @@ export default function ShelfReader() {
             <BottomToolbar
               onAskForHelp={(question) => void askForHelp(question)}
               onClear={() => canvasHandle.current?.clear()}
+              onFitWidth={() => canvasHandle.current?.fitWidth()}
               isStreaming={isStreaming}
               isSolved={isSolved}
               onToggleSolved={() => sessionDispatch({ type: 'TOGGLE_SOLVED' })}
