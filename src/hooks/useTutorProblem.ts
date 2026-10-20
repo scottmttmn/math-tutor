@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCanvasState } from '@/context/CanvasContext';
 import { useSessionDispatch, useSessionState } from '@/context/SessionContext';
 import { loadProfile } from '@/lib/db';
 import { getModelConfig } from '@/lib/modelConfig';
@@ -16,6 +17,7 @@ import { requestTutorText } from '@/lib/tutorText';
 export function useTutorProblem() {
   const { tutorProblem, problemStatement, conversationKey } = useSessionState();
   const dispatch = useSessionDispatch();
+  const { pendingLoad } = useCanvasState();
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef<AbortController | null>(null);
@@ -63,12 +65,14 @@ export function useTutorProblem() {
 
   useEffect(() => () => { pending.current?.abort(); }, []);
 
-  // A new board the tutor writes for asks once; a failure waits for Try again.
+  // A new board the tutor writes for asks once, after the editor shows it (autosave counts a
+  // board as saved when its load completes, so a problem landing before that would never be saved);
+  // a failure waits for Try again.
   useEffect(() => {
-    if (!tutorProblem || problemStatement.trim() || asked.current === conversationKey) return;
+    if (!tutorProblem || pendingLoad || problemStatement.trim() || asked.current === conversationKey) return;
     const timer = setTimeout(() => { asked.current = conversationKey; void make(); });
     return () => clearTimeout(timer);
-  }, [tutorProblem, problemStatement, conversationKey, make]);
+  }, [tutorProblem, pendingLoad, problemStatement, conversationKey, make]);
 
   const another = useCallback(() => {
     if (problemStatement.trim() && !offered.current.includes(problemStatement)) offered.current = [...offered.current, problemStatement];

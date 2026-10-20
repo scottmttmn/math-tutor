@@ -178,12 +178,13 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
       if (!problems?.length) return state;
       return select(state, problems, state.currentProblem === action.id ? problems[0].id : state.currentProblem);
     }
-    case 'SET_TUTOR_PROBLEM':
+    case 'SET_TUTOR_PROBLEM': {
       if (!state.tutorProblem) return state;
-      return {
-        ...state, problemStatement: action.problem,
-        tutorProblem: { ...state.tutorProblem, ...(action.title ? { title: action.title } : {}) },
-      };
+      // A reply without a title drops the last problem's, so the board goes by its own first line.
+      const asked = { ...state.tutorProblem };
+      delete asked.title;
+      return { ...state, problemStatement: action.problem, tutorProblem: action.title ? { ...asked, title: action.title } : asked };
+    }
     case 'SET_WRITE_UP':
       return { ...state, writeUp: action.writeUp };
     case 'SET_PAPER':
