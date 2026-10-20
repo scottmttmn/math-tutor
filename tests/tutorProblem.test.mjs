@@ -53,12 +53,13 @@ test('writing a problem reads the memory and the request, and nothing from a boa
   assert.doesNotMatch(open.systemPrompt, /LEARNER PROFILE/);
 });
 
-test('a problem from the tutor takes its title, and a reply without one drops the last title', () => {
+test('a problem from the tutor takes its title and tokens, and a reply without them drops the last ones', () => {
   const { sessionReducer, initialState } = load('src/context/SessionContext.tsx');
   let state = sessionReducer(initialState, { type: 'NEW_SESSION', sessionType: 'problem', tutorProblem: { topic: 'Residues' } });
-  state = sessionReducer(state, { type: 'SET_TUTOR_PROBLEM', problem: 'Evaluate \\(\\oint f\\).', title: 'A contour integral' });
+  const usage = { inputTokens: 800, outputTokens: 2400, reasoningTokens: 2200, provider: 'anthropic' };
+  state = sessionReducer(state, { type: 'SET_TUTOR_PROBLEM', problem: 'Evaluate \\(\\oint f\\).', title: 'A contour integral', usage });
   assert.equal(state.problemStatement, 'Evaluate \\(\\oint f\\).');
-  assert.deepEqual(state.tutorProblem, { topic: 'Residues', title: 'A contour integral' });
+  assert.deepEqual(state.tutorProblem, { topic: 'Residues', title: 'A contour integral', usage });
   state = sessionReducer(state, { type: 'SET_TUTOR_PROBLEM', problem: 'Find a residue.', title: '' });
   assert.deepEqual(state.tutorProblem, { topic: 'Residues' });
   // An ordinary board has no tutor problem to set.

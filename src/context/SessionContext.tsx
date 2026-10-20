@@ -15,7 +15,7 @@ type SessionAction =
   | { type: 'LOAD_SESSION'; sessionId: string; problemStatement: string; chatHistory: ChatMessage[]; problemImage: string | null; isSolved?: boolean; sessionType?: SessionType; checkIn?: CheckIn; writeUp?: WriteUp; paper?: Paper; problems?: BoardProblem[]; currentProblem?: string; tutorProblem?: TutorProblem }
   | { type: 'NEW_SESSION'; sessionType?: SessionType; tutorProblem?: TutorProblem }
   // The tutor's problem for this board arrived (or was replaced by Different problem).
-  | { type: 'SET_TUTOR_PROBLEM'; problem: string; title: string }
+  | { type: 'SET_TUTOR_PROBLEM'; problem: string; title: string; usage?: TokenUsage }
   | { type: 'SET_SESSION_LIST'; sessions: SessionMetadata[] }
   | { type: 'SET_CURRENT_SESSION_ID'; id: string }
   | { type: 'TOGGLE_SOLVED' }
@@ -180,10 +180,14 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
     }
     case 'SET_TUTOR_PROBLEM': {
       if (!state.tutorProblem) return state;
-      // A reply without a title drops the last problem's, so the board goes by its own first line.
+      // A reply without a title (or usage) drops the last problem's, so the board goes by its own first line.
       const asked = { ...state.tutorProblem };
       delete asked.title;
-      return { ...state, problemStatement: action.problem, tutorProblem: action.title ? { ...asked, title: action.title } : asked };
+      delete asked.usage;
+      return {
+        ...state, problemStatement: action.problem,
+        tutorProblem: { ...asked, ...(action.title ? { title: action.title } : {}), ...(action.usage ? { usage: action.usage } : {}) },
+      };
     }
     case 'SET_WRITE_UP':
       return { ...state, writeUp: action.writeUp };

@@ -1,6 +1,7 @@
 'use client';
 
 import TutorContent from '@/components/chat/TutorContent';
+import UsageFooter from '@/components/chat/UsageFooter';
 import type { TutorProblem } from '@/types';
 
 interface Props {
@@ -29,7 +30,10 @@ export default function TutorProblemHeader({ tutorProblem, problem, draft, error
           {draft && <div className="text-base text-gray-900"><TutorContent content={draft} /></div>}
         </div>
       ) : problem ? (
-        <div data-testid="tutor-problem" className="text-base leading-relaxed text-gray-900"><TutorContent content={problem} /></div>
+        <div>
+          <div data-testid="tutor-problem" className="text-base leading-relaxed text-gray-900"><TutorContent content={problem} /></div>
+          {tutorProblem.usage && <UsageFooter usage={tutorProblem.usage} />}
+        </div>
       ) : null}
       {error && !writing && (
         <div role="alert" className="flex items-center gap-2 text-sm text-red-700">

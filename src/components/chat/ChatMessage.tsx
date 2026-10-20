@@ -2,7 +2,7 @@
 
 import type { ChatMessage as ChatMessageType } from '@/types';
 import TutorContent from './TutorContent';
-import { CHATGPT_USAGE_URL } from '@/lib/constants';
+import UsageFooter from './UsageFooter';
 
 interface Props {
   message: ChatMessageType;
@@ -28,23 +28,7 @@ export default function ChatMessage({ message }: Props) {
         )}
         {message.model && <div className="mb-1 text-xs text-gray-500">Answered with {message.model} after a quota limit</div>}
         <TutorContent content={message.content} markdown={!isUser} />
-        {message.usage && (
-          <div className="mt-1.5 pt-1.5 border-t border-gray-200 text-xs text-gray-500">
-            <div>{(message.usage.inputTokens + message.usage.outputTokens).toLocaleString()} tokens this request</div>
-            <div>
-              {message.usage.inputTokens.toLocaleString()} input · {message.usage.outputTokens.toLocaleString()} output
-              {message.usage.reasoningTokens !== undefined && <> (including {message.usage.reasoningTokens.toLocaleString()} reasoning)</>}
-            </div>
-            {message.usage.cachedInputTokens !== undefined && (
-              <div>Input includes {message.usage.cachedInputTokens.toLocaleString()} cached tokens</div>
-            )}
-            {(message.usage.provider === undefined || message.usage.provider === 'chatgpt') && (
-              <a href={CHATGPT_USAGE_URL} target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-700">
-                Manage ChatGPT usage
-              </a>
-            )}
-          </div>
-        )}
+        {message.usage && <UsageFooter usage={message.usage} />}
         {!message.content && (
           <div className="flex gap-1 py-1">
             <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />

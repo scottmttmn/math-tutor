@@ -31,12 +31,12 @@ export function useWriteUp() {
       const canvasImage = await captureImage();
       if (abort.signal.aborted) return false;
       if (!canvasImage) throw new Error('The board is empty. Write something first.');
-      const text = await requestTutorText({
+      const reply = await requestTutorText({
         writeUp: true, problemStatement, problemImage: problemImage ?? undefined,
         chatHistory: [], canvasImage, modelConfig: getModelConfig(),
       }, abort.signal, setDraft);
-      if (text === null) return false;
-      const tex = cleanTexReply(text);
+      if (reply === null) return false;
+      const tex = cleanTexReply(reply.text);
       if (!tex) throw new Error('The tutor returned no write-up. Please try again.');
       if (!abort.signal.aborted) dispatch({ type: 'SET_WRITE_UP', writeUp: { tex, updatedAt: Date.now() } });
       return true;

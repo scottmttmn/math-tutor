@@ -42,10 +42,10 @@ export function useTutorProblem() {
         ...(learnerProfile ? { learnerProfile } : {}),
       }, abort.signal, (text) => setDraft(parseMadeProblem(text).problem));
       if (reply === null) return;
-      const { title, problem } = parseMadeProblem(reply);
+      const { title, problem } = parseMadeProblem(reply.text);
       if (!problem) throw new Error('The tutor returned no problem. Please try again.');
       offered.current = [...offered.current, problem];
-      dispatch({ type: 'SET_TUTOR_PROBLEM', problem, title });
+      dispatch({ type: 'SET_TUTOR_PROBLEM', problem, title, usage: reply.usage });
     } catch (caught) {
       if (!abort.signal.aborted) setError(caught instanceof Error ? caught.message : 'The tutor could not write a problem');
     } finally {
