@@ -3,11 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSessionDispatch, useSessionState } from '@/context/SessionContext';
 import { getModelConfig } from '@/lib/modelConfig';
-import { TUTOR_UNAVAILABLE } from '@/lib/constants';
-import { getTutorWaitMs, recordTutorUsage, tryStartTutorRequest } from '@/hooks/useRateLimit';
 import { cleanTexReply } from '@/lib/texWriteUp';
-import { requestTutor } from '@/lib/tutorRequest';
-import type { TutorStreamEvent } from '@/types';
+import { requestTutorText } from '@/lib/tutorText';
 
 /**
  * The board's TeX write-up: `convert` sends a picture of the handwriting to the tutor route in
@@ -34,59 +31,11 @@ export function useWriteUp() {
       const canvasImage = await captureImage();
       if (abort.signal.aborted) return false;
       if (!canvasImage) throw new Error('The board is empty. Write something first.');
-      const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-      // Requests share the tutor's five-second spacing; wait it out rather than refuse.
-      const wait = getTutorWaitMs();
-      if (wait > 0) await pause(wait + 50);
-      if (abort.signal.aborted) return false;
-      if (!tryStartTutorRequest()) throw new Error('The tutor is busy. Try again in a moment.');
-      const send = () => requestTutor({
+      const text = await requestTutorText({
         writeUp: true, problemStatement, problemImage: problemImage ?? undefined,
         chatHistory: [], canvasImage, modelConfig: getModelConfig(),
-      }, abort.signal);
-      let response = await send();
-      // The server's gate counts requests from every tab; when it asks to wait, wait once and retry.
-      if (response.status === 429) {
-        const seconds = Number(response.headers.get('Retry-After'));
-        await pause((Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 10) : 5) * 1000 + 100);
-        if (abort.signal.aborted) return false;
-        recordTutorUsage();
-        response = await send();
-      }
-      if (!response.ok) {
-        if (response.status === 429) recordTutorUsage();
-        throw new Error(await response.text() || response.statusText);
-      }
-      if (!response.headers.get('Content-Type')?.includes('text/event-stream')) throw new Error(TUTOR_UNAVAILABLE);
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('No response stream');
-      abort.signal.addEventListener('abort', () => { void reader.cancel().catch(() => undefined); });
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let text = '';
-      let stopped = false;
-      const readEvent = (frame: string) => {
-        const data = frame.split(/\r?\n/).filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart()).join('\n');
-        if (!data) return;
-        const event: TutorStreamEvent = JSON.parse(data);
-        if (event.type === 'text_delta' && event.content) {
-          text += event.content;
-          if (!abort.signal.aborted) setDraft(text);
-        } else if (event.type === 'message_stop') stopped = true;
-        else if (event.type === 'error') throw new Error(event.error || 'The write-up failed');
-      };
-      while (true) {
-        const { done, value } = await reader.read();
-        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
-        const frames = buffer.split(/\r?\n\r?\n/);
-        buffer = frames.pop() || '';
-        for (const frame of frames) readEvent(frame);
-        if (done) {
-          if (buffer.trim()) readEvent(buffer);
-          break;
-        }
-      }
-      if (!stopped) throw new Error('The write-up was interrupted. Please try again.');
+      }, abort.signal, setDraft);
+      if (text === null) return false;
       const tex = cleanTexReply(text);
       if (!tex) throw new Error('The tutor returned no write-up. Please try again.');
       if (!abort.signal.aborted) dispatch({ type: 'SET_WRITE_UP', writeUp: { tex, updatedAt: Date.now() } });

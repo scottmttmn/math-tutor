@@ -1,10 +1,10 @@
 'use client';
 
-import type { AutosaveStatus, SessionType } from '@/types';
+import type { AutosaveStatus, SessionType, TutorProblem } from '@/types';
 import AppBar from './AppBar';
 
 interface Props {
-  onNew: (type: SessionType) => void;
+  onNew: (type: SessionType, tutorProblem?: TutorProblem) => void;
   saveStatus: AutosaveStatus;
   onSave: () => Promise<unknown>;
   /** A tutor reply is streaming in; leaving or starting a new board would lose it. */
