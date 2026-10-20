@@ -18,6 +18,8 @@ const provider = createServer(async (req, res) => {
   requests.push(JSON.parse(raw));
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
   for (const content of problems[(requests.length - 1) % problems.length]) res.write(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`);
+  // The first reply reports its tokens; the second doesn't, so the footer goes with the first problem.
+  if (requests.length === 1) res.write(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 812, completion_tokens: 2400, completion_tokens_details: { reasoning_tokens: 2200 } } })}\n\n`);
   res.end('data: [DONE]\n\n');
 });
 await new Promise((resolve) => provider.listen(0, '127.0.0.1', resolve));
@@ -54,13 +56,16 @@ try {
   assert.doesNotMatch(system.content, /The answer is theirs to find|TOPIC NOTES/);
   assert.match(JSON.stringify(rest), /Write me a problem. You choose the topic.\\nAlso: something about residues/);
   assert.doesNotMatch(JSON.stringify(rest), /image_url/);
+  await page.getByText('3,212 tokens this request').waitFor();
+  await page.getByText('812 input · 2,400 output (including 2,200 reasoning)').waitFor();
   await page.getByText('Saved', { exact: true }).waitFor();
-  console.log('PASS + New → Problem from tutor opens a board with the problem typeset');
+  console.log('PASS + New → Problem from tutor opens a board with the problem typeset and its tokens');
 
   // Different problem replaces it while the board is empty, and tells the tutor what it already offered.
   await page.getByRole('button', { name: 'Different problem' }).click();
   await page.getByRole('heading', { level: 1, name: 'Residue at infinity' }).waitFor({ timeout: 20_000 });
   assert.match(await shown().innerText(), /residue of/);
+  assert.equal(await page.getByText('tokens this request').count(), 0);
   assert.equal(requests.length, 2);
   assert.match(JSON.stringify(requests[1].messages), /Not one of these, which I was already offered:\\n- Evaluate/);
   console.log('PASS Different problem swaps in another one');

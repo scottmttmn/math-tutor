@@ -143,6 +143,8 @@ export interface TutorProblem {
   ask?: string;
   /** The tutor's short name for the problem, used as the board's title. */
   title?: string;
+  /** Tokens the request for the problem shown took, when the provider reported them. */
+  usage?: TokenUsage;
 }
 
 /** One entry in History: a free-form board, or a Shelf exercise with work in it. */
@@ -369,7 +371,7 @@ export interface TutorRequest extends TutorBoardImages {
   /** On a board holding several exercises: the others' names (the problem above is the one being worked on). */
   otherProblems?: string[];
   /** Write a new problem for the student (MAKE_PROBLEM_PROMPT) instead of tutoring; `avoid` lists problems already offered. */
-  makeProblem?: TutorProblem & { avoid?: string[] };
+  makeProblem?: Omit<TutorProblem, 'title' | 'usage'> & { avoid?: string[] };
 }
 
 /** One request as the model gets it (planTutorRequest in src/lib/tutorPrompt.ts), for any provider. */
