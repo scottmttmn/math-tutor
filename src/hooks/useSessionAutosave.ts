@@ -9,7 +9,7 @@ import { boardToOpen, setBoardToOpen } from '@/lib/currentBoard';
 import { checkInTitle } from '@/lib/checkIn';
 import { allSolved, problemsTitle } from '@/lib/boardProblems';
 import type { DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
-import type { AutosaveStatus, Session, SessionType } from '@/types';
+import type { AutosaveStatus, Session, SessionType, TutorProblem } from '@/types';
 
 const SAVE_DELAY_MS = 800;
 
@@ -17,7 +17,7 @@ const SAVE_DELAY_MS = 800;
 const contentKey = (session: Session) => JSON.stringify([
   session.problemStatement, session.problemImage, session.chatHistory, session.isSolved, session.sessionType,
   session.checkIn ?? null, session.writeUp?.tex ?? null, session.paper ?? null, session.canvasDocument?.store ?? null, session.canvasStrokes,
-  session.problems ?? null, session.currentProblem ?? null,
+  session.problems ?? null, session.currentProblem ?? null, session.tutorProblem ?? null,
 ]);
 
 const rememberCurrent = setBoardToOpen;
@@ -65,7 +65,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
     if (!createdAt.current) createdAt.current = Date.now();
     return {
       id: s.currentSessionId ?? draftId.current!,
-      title: s.checkIn ? checkInTitle(s.checkIn) : s.problems ? problemsTitle(s.problems) : s.problemStatement.slice(0, 50) || 'Untitled',
+      title: s.checkIn ? checkInTitle(s.checkIn) : s.tutorProblem?.title ? s.tutorProblem.title : s.problems ? problemsTitle(s.problems) : s.problemStatement.slice(0, 50) || 'Untitled',
       problemStatement: s.problemStatement,
       problemImage: s.problemImage,
       // Strokes from a pre-tldraw save stay until the editor has converted them.
@@ -80,6 +80,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
       sessionType: s.sessionType,
       ...(s.checkIn ? { checkIn: s.checkIn } : {}),
       ...(s.writeUp ? { writeUp: s.writeUp } : {}),
+      ...(s.tutorProblem ? { tutorProblem: s.tutorProblem } : {}),
       ...(s.paper ? { paper: s.paper } : {}),
       ...(s.problems ? { problems: s.problems, ...(s.currentProblem ? { currentProblem: s.currentProblem } : {}) } : {}),
       ...(!s.currentSessionId && draftFolder.current ? { folderId: draftFolder.current } : {}),
@@ -120,7 +121,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
     return queue.current;
   }, [snapshot, canvasHandle, sessionDispatch, reopenLast]);
 
-  const applyLoad = useCallback((session: Session | undefined, type: SessionType = 'problem') => {
+  const applyLoad = useCallback((session: Session | undefined, type: SessionType = 'problem', tutorProblem?: TutorProblem) => {
     loading.current = true;
     awaitingEditor.current = true;
     savedKey.current = null;
@@ -140,13 +141,14 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
         sessionType: session.sessionType,
         checkIn: session.checkIn,
         writeUp: session.writeUp,
+        tutorProblem: session.tutorProblem,
         paper: session.paper,
         problems: session.problems,
         currentProblem: session.currentProblem,
       });
       canvasDispatch({ type: 'LOAD', document: session.canvasDocument, strokes: session.canvasStrokes });
     } else {
-      sessionDispatch({ type: 'NEW_SESSION', sessionType: type });
+      sessionDispatch({ type: 'NEW_SESSION', sessionType: type, tutorProblem });
       canvasDispatch({ type: 'LOAD' });
     }
     if (reopenLast) rememberCurrent(session?.id ?? null);
@@ -163,11 +165,14 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
     return true;
   }, [persist, applyLoad]);
 
-  /** Saves the current session (unless it was just deleted), then starts an empty one (filed in `folderId`, if given). */
-  const startNew = useCallback(async (type: SessionType, opts?: { discardCurrent?: boolean; folderId?: string }): Promise<boolean> => {
+  /**
+   * Saves the current session (unless it was just deleted), then starts an empty one (filed in
+   * `folderId`, if given; a problem board the tutor writes the problem for, given `tutorProblem`).
+   */
+  const startNew = useCallback(async (type: SessionType, opts?: { discardCurrent?: boolean; folderId?: string; tutorProblem?: TutorProblem }): Promise<boolean> => {
     switched.current = true;
     if (!opts?.discardCurrent && !await persist()) return false;
-    applyLoad(undefined, type);
+    applyLoad(undefined, type, opts?.tutorProblem);
     draftFolder.current = opts?.folderId;
     return true;
   }, [persist, applyLoad]);
@@ -196,7 +201,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
   useEffect(() => {
     const timer = setTimeout(() => { void persist(); }, SAVE_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [state.problemStatement, state.problemImage, state.chatHistory, state.isSolved, state.sessionType, state.paper, state.problems, state.currentProblem, canvasDocument, persist]);
+  }, [state.problemStatement, state.problemImage, state.chatHistory, state.isSolved, state.sessionType, state.paper, state.problems, state.currentProblem, state.tutorProblem, canvasDocument, persist]);
 
   // A reload or closed tab can't wait for IndexedDB; keep a synchronous copy for the next load.
   const flush = useCallback(() => {

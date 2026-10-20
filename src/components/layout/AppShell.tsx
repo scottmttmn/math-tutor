@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { CanvasProvider } from '@/context/CanvasContext';
+import { CanvasProvider, useCanvasState } from '@/context/CanvasContext';
 import { SessionProvider, useSessionState, useSessionDispatch } from '@/context/SessionContext';
 import { paperFor } from '@/lib/paper';
 import { useTutorChat } from '@/hooks/useTutorChat';
@@ -10,8 +10,9 @@ import { useSessionAutosave } from '@/hooks/useSessionAutosave';
 import { useBoardFullScreen } from '@/hooks/useBoardFullScreen';
 import { useToolsHidden } from '@/hooks/useToolsHidden';
 import { useWriteUp } from '@/hooks/useWriteUp';
+import { useTutorProblem } from '@/hooks/useTutorProblem';
 
-import type { SessionType, TutorBoardImages } from '@/types';
+import type { SessionType, TutorBoardImages, TutorProblem } from '@/types';
 import TopBar from './TopBar';
 import BottomToolbar from './BottomToolbar';
 import FavoriteButton from './FavoriteButton';
@@ -19,6 +20,7 @@ import { useFavorite } from '@/hooks/useFavorite';
 import ProblemStatement from '../workspace/ProblemStatement';
 import NoteHeader from '../workspace/NoteHeader';
 import CheckInHeader from '../workspace/CheckInHeader';
+import TutorProblemHeader from '../workspace/TutorProblemHeader';
 import { checkInStarted, checkInTitle } from '@/lib/checkIn';
 import DrawingCanvas, { type DrawingCanvasHandle } from '../workspace/DrawingCanvas';
 import ChatPanel from '../chat/ChatPanel';
@@ -41,31 +43,41 @@ function AppContent() {
   const { sendHelp } = useTutorChat();
   const { status: saveStatus, saveNow, startNew } = useSessionAutosave(canvasHandle);
   const writeUp = useWriteUp();
-  const boardTitle = checkIn ? checkInTitle(checkIn) : problemStatement || (sessionType === 'note' ? 'Notes' : 'Problem');
+  const made = useTutorProblem();
+  const { hasContent } = useCanvasState();
+  const { tutorProblem } = made;
+  // A problem the tutor wrote is LaTeX; its board goes by the tutor's plain title.
+  const problemTitle = tutorProblem?.title || problemStatement.split('\n')[0].trim();
+  const boardTitle = checkIn ? checkInTitle(checkIn) : (tutorProblem?.title || problemStatement) || (sessionType === 'note' ? 'Notes' : 'Problem');
   // A board is starred once it is saved (has an id); the tutor reads its statement, or that it was a picture.
   const favorite = useFavorite(currentSessionId, {
-    title: checkIn ? checkInTitle(checkIn) : problemStatement.split('\n')[0].trim() || 'Untitled problem',
+    title: checkIn ? checkInTitle(checkIn) : problemTitle || 'Untitled problem',
     problem: problemStatement.trim() ? problemStatement : problemImage ? 'A problem given as a picture' : 'Written on the board',
   });
 
   // A new board opens with its tutor closed, so the problem or topic is in view.
   const { cancel: cancelWriteUp } = writeUp;
-  const handleNew = useCallback((type: SessionType = 'problem') => {
+  const handleNew = useCallback((type: SessionType = 'problem', request?: TutorProblem) => {
     setCaptureError('');
     setTutorOpen(false);
     setWriteUpOpen(false);
     cancelWriteUp();
-    void startNew(type);
+    void startNew(type, request ? { tutorProblem: request } : undefined);
   }, [startNew, cancelWriteUp]);
 
-  // New from another page arrives as /board?new=problem|note (and &folder=<id> from a folder's page);
-  // start it once, then drop it from the URL.
+  // New from another page arrives as /board?new=problem|note, or new=tutor with what the problem
+  // should be (topic, like, ask), and &folder=<id> from a folder's page; start it once, then drop it from the URL.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const type = params.get('new');
-    if (type !== 'problem' && type !== 'note') return;
+    if (type !== 'problem' && type !== 'note' && type !== 'tutor') return;
     window.history.replaceState(null, '', '/board');
-    void startNew(type, { folderId: params.get('folder') ?? undefined });
+    const request: TutorProblem | undefined = type === 'tutor' ? {
+      topic: params.get('topic') ?? '',
+      ...(params.get('like') ? { like: params.get('like')! } : {}),
+      ...(params.get('ask') ? { ask: params.get('ask')! } : {}),
+    } : undefined;
+    void startNew(type === 'note' ? 'note' : 'problem', { folderId: params.get('folder') ?? undefined, tutorProblem: request });
   }, [startNew]);
 
   const handleAskForHelp = useCallback(async (picked?: string) => {
@@ -135,6 +147,21 @@ function AppContent() {
           ? { label: 'Check-in', content: <CheckInHeader checkIn={checkIn} started={checkInStarted(chatHistory)} onShowProblem={tutorOpen ? undefined : () => setTutorOpen(true)} /> }
           : sessionType === 'note'
           ? { label: 'Topic', content: <NoteHeader /> }
+          : tutorProblem
+          ? {
+              label: 'Problem',
+              content: (
+                <TutorProblemHeader
+                  tutorProblem={tutorProblem}
+                  problem={problemStatement}
+                  draft={made.draft}
+                  error={made.error}
+                  onRetry={() => void made.retry()}
+                  // Only while nothing on the board or in the chat is about the problem shown.
+                  onAnother={hasContent || chatHistory.length > 0 || isStreaming ? undefined : made.another}
+                />
+              ),
+            }
           : {
               label: 'Problem',
               content: (
@@ -147,7 +174,7 @@ function AppContent() {
         title={(
           <>
             <p className="flex items-center gap-1 text-xs text-gray-600"><KindIcon type={sessionType} />{checkIn ? 'Check-in' : sessionType === 'note' ? 'Notes' : 'Problem'}</p>
-            <h1 className="font-semibold text-gray-900 truncate">{checkIn ? checkInTitle(checkIn) : problemStatement.split('\n')[0].trim() || (sessionType === 'note' ? 'New notes' : 'New problem')}</h1>
+            <h1 className="font-semibold text-gray-900 truncate">{checkIn ? checkInTitle(checkIn) : problemTitle || (sessionType === 'note' ? 'New notes' : 'New problem')}</h1>
           </>
         )}
         canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} onShowTools={toggleTools} paper={paper} />}

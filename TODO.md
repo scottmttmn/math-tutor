@@ -26,7 +26,7 @@ Every change goes through a branch and a PR (see CLAUDE.md, "Workflow and CI"). 
 ### Tutor and memory
 
 - [ ] **Check me on this topic** for one topic or area straight from its row in Tutor memory. The multi-topic Skill check-in is built.
-- [ ] Tutor-recommended problems based on Favorites and the learner profile. Starring a problem, recording why it was good and sharing favorites with the tutor are built.
+- [ ] Tutor-recommended problems based on Favorites and the learner profile. Step A, **+ New → Problem from tutor** (a topic from the memory, like a favorite, Different problem), is built. Next: **Another like this** on a board, then a typeset copy of the problem to **Put on board**.
 - [ ] Design contextual tutor cards beside the selected passage or handwritten work, preserving useful feedback and follow-up context. The current tutor is a collapsible drawer with pen-friendly choices; replacing it remains a separate design step.
 
 ### Handwriting to TeX

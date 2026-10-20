@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useReducer, type Dispatch } from 'react';
 import { currentOf } from '@/lib/boardProblems';
-import type { BoardProblem, ChatMessage, CheckIn, Paper, SessionMetadata, SessionType, TokenUsage, WriteUp } from '@/types';
+import type { BoardProblem, ChatMessage, CheckIn, Paper, SessionMetadata, SessionType, TokenUsage, TutorProblem, WriteUp } from '@/types';
 
 type SessionAction =
   | { type: 'SET_PROBLEM'; text: string }
@@ -12,8 +12,10 @@ type SessionAction =
   | { type: 'SET_LAST_MESSAGE_USAGE'; usage: TokenUsage }
   | { type: 'SET_LAST_MESSAGE_MODEL'; model: string }
   | { type: 'SET_STREAMING'; streaming: boolean }
-  | { type: 'LOAD_SESSION'; sessionId: string; problemStatement: string; chatHistory: ChatMessage[]; problemImage: string | null; isSolved?: boolean; sessionType?: SessionType; checkIn?: CheckIn; writeUp?: WriteUp; paper?: Paper; problems?: BoardProblem[]; currentProblem?: string }
-  | { type: 'NEW_SESSION'; sessionType?: SessionType }
+  | { type: 'LOAD_SESSION'; sessionId: string; problemStatement: string; chatHistory: ChatMessage[]; problemImage: string | null; isSolved?: boolean; sessionType?: SessionType; checkIn?: CheckIn; writeUp?: WriteUp; paper?: Paper; problems?: BoardProblem[]; currentProblem?: string; tutorProblem?: TutorProblem }
+  | { type: 'NEW_SESSION'; sessionType?: SessionType; tutorProblem?: TutorProblem }
+  // The tutor's problem for this board arrived (or was replaced by Different problem).
+  | { type: 'SET_TUTOR_PROBLEM'; problem: string; title: string }
   | { type: 'SET_SESSION_LIST'; sessions: SessionMetadata[] }
   | { type: 'SET_CURRENT_SESSION_ID'; id: string }
   | { type: 'TOGGLE_SOLVED' }
@@ -39,6 +41,8 @@ interface SessionState {
   checkIn: CheckIn | null;
   /** The board's TeX write-up, once made. */
   writeUp: WriteUp | null;
+  /** Set on a board whose problem the tutor writes (+ New → Problem from tutor). */
+  tutorProblem: TutorProblem | null;
   /** The paper chosen for this board; null: the default for its kind. */
   paper: Paper | null;
   /**
@@ -61,6 +65,7 @@ export const initialState: SessionState = {
   sessionType: 'problem',
   checkIn: null,
   writeUp: null,
+  tutorProblem: null,
   paper: null,
   problems: null,
   currentProblem: null,
@@ -131,6 +136,7 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
         sessionType: action.sessionType ?? 'problem',
         checkIn: action.checkIn ?? null,
         writeUp: action.writeUp ?? null,
+        tutorProblem: action.tutorProblem ?? null,
         paper: action.paper ?? null,
         problems: null,
         currentProblem: null,
@@ -149,6 +155,7 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
         sessionType: action.sessionType ?? 'problem',
         checkIn: null,
         writeUp: null,
+        tutorProblem: action.tutorProblem ?? null,
         paper: null,
         problems: null,
         currentProblem: null,
@@ -171,6 +178,12 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
       if (!problems?.length) return state;
       return select(state, problems, state.currentProblem === action.id ? problems[0].id : state.currentProblem);
     }
+    case 'SET_TUTOR_PROBLEM':
+      if (!state.tutorProblem) return state;
+      return {
+        ...state, problemStatement: action.problem,
+        tutorProblem: { ...state.tutorProblem, ...(action.title ? { title: action.title } : {}) },
+      };
     case 'SET_WRITE_UP':
       return { ...state, writeUp: action.writeUp };
     case 'SET_PAPER':

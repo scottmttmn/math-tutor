@@ -64,6 +64,38 @@ RULES:
 5. For a drawing, write a line \\fbox{Figure: <one-line description>} where it sits.
 6. If the problem is given, start with \\textbf{Problem.} and the problem text, then \\textbf{Solution.} before the work. Use only amsmath and amssymb commands.`;
 
+// A problem from the tutor (+ New → Problem from tutor): the tutor writes one problem for the
+// student to work on a board of its own, and nothing else, since the answer is theirs to find.
+const MAKE_PROBLEM_PROMPT = `You write math problems for someone who studies math because they want to, at whatever level they are. They will work the problem by hand on a board, with you as their tutor if they want help.
+
+Write ONE problem for them. Pitch it from the learner profile, if there is one: a little beyond what they find comfortable, so it stretches without stalling them. Their favorite problems, if listed, show what they enjoy; draw on that. Follow what they asked for (a topic, a problem like a favorite, anything else) as long as it is math.
+
+A good problem is self-contained (define any notation), can be worked by hand in one sitting, and has something to find or show: a value, a proof, a counterexample, a construction. Prefer a problem with an idea in it over a routine drill, unless they asked for practice. Don't reuse a problem they were already offered.
+
+Reply in exactly this form and nothing else:
+Title: <a name of two to six plain words, no math>
+
+<the problem>
+
+No hints, no answer, no solution, no remarks before or after. Keep the problem under about 120 words. ${MATH_FORMAT}`;
+
+const MAX_ASK_CHARS = 300;
+
+/** What the student asked for, as the question: their own words, so it goes in the conversation, not the prompt. */
+function problemRequest(asked: TutorRequest['makeProblem']): string {
+  const clean = (value: unknown, max = MAX_ASK_CHARS) => (typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) : '');
+  const topic = clean(asked?.topic, 80);
+  const like = clean(asked?.like, 100);
+  const ask = clean(asked?.ask);
+  const avoid = Array.isArray(asked?.avoid) ? asked.avoid.map((problem) => clean(problem, 600)).filter(Boolean).slice(-5) : [];
+  return [
+    topic ? `Write me a problem on ${topic}.` : 'Write me a problem. You choose the topic.',
+    like && `Make it like my favorite "${like}".`,
+    ask && `Also: ${ask}`,
+    avoid.length > 0 && `Not one of these, which I was already offered:\n${avoid.map((problem) => `- ${problem}`).join('\n')}`,
+  ].filter(Boolean).join('\n');
+}
+
 // A skill check-in: the tutor poses short problems instead of helping with one, to settle how well
 // the student knows a few topics. The results go into the tutor memory through NOTES_RULE.
 const CHECK_IN_PROMPT = `You are running a short, optional SKILL CHECK-IN for a self-motivated learner. The conversation opens with the topics it covers. You do not teach here: you find out how well they know each topic, so their tutor can start at the right level later.
@@ -199,7 +231,17 @@ ${profile.slice(0, MAX_PROFILE_CHARS).replace(/<\/?learner_profile>/g, '')}
  * write-up, plus the rules for whatever it carries), reference material, fresh memory, and question.
  */
 export function planTutorRequest(body: TutorRequest): TutorPlan {
-  const { problemStatement, chatHistory, canvasImage, canvasDetails, userQuestion, problemImage, sessionType, bookContext, learnerProfile, takeNotes, checkIn, writeUp, otherProblems } = body;
+  const { problemStatement, chatHistory, canvasImage, canvasDetails, userQuestion, problemImage, sessionType, bookContext, learnerProfile, takeNotes, checkIn, writeUp, otherProblems, makeProblem } = body;
+  // Writing a problem reads the memory (to pitch it) and nothing else: no board, conversation or notes.
+  if (makeProblem && typeof makeProblem === 'object' && writeUp !== true) {
+    const memory = profileReference(learnerProfile);
+    return {
+      systemPrompt: [MAKE_PROBLEM_PROMPT, memory && PROFILE_RULE].filter(Boolean).join('\n\n'),
+      reference: '', profile: memory, history: [], board: [],
+      question: problemRequest(makeProblem),
+      maxTokens: TUTOR_MAX_OUTPUT_TOKENS,
+    };
+  }
   // A write-up reads only the board (and the problem): no conversation, memory or book pages.
   const isWriteUp = writeUp === true;
   const book = isWriteUp ? '' : bookReference(bookContext);

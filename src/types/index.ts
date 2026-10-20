@@ -75,6 +75,8 @@ export interface Session {
   writeUp?: WriteUp;
   /** The paper the student chose for this board; unset until they choose. */
   paper?: Paper;
+  /** Set on a board whose problem the tutor wrote; the problem shows as typeset math, not editable. */
+  tutorProblem?: TutorProblem;
   /**
    * The folder it is filed in, set by Move (or New in a folder); null: the library's top level.
    * Unset: where it belongs by default, a Shelf board in its book's folder, a free board at the top.
@@ -129,6 +131,18 @@ export interface WriteUp {
 export interface CheckIn {
   /** Topic names, as in the tutor memory. */
   topics: string[];
+}
+
+/** What the student asked for when the tutor wrote a board's problem (+ New → Problem from tutor). */
+export interface TutorProblem {
+  /** A topic from the tutor memory, or one the student typed; '' leaves it to the tutor. */
+  topic: string;
+  /** The title of a favorite the problem should be like, if one was picked. */
+  like?: string;
+  /** Anything else the student asked for, in their words. */
+  ask?: string;
+  /** The tutor's short name for the problem, used as the board's title. */
+  title?: string;
 }
 
 /** One entry in History: a free-form board, or a Shelf exercise with work in it. */
@@ -354,6 +368,8 @@ export interface TutorRequest extends TutorBoardImages {
   writeUp?: boolean;
   /** On a board holding several exercises: the others' names (the problem above is the one being worked on). */
   otherProblems?: string[];
+  /** Write a new problem for the student (MAKE_PROBLEM_PROMPT) instead of tutoring; `avoid` lists problems already offered. */
+  makeProblem?: TutorProblem & { avoid?: string[] };
 }
 
 /** One request as the model gets it (planTutorRequest in src/lib/tutorPrompt.ts), for any provider. */

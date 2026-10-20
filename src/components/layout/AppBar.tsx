@@ -3,13 +3,14 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import type { SessionType } from '@/types';
+import type { SessionType, TutorProblem } from '@/types';
 import SettingsModal, { type SettingsTab } from './SettingsModal';
+import TutorProblemDialog from './TutorProblemDialog';
 import { RESTORE_RESULT_KEY } from './BackupSettings';
 import { useBackupStatus } from '@/hooks/useBackupStatus';
 import { backupDue, resumeBackup } from '@/lib/autoBackup';
 import { useAddPdfs } from '@/hooks/useAddPdfs';
-import { FolderIcon, GearIcon, HomeIcon, NotesIcon, ProblemIcon, ShelfIcon } from '@/components/common/Icons';
+import { FolderIcon, GearIcon, HomeIcon, NotesIcon, ProblemIcon, ShelfIcon, TutorIcon } from '@/components/common/Icons';
 import { folderHref } from '@/lib/folders';
 import { readerHref } from '@/components/shelf/BookCard';
 
@@ -19,8 +20,8 @@ export type AppPlace = 'home' | 'folder' | 'book' | 'board' | 'memory';
 interface Props {
   /** Where the page sits; its tab is shown as current. */
   place: AppPlace;
-  /** Starts a new board in place (the board page); elsewhere New goes to /board. */
-  onNew?: (type: SessionType) => void;
+  /** Starts a new board in place (the board page), one the tutor writes the problem for given `tutorProblem`; elsewhere New goes to /board. */
+  onNew?: (type: SessionType, tutorProblem?: TutorProblem) => void;
   /** Blocks leaving the page, e.g. while a tutor reply streams in. */
   locked?: boolean;
   /** Runs before another page opens, e.g. saving the board so Home lists the latest work. */
@@ -50,6 +51,7 @@ function takeRestoreResult(): { tab: SettingsTab; restored: string } | null {
 export default function AppBar({ place, onNew, locked = false, beforeLeave, folderId = null, onNewFolder, children }: Props) {
   const router = useRouter();
   const [newOpen, setNewOpen] = useState(false);
+  const [askingTutor, setAskingTutor] = useState(false);
   // The Settings dialog: which tab, and a restore's result to show on Backup.
   const [settings, setSettings] = useState<{ tab: SettingsTab; restored?: string } | null>(null);
   const backup = useBackupStatus();
@@ -73,11 +75,18 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, fold
     return () => document.removeEventListener('mousedown', close);
   }, [newOpen]);
 
-  const startNew = (type: SessionType) => {
+  const startNew = (type: SessionType, tutorProblem?: TutorProblem) => {
     setNewOpen(false);
-    if (onNew) onNew(type);
+    if (onNew) onNew(type, tutorProblem);
     else {
-      const href = `/board?new=${type}${folderId ? `&folder=${encodeURIComponent(folderId)}` : ''}`;
+      const params = new URLSearchParams({ new: tutorProblem ? 'tutor' : type });
+      if (tutorProblem) {
+        params.set('topic', tutorProblem.topic);
+        if (tutorProblem.like) params.set('like', tutorProblem.like);
+        if (tutorProblem.ask) params.set('ask', tutorProblem.ask);
+      }
+      if (folderId) params.set('folder', folderId);
+      const href = `/board?${params}`;
       void (beforeLeave?.() ?? Promise.resolve()).catch(() => undefined).then(() => router.push(href));
     }
   };
@@ -148,9 +157,12 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, fold
           <span aria-hidden="true">+</span> New
         </button>
         {newOpen && (
-          <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+          <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
             <button onClick={() => startNew('problem')} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
               <ProblemIcon />New Problem
+            </button>
+            <button onClick={() => { setNewOpen(false); setAskingTutor(true); }} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-indigo-700 hover:bg-indigo-50">
+              <TutorIcon />Problem from tutor…
             </button>
             <button onClick={() => startNew('note')} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
               <NotesIcon />New Notes
@@ -183,6 +195,9 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, fold
       >
         <GearIcon />
       </button>
+      {askingTutor && (
+        <TutorProblemDialog onClose={() => setAskingTutor(false)} onMake={(request) => { setAskingTutor(false); startNew('problem', request); }} />
+      )}
       <SettingsModal
         isOpen={settings !== null}
         tab={settings?.tab}
