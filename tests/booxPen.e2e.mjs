@@ -178,22 +178,34 @@ try {
   await resizeBoard({ width: 1024, height: 768 });
 
   // Another tool hands the pen back to tldraw.
+  const editingStart = (await calls('interaction')).length;
   await page.getByTestId('tools.select').click();
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'stop'));
 
-  // Fast updates span the whole contact, then end once; a finger pan also works with the pen chosen.
+  // Editing tools keep fast updates through pauses, avoiding a cleanup flash after every contact.
   await page.getByTestId('tools.hand').click();
   const liveBox = await canvas.boundingBox();
-  const interactionStart = (await calls('interaction')).length;
   await page.mouse.move(liveBox.x + liveBox.width / 2, liveBox.y + liveBox.height / 2);
   await page.mouse.down();
   await page.mouse.move(liveBox.x + liveBox.width / 2 + 50, liveBox.y + liveBox.height / 2 + 30, { steps: 8 });
   await page.waitForTimeout(250);
-  assert.deepEqual((await calls('interaction')).slice(interactionStart).map((call) => call.options.active), [true], 'fast mode stays active while the pointer is held');
+  assert.deepEqual((await calls('interaction')).slice(editingStart).map((call) => call.options.active), [true], 'fast mode stays active while editing');
   await page.mouse.up();
+  await page.waitForTimeout(250);
+  assert.deepEqual((await calls('interaction')).slice(editingStart).map((call) => call.options.active), [true], 'lifting and pausing do not trigger a cleanup repaint');
+
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
   await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === false);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === true);
+
+  await page.locator('.tl-container').evaluate((root) => { root.style.display = 'none'; });
+  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === false);
+  await page.locator('.tl-container').evaluate((root) => { root.style.display = ''; });
+  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === true);
 
   await page.getByTestId('tools.draw').click();
+  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === false);
   const touch = await page.context().newCDPSession(page);
   await touch.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
   const p1 = { id: 1, x: liveBox.x + liveBox.width * 0.35, y: liveBox.y + liveBox.height * 0.4 };

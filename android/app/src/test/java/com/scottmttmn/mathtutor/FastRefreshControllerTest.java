@@ -4,26 +4,24 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import java.util.ArrayList;
-import java.util.List;
 import org.junit.Test;
 
 public class FastRefreshControllerTest {
     private int entries;
     private boolean supported = true;
-    private final List<Boolean> exits = new ArrayList<>();
+    private int exits;
     private final FastRefreshController refresh = new FastRefreshController(
-        () -> { entries++; return supported; }, exits::add
+        () -> { entries++; return supported; }, () -> exits++
     );
 
     @Test
-    public void aGestureEntersOnceAndHasOneSettledRepaint() {
+    public void anEditingModeEntersAndLeavesOnlyOnce() {
         for (int i = 0; i < 20; i++) assertTrue(refresh.begin());
         assertEquals(1, entries);
-        assertTrue(exits.isEmpty());
-        refresh.end(true);
-        refresh.end(true);
-        assertEquals(List.of(true), exits);
+        assertEquals(0, exits);
+        refresh.end();
+        refresh.end();
+        assertEquals(1, exits);
         assertFalse(refresh.isActive());
     }
 
@@ -31,7 +29,7 @@ public class FastRefreshControllerTest {
     public void penContactCancelsFastModeWithoutARefreshDuringTheStroke() {
         refresh.begin();
         refresh.beginStroke();
-        assertEquals(List.of(false), exits);
+        assertEquals(1, exits);
         assertFalse(refresh.begin());
         assertEquals(1, entries);
         refresh.endStroke();
@@ -43,9 +41,9 @@ public class FastRefreshControllerTest {
     public void unsupportedDevicesDoNotAcquireFastModeOrRequestCleanup() {
         supported = false;
         assertFalse(refresh.begin());
-        refresh.end(true);
+        refresh.end();
         refresh.reset();
-        assertTrue(exits.isEmpty());
+        assertEquals(0, exits);
     }
 
     @Test
@@ -53,7 +51,7 @@ public class FastRefreshControllerTest {
         refresh.begin();
         refresh.reset();
         refresh.reset();
-        assertEquals(List.of(false), exits);
+        assertEquals(1, exits);
         assertFalse(refresh.isActive());
     }
 

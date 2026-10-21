@@ -595,7 +595,7 @@ export interface BooxPenPoint {
  */
 export interface BooxPenPlugin {
   status(): Promise<{ onyx: boolean; active: boolean; fast?: boolean }>;
-  /** Fast screen updates during board manipulation, followed by one settled repaint. */
+  /** Fast screen updates for editing tools or finger gestures; leaving does not force a repaint. */
   interaction(options: { active: boolean }): Promise<{ active: boolean }>;
   start(options: { region: BooxPenBox; exclude?: BooxPenBox[]; width: number }): Promise<void>;
   setRegion(options: { region: BooxPenBox; exclude?: BooxPenBox[] }): Promise<void>;

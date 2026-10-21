@@ -1,16 +1,15 @@
 package com.scottmttmn.mathtutor;
 
 import java.util.function.BooleanSupplier;
-import java.util.function.Consumer;
 
 /** Main-thread ownership of transient fast refresh; pen contact always takes priority. */
 final class FastRefreshController {
     private final BooleanSupplier enter;
-    private final Consumer<Boolean> leave;
+    private final Runnable leave;
     private volatile boolean active;
     private boolean writing;
 
-    FastRefreshController(BooleanSupplier enter, Consumer<Boolean> leave) {
+    FastRefreshController(BooleanSupplier enter, Runnable leave) {
         this.enter = enter;
         this.leave = leave;
     }
@@ -20,15 +19,15 @@ final class FastRefreshController {
         return active;
     }
 
-    void end(boolean clean) {
+    void end() {
         if (!active) return;
         active = false;
-        leave.accept(clean);
+        leave.run();
     }
 
     void beginStroke() {
         writing = true;
-        end(false);
+        end();
     }
 
     void endStroke() {
@@ -36,7 +35,7 @@ final class FastRefreshController {
     }
 
     void reset() {
-        end(false);
+        end();
         writing = false;
     }
 

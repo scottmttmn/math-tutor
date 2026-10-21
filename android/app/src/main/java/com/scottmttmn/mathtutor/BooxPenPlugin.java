@@ -46,6 +46,8 @@ public class BooxPenPlugin extends Plugin {
     private TouchHelper touchHelper;
     /** Whether the page wants raw drawing on (start/resume) as opposed to paused or stopped. */
     private boolean wanted = false;
+    /** Raw callbacks can precede their queued main-thread work. Don't enter fast mode in that gap. */
+    private volatile boolean rawWriting = false;
     private float maxPressure = 0;
     private final FastRefreshController fastRefresh = new FastRefreshController(this::enterFastRefresh, this::leaveFastRefresh);
     private static final long REFRESH_IDLE_MS = 500;
@@ -76,14 +78,14 @@ public class BooxPenPlugin extends Plugin {
         call.resolve(result);
     }
 
-    /** Board contact, wheel and pinch gestures use the panel's transient animation mode. */
+    /** Editing tools and finger/wheel gestures use the panel's transient animation mode. */
     @PluginMethod
     public void interaction(PluginCall call) {
         if (!onyx(call)) return;
         boolean active = call.getBoolean("active", false);
         getBridge().executeOnMainThread(() -> {
             if (active) fastRefresh.begin();
-            else fastRefresh.end(true);
+            else fastRefresh.end();
             JSObject result = new JSObject();
             result.put("active", fastRefresh.isActive());
             call.resolve(result);
@@ -91,6 +93,7 @@ public class BooxPenPlugin extends Plugin {
     }
 
     private boolean enterFastRefresh() {
+        if (rawWriting) return false;
         refreshes.cancel();
         boolean accepted = false;
         try {
@@ -104,11 +107,10 @@ public class BooxPenPlugin extends Plugin {
         }
     }
 
-    private void leaveFastRefresh(boolean clean) {
+    private void leaveFastRefresh() {
         WebView view = getBridge().getWebView();
         try {
             EpdController.clearTransientUpdate(view, false);
-            if (clean) EpdController.refreshScreen(view, UpdateMode.GU);
         } catch (Throwable unavailable) {
             Log.w("BooxPen", "Couldn't restore the panel refresh mode", unavailable);
         } finally {
@@ -131,6 +133,7 @@ public class BooxPenPlugin extends Plugin {
             try {
                 WebView view = getBridge().getWebView();
                 fastRefresh.reset();
+                rawWriting = false;
                 refreshes.cancel();
                 if (touchHelper == null) {
                     touchHelper = TouchHelper.create(view, callback);
@@ -160,7 +163,7 @@ public class BooxPenPlugin extends Plugin {
         }
         List<Rect> exclude = rects(call.getArray("exclude"));
         getBridge().executeOnMainThread(() -> {
-            fastRefresh.end(false);
+            fastRefresh.end();
             refreshes.cancel();
             touchHelper.setRawDrawingEnabled(false);
             touchHelper.setLimitRect(region, exclude);
@@ -175,6 +178,7 @@ public class BooxPenPlugin extends Plugin {
         getBridge().executeOnMainThread(() -> {
             refreshes.cancel();
             wanted = false;
+            rawWriting = false;
             fastRefresh.reset();
             touchHelper.setRawDrawingEnabled(false);
             call.resolve();
@@ -213,6 +217,7 @@ public class BooxPenPlugin extends Plugin {
     @Override
     protected void handleOnPause() {
         fastRefresh.reset();
+        rawWriting = false;
         refreshes.cancel();
         if (touchHelper != null) touchHelper.setRawDrawingEnabled(false);
     }
@@ -230,6 +235,7 @@ public class BooxPenPlugin extends Plugin {
     private void close() {
         refreshes.cancel();
         wanted = false;
+        rawWriting = false;
         fastRefresh.reset();
         if (touchHelper == null) return;
         touchHelper.setRawDrawingEnabled(false);
@@ -241,6 +247,7 @@ public class BooxPenPlugin extends Plugin {
     private final RawInputCallback callback = new RawInputCallback() {
         @Override
         public void onBeginRawDrawing(boolean b, TouchPoint point) {
+            rawWriting = true;
             refreshes.beginStroke();
             getBridge().executeOnMainThread(fastRefresh::beginStroke);
             ignoreFingers(true);
@@ -248,6 +255,7 @@ public class BooxPenPlugin extends Plugin {
 
         @Override
         public void onEndRawDrawing(boolean b, TouchPoint point) {
+            rawWriting = false;
             refreshes.endStroke();
             getBridge().executeOnMainThread(fastRefresh::endStroke);
             ignoreFingers(false);
@@ -263,6 +271,7 @@ public class BooxPenPlugin extends Plugin {
 
         @Override
         public void onBeginRawErasing(boolean b, TouchPoint point) {
+            rawWriting = true;
             refreshes.beginStroke();
             getBridge().executeOnMainThread(fastRefresh::beginStroke);
             ignoreFingers(true);
@@ -270,6 +279,7 @@ public class BooxPenPlugin extends Plugin {
 
         @Override
         public void onEndRawErasing(boolean b, TouchPoint point) {
+            rawWriting = false;
             refreshes.endStroke();
             getBridge().executeOnMainThread(fastRefresh::endStroke);
             ignoreFingers(false);
