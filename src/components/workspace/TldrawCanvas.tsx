@@ -329,6 +329,7 @@ export default function TldrawCanvas({ handleRef, toolsHidden, paper }: { handle
     },
     getRevision: () => documentRevision,
     getDocument: () => (editor && !loadPending.current ? editor.getSnapshot().document : null),
+    getInk: () => null,
     clear: () => {
       if (!editor) return;
       editor.markHistoryStoppingPoint('clear');

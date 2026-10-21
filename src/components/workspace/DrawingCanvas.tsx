@@ -3,7 +3,8 @@
 import dynamic from 'next/dynamic';
 import type { RefObject } from 'react';
 import { useCanvasState } from '@/context/CanvasContext';
-import type { CanvasDocument, Paper, TutorBoardImages } from '@/types';
+import { useInkBoardMode } from '@/hooks/useInkBoardMode';
+import type { BoardInk, CanvasDocument, Paper, TutorBoardImages } from '@/types';
 
 export interface DrawingCanvasHandle {
   /** Returns to the notebook's writing width, keeping the current line at the top. */
@@ -24,8 +25,10 @@ export interface DrawingCanvasHandle {
   placeProblemImage: (base64: string, key?: string | true) => Promise<boolean>;
   /** Changes whenever the drawing changes; compare it to know whether a new capture is needed. */
   getRevision: () => number;
-  /** The live document, fresher than the debounced copy in CanvasContext. */
+  /** The live tldraw document, fresher than the debounced copy in CanvasContext; null on the ink board. */
   getDocument: () => CanvasDocument | null;
+  /** The live ink board, fresher than the debounced copy in CanvasContext; null on a tldraw board. */
+  getInk: () => BoardInk | null;
   /** Deletes every shape as one undoable step. */
   clear: () => void;
 }
@@ -35,15 +38,19 @@ const TldrawCanvas = dynamic(() => import('./TldrawCanvas'), {
   ssr: false,
   loading: () => <div className="absolute inset-0 grid place-items-center text-sm text-gray-400">Loading canvas…</div>,
 });
+const InkBoard = dynamic(() => import('./InkBoard'), { ssr: false });
 
 /** Fills its nearest positioned ancestor; give that element a size. */
 export default function DrawingCanvas({ handleRef, toolsHidden = false, onShowTools, paper = 'blank' }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden?: boolean; onShowTools?: () => void; paper?: Paper }) {
   // data-loading: the editor still shows the previous board (the browser tests wait for it to go).
-  const { pendingLoad } = useCanvasState();
+  const { pendingLoad, editor } = useCanvasState();
+  const [inkForNew] = useInkBoardMode();
+  // A board drawn in tldraw stays there; a new one opens in the editor chosen for new boards.
+  const ink = editor === 'ink' || (editor === 'new' && inkForNew);
   return (
     // isolate: tldraw's toolbars use z-indexes up to 10000; keep them below the app's dialogs.
     <div className="absolute inset-0 isolate" data-loading={pendingLoad ? 'true' : undefined}>
-      <TldrawCanvas handleRef={handleRef} toolsHidden={toolsHidden} paper={paper} />
+      {ink ? <InkBoard handleRef={handleRef} toolsHidden={toolsHidden} paper={paper} /> : <TldrawCanvas handleRef={handleRef} toolsHidden={toolsHidden} paper={paper} />}
       {toolsHidden && onShowTools && (
         <button onClick={onShowTools} className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 min-h-11 px-3 text-sm text-gray-900 bg-white border border-gray-900 rounded-full shadow-sm">Show tools</button>
       )}

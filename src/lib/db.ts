@@ -1,5 +1,5 @@
 import { openDB, type IDBPDatabase, type DBSchema } from 'idb';
-import type { CanvasDocument, Stroke, ChatMessage, Folder, InkStroke, LearnerProfile, PageInk, SessionType, ShelfDocument } from '@/types';
+import type { BoardInk, CanvasDocument, Stroke, ChatMessage, Folder, InkStroke, LearnerProfile, PageInk, SessionType, ShelfDocument } from '@/types';
 
 interface MathTutorDB extends DBSchema {
   sessions: {
@@ -11,6 +11,7 @@ interface MathTutorDB extends DBSchema {
       problemImage: string | null;
       canvasStrokes: Stroke[];
       canvasDocument?: CanvasDocument | null;
+      ink?: BoardInk | null;
       canvasImageBlob: Blob | null;
       chatHistory: ChatMessage[];
       createdAt: number;
