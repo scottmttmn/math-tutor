@@ -77,7 +77,7 @@ try {
   await item.click();
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'start'));
   const [{ options: start }] = await calls('start');
-  let box = await canvas.boundingBox();
+  const box = await canvas.boundingBox();
   assert.ok(Math.abs(start.region.w - box.width) < 2 && Math.abs(start.region.h - box.height) < 2, 'the pen draws over the canvas');
   assert.ok(start.exclude.length > 0, "tldraw's controls stay tappable");
 
@@ -118,14 +118,7 @@ try {
         && Math.abs(region.x - rect.left) < 1 && Math.abs(region.y - rect.top) < 1;
     }, previous);
   };
-  await checkPenBounds();
-  await resizeBoard({ width: 992, height: 1320 });
-  await checkPenBounds();
-  await resizeBoard({ width: 1024, height: 768 });
-  box = await canvas.boundingBox();
-
   // A stroke from the SDK becomes ink where it was drawn, and the screen is let through.
-  // Resizing can reposition the board; use its current visible area for the native samples.
   const strokeX = box.x + box.width * 0.25, strokeY = box.y + box.height * 0.35;
   const strokeWidth = box.width * 0.3, strokeHeight = box.height * 0.2;
   const flat = [];
@@ -151,6 +144,12 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('[data-shape-type="draw"]').length === 0);
   await page.keyboard.press('Control+z');
   await page.locator('[data-shape-type="draw"]').first().waitFor();
+
+  // Keep layout changes after the stroke checks: tldraw adjusts its viewport while resizing.
+  await checkPenBounds();
+  await resizeBoard({ width: 992, height: 1320 });
+  await checkPenBounds();
+  await resizeBoard({ width: 1024, height: 768 });
 
   // Another tool hands the pen back to tldraw.
   await page.getByTestId('tools.select').click();
