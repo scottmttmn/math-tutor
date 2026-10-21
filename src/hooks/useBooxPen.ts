@@ -36,7 +36,7 @@ const OVERLAYS = '[role="menu"], [role="dialog"], [role="listbox"], .tlui-popove
  * draw shape with the pen's current style, one undo step each. The eraser end erases whole strokes.
  * Other tools, open menus and dialogs, and a hidden board give the pen back to the page.
  *
- * Not yet tried on a device; see BooxPenPlugin.java.
+ * The native layer waits for pen-up idle time before refreshing; see BooxPenPlugin.java.
  */
 export function useBooxPen(editor: Editor | null) {
   const [mode] = useBooxPenMode();
