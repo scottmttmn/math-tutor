@@ -8,7 +8,7 @@ const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 
 function fakeBooxBridge() {
-  const methods = ['status', 'start', 'setRegion', 'pause', 'resume', 'refresh', 'stop'];
+  const methods = ['status', 'interaction', 'start', 'setWidth', 'setRegion', 'pause', 'resume', 'refresh', 'stop'];
   const calls = [];
   const listeners = new Map();
   let nextId = 1;
@@ -70,6 +70,9 @@ try {
   const calls = (method) => page.evaluate((name) => window.__boox.calls.filter((call) => call.method === name), method);
   const drawShapes = () => page.locator('[data-shape-type="draw"]').count();
 
+  // E-ink interaction changes apply even before the optional native pen experiment is chosen.
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('TLDRAW_USER_DATA_v3'))?.user.animationSpeed === 0);
+
   // Off until chosen, and offered only because the page thinks it is on a BOOX.
   await controls.getByRole('button', { name: 'Board menu' }).click();
   const item = page.getByRole('menuitemcheckbox', { name: 'BOOX pen (experiment)', exact: true });
@@ -120,7 +123,7 @@ try {
   };
   // A stroke from the SDK becomes ink where it was drawn, and the screen is let through.
   const strokeX = box.x + box.width * 0.25, strokeY = box.y + box.height * 0.35;
-  const strokeWidth = box.width * 0.3, strokeHeight = box.height * 0.2;
+  const strokeWidth = box.width * 0.6, strokeHeight = box.height * 0.2;
   const flat = [];
   for (let i = 0; i <= 20; i += 1) flat.push(strokeX + strokeWidth * i / 20, strokeY + strokeHeight * i / 20, 0.6, i * 8);
   await page.evaluate((points) => window.__boox.emit('stroke', points), flat);
@@ -128,7 +131,38 @@ try {
   assert.equal(await drawShapes(), 1);
   const shape = await page.locator('[data-shape-type="draw"]').first().boundingBox();
   assert.ok(shape.x < strokeX + 10 && shape.x + shape.width > strokeX + strokeWidth - 10, 'the ink sits where the pen wrote');
+  const renderedWidth = await page.locator('[data-shape-type="draw"] path[stroke-width]').first().evaluate((path) => Number(path.getAttribute('stroke-width')) * path.getScreenCTM().a);
+  assert.ok(Math.abs(start.width - renderedWidth) < 0.01, 'native preview and finalized ink have the same width');
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'refresh'));
+  const startsBeforeSize = (await calls('start')).length;
+  await page.getByRole('button', { name: 'Pen: black, S', exact: true }).click();
+  await page.getByTestId('style.size.m').click();
+  await page.waitForFunction((width) => Math.abs(window.__boox.calls.filter((call) => call.method === 'setWidth').at(-1)?.options.width - width * 1.5) < 0.01, start.width);
+  await page.getByTestId('style.size.s').click();
+  await page.waitForFunction((width) => Math.abs(window.__boox.calls.filter((call) => call.method === 'setWidth').at(-1)?.options.width - width) < 0.01, start.width);
+  await page.keyboard.press('Escape');
+  assert.equal((await calls('start')).length, startsBeforeSize, 'changing pen size updates the preview without restarting input');
+
+  // Autosave keeps the editable document and only a bounded PNG for the library card.
+  let preview = null;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    preview = await page.evaluate(async () => {
+      const id = localStorage.getItem('math-tutor:currentSession');
+      if (!id) return false;
+      const db = await new Promise((resolve) => { const request = indexedDB.open('math-tutor'); request.onsuccess = () => resolve(request.result); });
+      const session = await new Promise((resolve) => { const request = db.transaction('sessions').objectStore('sessions').get(id); request.onsuccess = () => resolve(request.result); });
+      db.close();
+      if (!session?.canvasImageBlob) return false;
+      const bitmap = await createImageBitmap(session.canvasImageBlob);
+      const size = { width: bitmap.width, height: bitmap.height, shapes: Object.values(session.canvasDocument.store).filter((record) => record.typeName === 'shape' && record.type === 'draw').length };
+      bitmap.close();
+      return size;
+    });
+    if (preview) break;
+    await page.waitForTimeout(100);
+  }
+  assert.ok(preview && preview.width > 0 && preview.height > 0 && Math.max(preview.width, preview.height) <= 512, `the saved card preview is at most 512 pixels: ${JSON.stringify(preview)}`);
+  assert.equal(preview.shapes, 1, 'the editable stroke is saved separately from the preview');
 
   // An open menu over the board takes the pen back; closing it gives the pen to the SDK again.
   await controls.getByRole('button', { name: 'Board menu' }).click();
@@ -137,7 +171,9 @@ try {
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'resume'));
 
   // While the SDK has the pen, pen events the WebView still hears don't reach tldraw.
+  const interactionsBeforeInk = (await calls('interaction')).length;
   assert.equal(await penEventBlocked(page), true);
+  assert.equal((await calls('interaction')).length, interactionsBeforeInk, 'native handwriting does not enter page interaction mode');
 
   // The eraser end erases the stroke it crosses, even between two far-apart samples; undo brings it back.
   await page.evaluate(([x, y]) => window.__boox.emit('erase', [x, y - 80, 0.5, 0, x, y + 80, 0.5, 8]), [strokeX + strokeWidth / 2, strokeY + strokeHeight / 2]);
@@ -152,8 +188,53 @@ try {
   await resizeBoard({ width: 1024, height: 768 });
 
   // Another tool hands the pen back to tldraw.
+  const editingStart = (await calls('interaction')).length;
   await page.getByTestId('tools.select').click();
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'stop'));
+
+  // Editing tools keep fast updates through pauses, avoiding a cleanup flash after every contact.
+  await page.getByTestId('tools.hand').click();
+  const liveBox = await canvas.boundingBox();
+  await page.mouse.move(liveBox.x + liveBox.width / 2, liveBox.y + liveBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(liveBox.x + liveBox.width / 2 + 50, liveBox.y + liveBox.height / 2 + 30, { steps: 8 });
+  await page.waitForTimeout(250);
+  assert.deepEqual((await calls('interaction')).slice(editingStart).map((call) => call.options.active), [true], 'fast mode stays active while editing');
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  assert.deepEqual((await calls('interaction')).slice(editingStart).map((call) => call.options.active), [true], 'lifting and pausing do not trigger a cleanup repaint');
+
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === false);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === true);
+
+  await page.locator('.tl-container').evaluate((root) => { root.style.display = 'none'; });
+  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === false);
+  await page.locator('.tl-container').evaluate((root) => { root.style.display = ''; });
+  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === true);
+
+  await page.getByTestId('tools.draw').click();
+  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === false);
+  const touch = await page.context().newCDPSession(page);
+  await touch.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  const p1 = { id: 1, x: liveBox.x + liveBox.width * 0.35, y: liveBox.y + liveBox.height * 0.4 };
+  const p2 = { id: 2, x: liveBox.x + liveBox.width * 0.55, y: liveBox.y + liveBox.height * 0.65 };
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [p1] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [p1, p2] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...p1, x: p1.x - 20 }, { ...p2, x: p2.x + 20 }] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [p1] });
+  await page.waitForTimeout(250);
+  assert.equal((await calls('interaction')).at(-1).options.active, true, 'a remaining finger keeps fast mode active');
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === false);
+  await touch.detach();
+  const currentWidth = await page.locator('[data-shape-type="draw"] path[stroke-width]').first().evaluate((path) => Number(path.getAttribute('stroke-width')) * path.getScreenCTM().a);
+  await page.waitForFunction((width) => Math.abs(window.__boox.calls.filter((call) => call.method === 'setWidth').at(-1)?.options.width - width) < 0.01, currentWidth);
+
+  await page.mouse.wheel(0, 100);
+  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === true);
+  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === false);
 
   // The pen test can hand the pen to the SDK too, to compare it with the browser's own drawing.
   await page.goto(`${origin}/pen-test`);
@@ -188,6 +269,7 @@ try {
   plain.on('pageerror', (error) => errors.push(error.message));
   await plain.goto(`${origin}/board?new=problem`);
   await plain.locator('.tl-canvas').waitFor();
+  assert.notEqual(await plain.evaluate(() => JSON.parse(localStorage.getItem('TLDRAW_USER_DATA_v3'))?.user.animationSpeed), 0, 'other devices keep their animation preference');
   await plain.getByRole('group', { name: 'Board controls' }).getByRole('button', { name: 'Board menu' }).click();
   await plain.getByRole('menuitemcheckbox', { name: 'Notebook mode (experiment)', exact: true }).waitFor();
   assert.equal(await plain.getByRole('menuitemcheckbox', { name: 'BOOX pen (experiment)' }).count(), 0);

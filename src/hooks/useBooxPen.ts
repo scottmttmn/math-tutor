@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { b64Vecs, createShapeId, DefaultColorStyle, DefaultDashStyle, DefaultSizeStyle, useValue, type Editor, type TLDrawShape, type TLShapePartial } from 'tldraw';
+import { b64Vecs, createShapeId, DefaultColorStyle, DefaultDashStyle, DefaultSizeStyle, react, useValue, type Editor, type TLDrawShape, type TLShapePartial } from 'tldraw';
 import { BooxPen, booxPenAvailable, boxOf, overlaps, strokePoints, sweep } from '@/lib/booxPen';
 import { deviceToggle } from '@/hooks/useDeviceToggle';
 import type { BooxPenBox } from '@/types';
@@ -20,8 +20,14 @@ export function useBooxPenAvailable() {
   return available;
 }
 
-// The pen's width while the controller draws it, in CSS px: close to tldraw's S at writing zoom.
-const RAW_WIDTH = 2.5;
+// tldraw 5's solid draw path uses (theme stroke width × size factor + 1) in page units.
+// Keep the controller's screen-pixel preview in step with that path, including camera zoom.
+const PEN_SIZE = { s: 1, m: 1.75, l: 2.5, xl: 5 };
+function previewWidth(editor: Editor): number {
+  const size = editor.getStyleForNextShape(DefaultSizeStyle);
+  const zoom = editor.user.getIsDynamicResizeMode() ? 1 : editor.getZoomLevel();
+  return (editor.getCurrentTheme().strokeWidth * PEN_SIZE[size] + 1) * zoom;
+}
 // After the board changes (a stroke drawn, an undo, a pan), the screen is let through this long after.
 const REFRESH_DELAY_MS = 300;
 // How close the eraser end must pass to a stroke to erase it, in CSS px.
@@ -64,8 +70,15 @@ export function useBooxPen(editor: Editor | null) {
     let failed = false;
     let paused = false;
     let lastRegion = '';
+    let lastWidth = 0;
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
     const removers: (() => void)[] = [];
+    const syncWidth = () => {
+      const width = previewWidth(editor);
+      if (!running || width === lastWidth) return;
+      lastWidth = width;
+      void BooxPen.setWidth({ width }).catch(() => undefined);
+    };
 
     // Where the pen draws: the canvas, less tldraw's controls over it. Null while the board is hidden.
     const measure = () => {
@@ -92,8 +105,9 @@ export function useBooxPen(editor: Editor | null) {
       if (!started) {
         started = true;
         lastRegion = key;
-        void BooxPen.start({ ...area, width: RAW_WIDTH }).then(
-          () => { running = true; },
+        lastWidth = previewWidth(editor);
+        void BooxPen.start({ ...area, width: lastWidth }).then(
+          () => { if (!stopped) { running = true; syncWidth(); } },
           () => { started = false; failed = true; },
         );
         return;
@@ -111,6 +125,7 @@ export function useBooxPen(editor: Editor | null) {
       syncFrame = requestAnimationFrame(sync);
     };
     sync();
+    removers.push(react('BOOX preview width', syncWidth));
 
     const resize = new ResizeObserver(scheduleSync);
     resize.observe(root);
