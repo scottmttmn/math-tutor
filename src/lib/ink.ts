@@ -38,7 +38,7 @@ type Point = { x: number; y: number };
 const side = (a: Point, b: Point, c: Point) => Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
 
 /** The closest two segments (a–b, c–d) come: zero when they cross. */
-function segmentsDistance(a: Point, b: Point, c: Point, d: Point) {
+export function segmentsDistance(a: Point, b: Point, c: Point, d: Point) {
   if (side(a, b, c) * side(a, b, d) < 0 && side(c, d, a) * side(c, d, b) < 0) return 0;
   return Math.min(
     distanceToSegment(a.x, a.y, c.x, c.y, d.x, d.y), distanceToSegment(b.x, b.y, c.x, c.y, d.x, d.y),

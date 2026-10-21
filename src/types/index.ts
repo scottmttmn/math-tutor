@@ -19,6 +19,48 @@ export interface Stroke {
   tool: 'pen' | 'eraser';
 }
 
+/** An ink board's colors: the tablet offers black and gray, the computer all of them. */
+export type InkColor = 'black' | 'gray' | 'blue' | 'red' | 'green';
+
+/** A stroke on an ink board, in board units (CSS px at writing scale). */
+export interface BoardStroke {
+  id: string;
+  tool: 'pen' | 'highlighter';
+  color: InkColor;
+  /** Width at medium pressure; the pen's varies with pressure, the highlighter's doesn't. */
+  width: number;
+  /** Flat [x, y, pressure, …], pressure 0–1. */
+  points: number[];
+}
+
+/** A picture on an ink board: the problem (locked, placed once) or one kept from an old board. */
+export interface BoardImage {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** A data URL. */
+  src: string;
+  /** The problem picture: `true` for the board's own, an exercise's id for one added to a board of several. */
+  problem?: string | true;
+}
+
+/** The ink board's page: a fixed width from `left`, a top edge, and no bottom. */
+export interface BoardPage {
+  left: number;
+  top: number;
+  width: number;
+}
+
+/** An ink board's drawing as saved with a session. Strokes are in drawing order; images sit under them. */
+export interface BoardInk {
+  version: 1;
+  page: BoardPage;
+  strokes: BoardStroke[];
+  images: BoardImage[];
+}
+
 // === Chat Types ===
 
 export type ChatRole = 'user' | 'assistant';
