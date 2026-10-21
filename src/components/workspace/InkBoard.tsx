@@ -4,7 +4,7 @@ import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref
 import { v4 as uuidv4 } from 'uuid';
 import { useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
 import { GRID_SPACING, LINE_SPACING } from '@/lib/paper';
-import { HIGHLIGHTER_WIDTH, INK_COLORS, PEN_WIDTHS, boardBounds, emptyBoard, pushPoint, type PenSize } from '@/lib/inkBoard/model';
+import { HIGHLIGHTER_WIDTH, HIGHLIGHT_ALPHA, INK_COLORS, PEN_WIDTHS, boardBounds, emptyBoard, pushPoint, type PenSize } from '@/lib/inkBoard/model';
 import { addItems, commit, redo, removeItems, startHistory, undo, type BoardHistory } from '@/lib/inkBoard/edits';
 import { GridIndex, strokesHitByPath } from '@/lib/inkBoard/hitTest';
 import { drawBoard, drawBoardStroke } from '@/lib/inkBoard/render';
@@ -47,6 +47,12 @@ function loadPicture(src: string): Promise<HTMLImageElement> {
     image.onerror = () => reject(new Error('Image could not be read'));
     image.src = src;
   });
+}
+
+/** A highlight's look on white (its ink at HIGHLIGHT_ALPHA), for the BOOX pen's opaque preview. */
+function highlightPreview(hex: string): string {
+  const channel = (at: number) => Math.round(parseInt(hex.slice(at, at + 2), 16) * HIGHLIGHT_ALPHA + 255 * (1 - HIGHLIGHT_ALPHA));
+  return `#${[1, 3, 5].map((at) => channel(at).toString(16).padStart(2, '0')).join('')}`;
 }
 
 const canvasBlob = (canvas: HTMLCanvasElement, type: string, quality?: number) =>
@@ -99,8 +105,10 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   const onBooxErase = useCallback((flat: number[]) => fromBoox.current.erase(flat), []);
   const { owns: booxOwns, painted, gesture } = useBooxInk({
     container,
-    pen: tool === 'pen',
-    preview: { width: PEN_WIDTHS[size] * zoom, color: INK_COLORS[color] },
+    sdk: tool !== 'eraser',
+    preview: tool === 'highlighter'
+      ? { width: HIGHLIGHTER_WIDTH * zoom, color: highlightPreview(INK_COLORS[color]), marker: true }
+      : { width: PEN_WIDTHS[size] * zoom, color: INK_COLORS[color], marker: false },
     onStroke: onBooxStroke,
     onErase: onBooxErase,
   });
@@ -230,7 +238,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       stroke: (flat) => {
         const samples = strokePoints(flat);
         if (samples.length === 0 || loadPending.current) return;
-        const { size: penSize, color: ink } = style.current;
+        const { tool: chosen, size: penSize, color: ink } = style.current;
+        const highlighter = chosen === 'highlighter';
         const step = 1 / camera.current.z;
         const points: number[] = [];
         let last: { x: number; y: number } | null = null;
@@ -240,7 +249,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
           pushPoint(points, at.x, at.y, sample.pressure);
           last = at;
         }
-        apply(addItems(board(), [{ id: uuidv4(), tool: 'pen', color: ink, width: PEN_WIDTHS[penSize], points }]));
+        apply(addItems(board(), [{ id: uuidv4(), tool: highlighter ? 'highlighter' : 'pen', color: ink, width: highlighter ? HIGHLIGHTER_WIDTH : PEN_WIDTHS[penSize], points }]));
       },
       erase: (flat) => {
         if (loadPending.current) return;

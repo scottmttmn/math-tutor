@@ -119,7 +119,7 @@ public class BooxPenPlugin extends Plugin {
         }
     }
 
-    /** { region, exclude?, width, color? }: region and exclude are { x, y, w, h }; width is the pen's in CSS px; color #rrggbb. */
+    /** { region, exclude?, width, color?, marker? }: region and exclude are { x, y, w, h }; width is the pen's in CSS px; color #rrggbb; marker a highlighter's tip. */
     @PluginMethod
     public void start(PluginCall call) {
         if (!onyx(call)) return;
@@ -131,6 +131,7 @@ public class BooxPenPlugin extends Plugin {
         List<Rect> exclude = rects(call.getArray("exclude"));
         float width = call.getFloat("width", 2.5f) * density();
         Integer color = color(call.getString("color"));
+        int style = style(call);
         getBridge().executeOnMainThread(() -> {
             try {
                 WebView view = getBridge().getWebView();
@@ -144,7 +145,7 @@ public class BooxPenPlugin extends Plugin {
                     touchHelper.setRawDrawingEnabled(false);
                 }
                 touchHelper.setStrokeWidth(width).setLimitRect(region, exclude).openRawDrawing();
-                touchHelper.setStrokeStyle(TouchHelper.STROKE_STYLE_PENCIL);
+                touchHelper.setStrokeStyle(style);
                 touchHelper.setRawDrawingEnabled(true);
                 // Apply after SDK initialization too: the live preview must keep the board's width.
                 touchHelper.setStrokeWidth(width);
@@ -167,8 +168,10 @@ public class BooxPenPlugin extends Plugin {
             return;
         }
         Integer color = color(call.getString("color"));
+        int style = style(call);
         getBridge().executeOnMainThread(() -> {
             if (touchHelper != null) {
+                touchHelper.setStrokeStyle(style);
                 touchHelper.setStrokeWidth(width * density());
                 if (color != null) touchHelper.setStrokeColor(color);
             }
@@ -365,6 +368,11 @@ public class BooxPenPlugin extends Plugin {
         if (touchHelper != null) return true;
         call.reject("The BOOX pen isn't started.");
         return false;
+    }
+
+    /** A pencil, or a marker's flat tip for the ink board's highlighter. */
+    private int style(PluginCall call) {
+        return call.getBoolean("marker", false) ? TouchHelper.STROKE_STYLE_MARKER : TouchHelper.STROKE_STYLE_PENCIL;
     }
 
     /** A #rrggbb color from the page, or null when there is none (or it can't be read). */

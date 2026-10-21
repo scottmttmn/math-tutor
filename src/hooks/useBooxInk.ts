@@ -17,10 +17,10 @@ const OVERLAYS = '[role="menu"], [role="dialog"], [role="listbox"]';
 export interface BooxInkOptions {
   /** The board's element: the region is its box less the controls over it. */
   container: RefObject<HTMLElement | null>;
-  /** Whether the pen tool is chosen. Other tools take the pen in the page, with fast screen updates. */
-  pen: boolean;
-  /** The live preview's width and color, in CSS px at the current zoom. */
-  preview: { width: number; color: string };
+  /** Whether the SDK takes the pen (the Pen or Highlight tool). The eraser is the page's, with fast screen updates. */
+  sdk: boolean;
+  /** The live preview's width (CSS px at the current zoom), color, and a marker's flat tip for the highlighter. */
+  preview: { width: number; color: string; marker: boolean };
   /** A finished stroke from the SDK, flat [x, y, pressure, ms, …] in CSS px of the window. */
   onStroke: (flat: number[]) => void;
   /** The pen's eraser end passed along this path (same form). */
@@ -42,7 +42,7 @@ export interface BooxInk {
  * the other tools use the panel's fast mode, and the screen is refreshed after the board changes.
  * Everywhere else it does nothing. If the SDK never starts the pen stays the page's.
  */
-export function useBooxInk({ container, pen, preview, onStroke, onErase }: BooxInkOptions): BooxInk {
+export function useBooxInk({ container, sdk, preview, onStroke, onErase }: BooxInkOptions): BooxInk {
   const available = useBooxPenAvailable();
   const state = useRef({ started: false, running: false, paused: false, failed: false });
   const handlers = useRef({ onStroke, onErase });
@@ -59,12 +59,12 @@ export function useBooxInk({ container, pen, preview, onStroke, onErase }: BooxI
     void BooxPen.interaction({ active: on }).catch(() => undefined);
   }, [available]);
 
-  // The pen tool is the SDK's; the highlighter and eraser are the page's, drawn in fast mode.
+  // The pen and highlighter are the SDK's; the eraser is the page's, drawn in fast mode.
   useEffect(() => {
     if (!available) return;
-    fast.current.wanted = !pen;
+    fast.current.wanted = !sdk;
     setFast();
-  }, [available, pen, setFast]);
+  }, [available, sdk, setFast]);
 
   // Leaving the board, or the page being hidden, releases fast mode.
   useEffect(() => {
@@ -83,10 +83,10 @@ export function useBooxInk({ container, pen, preview, onStroke, onErase }: BooxI
     };
   }, [available, setFast]);
 
-  // The SDK owns the pen while the pen tool is chosen and nothing covers the board.
+  // The SDK owns the pen while the Pen or Highlight tool is chosen and nothing covers the board.
   useEffect(() => {
     const element = container.current;
-    if (!available || !pen || !element) return;
+    if (!available || !sdk || !element) return;
     const status = { started: false, running: false, paused: false, failed: false };
     state.current = status;
     let stopped = false;
@@ -117,8 +117,7 @@ export function useBooxInk({ container, pen, preview, onStroke, onErase }: BooxI
       if (!status.started) {
         status.started = true;
         lastRegion = key;
-        const { width, color } = previewRef.current;
-        void BooxPen.start({ ...area, width, color }).then(
+        void BooxPen.start({ ...area, ...previewRef.current }).then(
           () => {
             if (stopped) return;
             status.running = true;
@@ -173,16 +172,17 @@ export function useBooxInk({ container, pen, preview, onStroke, onErase }: BooxI
       removers.forEach((remove) => remove());
       if (status.started) void BooxPen.stop().catch(() => undefined);
     };
-  }, [available, pen, container]);
+  }, [available, sdk, container]);
 
-  // The preview follows the pen's size, color and the zoom without restarting the pen.
-  const { width, color } = preview;
+  // The preview follows the tool, size, color and zoom without restarting the pen.
+  const { width, color, marker } = preview;
   useEffect(() => {
-    const changed = previewRef.current.width !== width || previewRef.current.color !== color;
-    previewRef.current = { width, color };
+    const { current } = previewRef;
+    const changed = current.width !== width || current.color !== color || current.marker !== marker;
+    previewRef.current = { width, color, marker };
     if (!changed || !state.current.running) return;
-    void BooxPen.setWidth({ width, color }).catch(() => undefined);
-  }, [width, color]);
+    void BooxPen.setWidth({ width, color, marker }).catch(() => undefined);
+  }, [width, color, marker]);
 
   useEffect(() => () => clearTimeout(refreshTimer.current), []);
 
