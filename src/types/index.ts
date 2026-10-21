@@ -594,7 +594,9 @@ export interface BooxPenPoint {
  * Everything but status() is refused on other devices.
  */
 export interface BooxPenPlugin {
-  status(): Promise<{ onyx: boolean; active: boolean }>;
+  status(): Promise<{ onyx: boolean; active: boolean; fast?: boolean }>;
+  /** Fast screen updates during board manipulation, followed by one settled repaint. */
+  interaction(options: { active: boolean }): Promise<{ active: boolean }>;
   start(options: { region: BooxPenBox; exclude?: BooxPenBox[]; width: number }): Promise<void>;
   setRegion(options: { region: BooxPenBox; exclude?: BooxPenBox[] }): Promise<void>;
   pause(): Promise<void>;

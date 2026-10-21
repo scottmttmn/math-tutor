@@ -102,6 +102,7 @@ src/
 │   ├── useFavorite.ts         # The open board's Favorite star, kept in the tutor memory
 │   ├── useBackupStatus.ts     # Shared folder-backup state (starts the backup on first use)
 │   ├── useBooxPen.ts          # BOOX pen (experiment): Onyx's pen SDK draws the pen tool's strokes, which become tldraw ink
+│   ├── useBooxBoard.ts        # BOOX boards: immediate camera moves and fast panel updates during interaction
 │   ├── useDeviceToggle.ts     # deviceToggle(key): an on/off choice remembered per device (Notebook mode, BOOX pen)
 │   ├── useAddPdfs.ts          # Adds PDFs to the library (AppBar's Add a PDF, a drop on Home)
 │   └── useChatGPTConnection.ts# Sign in with ChatGPT state for SettingsModal
@@ -188,6 +189,8 @@ capacitor.config.ts            # App id, webDir `out`, androidScheme `http`
 - Loading an empty board deletes the last board's shapes with `ignoreShapeLock`, or its locked problem picture would stay behind.
 - tldraw's UI supplies the tools, colors, undo/redo and their shortcuts. `MainMenu`, `PageMenu`, `HelpMenu` and debug panels are hidden and there is one page per session.
 - `CanvasContext.document` is a **debounced** (250ms) copy of the editor's document. When saving, read `getDocument()` from the handle (both `AppShell` and `ShelfReader` do), or the last stroke can be missed.
+- `captureThumbnail()` makes a library-card PNG at most 512 pixels on its longer side, with fixed padding. Fixed padding avoids tldraw's automatic pixel-readback trim; keep full-board raster work out of autosave. Tutor captures and explicit exports use their own larger limits.
+- On BOOX, `useBooxBoard` makes camera moves immediate and calls `BooxPen.interaction` for non-drawing pointer contact/hover, finger pans/pinches and wheel input over the canvas. `FastRefreshController` owns Onyx's transient `ANIMATION` mode; native pen rendering is suspended while the page is manipulated, without stopping raw input. After the last contact and camera movement settle for 180 ms, fast mode ends with one `GU` repaint. Pen contact cancels it without a repaint; pause, stop, region changes and lifecycle cleanup also release it. Native scheduler/controller tests cover pen priority and cleanup. These adjustments apply whether the native pen experiment is on or off. A trial suppressing pen hover and the eraser trail felt the same or worse, so the usual tool feedback is retained; updating the panel faster was clearly better and usable on the device.
 - Loading: dispatch `LOAD` with `document` (tldraw format) and/or `strokes` (pre-tldraw format). The editor applies it when mounted, clears undo history, then dispatches `LOADED`. Until then `pendingLoad` holds the strokes, and saves keep them so an unconverted old session is never overwritten with an empty board.
 - Old sessions: `legacyStrokes.ts` turns strokes into draw shapes. The old canvas erased with `destination-out`, so pen ink under a *later* eraser stroke's swept path (its segments, not just its sampled points) is dropped.
 - **Assets:** fonts, icons and translations are copied from `@tldraw/assets` into `public/tldraw-assets` (gitignored) by the `postinstall` script, so nothing loads from tldraw's CDN. Keep `tldraw` and `@tldraw/assets` on the same exact version.

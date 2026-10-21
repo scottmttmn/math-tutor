@@ -14,6 +14,7 @@ import PenStylePanel from '@/components/workspace/PenStylePanel';
 import { useNotebookMode } from '@/hooks/useNotebookMode';
 import { fitNotebookWidth, useNotebookCamera } from '@/hooks/useNotebookCamera';
 import { useBooxPen } from '@/hooks/useBooxPen';
+import { useBooxBoard } from '@/hooks/useBooxBoard';
 
 const PaperContext = createContext<Paper>('blank');
 const NotebookContext = createContext<Box | null>(null);
@@ -179,6 +180,8 @@ function imagePixelRatio(editor: Editor, ids: TLShapeId[]): number {
 // Saved pictures of the board: sharp at 2x, but small enough for a tablet's canvas limits.
 const MAX_EXPORT_SIDE = 6000;
 const EXPORT_PADDING = 32;
+// Autosave needs a card preview, not a full-resolution raster of an ever-growing board.
+const THUMBNAIL_SIDE = 512;
 
 function applyLoad(editor: Editor, load: CanvasLoad) {
   if (load.document) {
@@ -227,6 +230,7 @@ export default function TldrawCanvas({ handleRef, toolsHidden, paper }: { handle
   const { notebook } = useNotebookMode();
   const { notebookPage, fitWidth } = useNotebookCamera(editor, notebook, pendingLoad);
   useBooxPen(editor);
+  useBooxBoard(editor);
 
   useEffect(() => {
     if (!editor) return;
@@ -303,7 +307,10 @@ export default function TldrawCanvas({ handleRef, toolsHidden, paper }: { handle
       if (!editor) return null;
       const ids = [...editor.getCurrentPageShapeIds()];
       if (ids.length === 0) return null;
-      const { blob } = await editor.toImage(ids, { format: 'png', background: true, pixelRatio: 1 });
+      const bounds = editor.getShapesPageBounds(ids);
+      if (!bounds) return null;
+      const pixelRatio = Math.min(1, THUMBNAIL_SIDE / (Math.max(bounds.w, bounds.h) + IMAGE_PADDING * 2));
+      const { blob } = await editor.toImage(ids, { format: 'png', background: true, padding: IMAGE_PADDING, pixelRatio });
       return blob;
     },
     exportImage: async (format) => {
