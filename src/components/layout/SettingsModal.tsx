@@ -86,19 +86,22 @@ function SettingsForm({ onClose, saveOpenBoard }: { onClose: () => void; saveOpe
   const chatgptModel = chatgptModels?.some((m) => m.slug === config.model)
     ? config.model
     : (chatgptModels?.find((m) => CHATGPT_DEFAULT_MODEL_PATTERN.test(`${m.slug} ${m.displayName}`)) ?? chatgptModels?.[0])?.slug
-      ?? config.model;
+      ?? '';
+  const canSaveChatGPT = !chatgpt.isLoading && chatgpt.status.status === 'connected'
+    && chatgpt.status.sharing && Boolean(chatgptModel);
 
   const handlePresetChange = (idx: number) => {
     setPresetIdx(idx);
     const preset = PRESETS[idx];
     setConfig({
       provider: preset.provider,
-      model: preset.model || config.model,
+      model: preset.provider === 'chatgpt' && config.provider !== 'chatgpt' ? '' : preset.model || config.model,
       baseUrl: preset.baseUrl,
     });
   };
 
   const handleSave = async () => {
+    if (isChatGPT && !canSaveChatGPT) return;
     if (keyName && keyDraft.trim()) {
       try {
         await deviceKey.save(keyDraft.trim());
@@ -127,8 +130,9 @@ function SettingsForm({ onClose, saveOpenBoard }: { onClose: () => void; saveOpe
       </button>
 
       {/* Provider preset */}
-      <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+      <label htmlFor="tutor-provider" className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
       <select
+        id="tutor-provider"
         value={presetIdx}
         onChange={(e) => handlePresetChange(Number(e.target.value))}
         className="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
@@ -185,23 +189,32 @@ function SettingsForm({ onClose, saveOpenBoard }: { onClose: () => void; saveOpe
           {chatgpt.status.error && (
             <p className="mt-2 text-xs text-red-600">{chatgpt.status.error}</p>
           )}
+          {!chatgpt.isLoading && chatgpt.status.status === 'connected' && chatgpt.status.sharing && chatgpt.status.error && (
+            <button onClick={chatgpt.refresh} className="mt-2 min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-white">
+              Try again
+            </button>
+          )}
         </div>
       )}
 
       {/* Model */}
-      <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
-      {isChatGPT && chatgptModels?.length ? (
+      <label htmlFor="tutor-model" className="block text-sm font-medium text-gray-700 mb-1">Model</label>
+      {isChatGPT ? (
         <select
+          id="tutor-model"
           value={chatgptModel}
+          disabled={!canSaveChatGPT}
           onChange={(e) => setConfig({ ...config, model: e.target.value })}
           className="w-full mb-4 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
         >
-          {chatgptModels.map((m) => (
+          {!chatgptModels?.length && <option value="">{chatgpt.isLoading ? 'Loading models…' : 'Models unavailable'}</option>}
+          {chatgptModels?.map((m) => (
             <option key={m.slug} value={m.slug}>{m.displayName}</option>
           ))}
         </select>
       ) : (
         <input
+          id="tutor-model"
           type="text"
           value={config.model}
           onChange={(e) => setConfig({ ...config, model: e.target.value })}
@@ -272,7 +285,8 @@ function SettingsForm({ onClose, saveOpenBoard }: { onClose: () => void; saveOpe
         </button>
         <button
           onClick={() => void handleSave()}
-          className="min-h-11 px-4 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700"
+          disabled={isChatGPT && !canSaveChatGPT}
+          className="min-h-11 px-4 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700 disabled:opacity-50"
         >
           Save
         </button>

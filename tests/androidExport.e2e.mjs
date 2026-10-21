@@ -189,11 +189,13 @@ try {
     await chooseTutor(app);
   };
   const openaiCalls = [];
+  let catalogUnavailable = true;
   await app.route('https://api.openai.com/**', async (route) => {
     const request = route.request();
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { ...cors, 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' } });
     openaiCalls.push({ url: request.url(), headers: request.headers(), body: request.postDataJSON() });
     if (request.url().endsWith('/v1/models')) {
+      if (catalogUnavailable) return route.abort('internetdisconnected');
       return route.fulfill({ status: 200, headers: { ...cors, 'Content-Type': 'application/json' }, body: JSON.stringify({ models: [{ slug: 'gpt-6.1-sol', display_name: 'Sol', visibility: 'list' }] }) });
     }
     await route.fulfill({ status: 200, headers: { ...cors, 'Content-Type': 'text/event-stream' }, body: sseFrames([
@@ -209,8 +211,23 @@ try {
   };
   const settings = app.getByRole('dialog', { name: 'Settings' });
   await openTutorSettings();
+  // A failed catalog must not offer the previous provider's model or save it as ChatGPT.
+  await settings.getByLabel('Provider', { exact: true }).selectOption({ label: 'Anthropic (Claude)' });
+  assert.equal(await settings.getByLabel('Model', { exact: true }).inputValue(), 'claude-sonnet-5-5');
+  await settings.getByLabel('Provider', { exact: true }).selectOption({ label: 'ChatGPT plan (Sign in with ChatGPT)' });
+  assert.equal(await settings.getByRole('button', { name: 'Save', exact: true }).isDisabled(), true);
   await settings.getByRole('button', { name: 'Sign in with ChatGPT' }).click();
   await settings.getByText('Signed in as learner@example.com.').waitFor();
+  await settings.getByText('Could not reach ChatGPT. Check your connection and try again.').waitFor();
+  assert.equal(await settings.getByLabel('Model', { exact: true }).inputValue(), '');
+  assert.equal(await settings.getByLabel('Model', { exact: true }).isDisabled(), true);
+  assert.equal(await settings.getByRole('button', { name: 'Save', exact: true }).isDisabled(), true);
+  catalogUnavailable = false;
+  await settings.getByRole('button', { name: 'Try again', exact: true }).click();
+  await app.waitForFunction(() => document.querySelector('#tutor-model')?.value === 'gpt-6.1-sol');
+  assert.equal(await settings.getByRole('button', { name: 'Save', exact: true }).isEnabled(), true);
+  assert.equal(await settings.getByText('Could not reach ChatGPT. Check your connection and try again.').count(), 0);
+  assert.equal(auth.requests.filter((request) => request.url.endsWith('/oauth/token')).length, 1, 'retrying the catalog keeps the existing sign-in');
   const authorization = auth.authorization.searchParams;
   assert.equal(authorization.get('redirect_uri'), 'http://127.0.0.1:8791/auth/callback');
   assert.equal(authorization.get('code_challenge_method'), 'S256');
