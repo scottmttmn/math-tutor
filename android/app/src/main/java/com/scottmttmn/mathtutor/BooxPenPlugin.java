@@ -1,5 +1,6 @@
 package com.scottmttmn.mathtutor;
 
+import android.graphics.Color;
 import android.graphics.Rect;
 import android.os.Build;
 import android.os.Handler;
@@ -118,7 +119,7 @@ public class BooxPenPlugin extends Plugin {
         }
     }
 
-    /** { region, exclude?, width }: region and exclude are { x, y, w, h }; width is the pen's in CSS px. */
+    /** { region, exclude?, width, color? }: region and exclude are { x, y, w, h }; width is the pen's in CSS px; color #rrggbb. */
     @PluginMethod
     public void start(PluginCall call) {
         if (!onyx(call)) return;
@@ -129,6 +130,7 @@ public class BooxPenPlugin extends Plugin {
         }
         List<Rect> exclude = rects(call.getArray("exclude"));
         float width = call.getFloat("width", 2.5f) * density();
+        Integer color = color(call.getString("color"));
         getBridge().executeOnMainThread(() -> {
             try {
                 WebView view = getBridge().getWebView();
@@ -146,6 +148,7 @@ public class BooxPenPlugin extends Plugin {
                 touchHelper.setRawDrawingEnabled(true);
                 // Apply after SDK initialization too: the live preview must keep the board's width.
                 touchHelper.setStrokeWidth(width);
+                if (color != null) touchHelper.setStrokeColor(color);
                 wanted = true;
                 call.resolve();
             } catch (Throwable error) {
@@ -154,7 +157,7 @@ public class BooxPenPlugin extends Plugin {
         });
     }
 
-    /** The preview follows the board's pen size and zoom without interrupting the input reader. */
+    /** The preview follows the board's pen size, zoom and (optionally) ink without interrupting the input reader. */
     @PluginMethod
     public void setWidth(PluginCall call) {
         if (!started(call)) return;
@@ -163,8 +166,12 @@ public class BooxPenPlugin extends Plugin {
             call.reject("A positive pen width is needed.");
             return;
         }
+        Integer color = color(call.getString("color"));
         getBridge().executeOnMainThread(() -> {
-            if (touchHelper != null) touchHelper.setStrokeWidth(width * density());
+            if (touchHelper != null) {
+                touchHelper.setStrokeWidth(width * density());
+                if (color != null) touchHelper.setStrokeColor(color);
+            }
             call.resolve();
         });
     }
@@ -358,6 +365,16 @@ public class BooxPenPlugin extends Plugin {
         if (touchHelper != null) return true;
         call.reject("The BOOX pen isn't started.");
         return false;
+    }
+
+    /** A #rrggbb color from the page, or null when there is none (or it can't be read). */
+    private Integer color(String value) {
+        if (value == null) return null;
+        try {
+            return Color.parseColor(value);
+        } catch (IllegalArgumentException unreadable) {
+            return null;
+        }
     }
 
     private Rect rect(JSONObject box) {

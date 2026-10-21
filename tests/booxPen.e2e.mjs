@@ -1,50 +1,12 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
+import { fakeBooxBridge } from './boox-bridge.mjs';
 
 // The BOOX pen on a board, with the Android app's native bridge stood in for: the page believes
 // it runs in the app on a BOOX tablet, records each BooxPen call, and the test hands it strokes
 // as the SDK would. What the SDK itself does on the e-ink screen can only be judged on the device.
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-
-function fakeBooxBridge() {
-  const methods = ['status', 'interaction', 'start', 'setWidth', 'setRegion', 'pause', 'resume', 'refresh', 'stop'];
-  const calls = [];
-  const listeners = new Map();
-  let nextId = 1;
-  window.__boox = {
-    calls,
-    emit(event, points) {
-      for (const callback of listeners.get(event) ?? []) callback({ points });
-    },
-  };
-  window.androidBridge = { postMessage() {} };
-  window.Capacitor = {
-    PluginHeaders: [{
-      name: 'BooxPen',
-      methods: [
-        ...methods.map((name) => ({ name, rtype: 'promise' })),
-        { name: 'addListener', rtype: 'callback' },
-        { name: 'removeListener', rtype: 'callback' },
-      ],
-    }],
-    async nativePromise(plugin, method, options) {
-      if (plugin !== 'BooxPen') throw new Error(`${plugin} is not stood in for`);
-      calls.push({ method, options });
-      if (method === 'start' && window.__failStart) throw new Error('The BOOX pen couldn\'t start.');
-      return method === 'status' ? { onyx: true, active: false } : undefined;
-    },
-    nativeCallback(plugin, method, options, callback) {
-      const id = String(nextId++);
-      if (method === 'addListener') {
-        const list = listeners.get(options.eventName) ?? [];
-        list.push(callback);
-        listeners.set(options.eventName, list);
-      }
-      return Promise.resolve(id);
-    },
-  };
-}
 
 /** Whether a pen pointerdown on the canvas is stopped before tldraw sees it. */
 function penEventBlocked(target) {
