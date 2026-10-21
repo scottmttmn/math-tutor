@@ -65,6 +65,10 @@ try {
   await page.getByRole('menuitem', { name: 'Pen test…', exact: true }).click();
   await page.getByTestId('pen-test-canvas').waitFor();
   assert.equal(new URL(page.url()).pathname, '/pen-test');
+  // ← Board goes back to the board it came from.
+  await page.getByRole('button', { name: '← Board', exact: true }).click();
+  await page.locator('.tl-canvas').waitFor();
+  assert.equal(new URL(page.url()).pathname, '/board');
   await page.goto(`${origin}/pen-test`);
   await page.getByTestId('pen-test-canvas').waitFor();
   assert.equal(new URL(page.url()).pathname, '/pen-test');

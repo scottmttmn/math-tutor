@@ -104,7 +104,7 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
             ...(booxAvailable ? [{ label: 'BOOX pen (experiment)', role: 'menuitemcheckbox' as const, checked: booxPen, onSelect: toggleBooxPen }] : []),
             ...(tools ? [{ label: 'Hide drawing tools', role: 'menuitemcheckbox' as const, checked: tools.hidden, onSelect: tools.toggle }] : []),
             // The Android app has no address bar, so the pen test is reached from here.
-            { label: 'Pen test…', onSelect: () => router.push('/pen-test') },
+            { label: 'Pen test…', disabled: isStreaming, onSelect: () => router.push('/pen-test') },
             ...(onWriteUp ? [{ label: 'TeX write-up…', separatorBefore: Boolean(tools), onSelect: onWriteUp }] : []),
             ...(onSaveAs ? [
               { label: 'Save as PNG', separatorBefore: Boolean(tools && !onWriteUp), disabled: !hasContent, onSelect: () => onSaveAs('png') },
