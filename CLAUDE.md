@@ -146,7 +146,8 @@ src/
 │   ├── tutorContent.ts        # Splits tutor replies into text and LaTeX for KaTeX rendering
 │   ├── boardProblems.ts       # A board holding several Shelf exercises: which board a mark is on, picture tags, solved, removing one
 │   ├── tutorAsk.ts            # The drawer's choices (Hint, Check my work, Feedback; notes: Explain this, Check my notes) and the question each sends
-│   └── legacyStrokes.ts       # Converts pre-tldraw saved strokes into tldraw draw shapes
+│   ├── legacyStrokes.ts       # Converts pre-tldraw saved strokes into tldraw draw shapes
+│   └── inkBoard/              # The ink board replacing tldraw (pure so far): model (BoardInk, widths, page), edits + undo, hitTest (grid index, eraser, lasso), render (tiles, strokes), fromTldraw (converter)
 └── types/
     ├── index.ts               # All shared TypeScript types
     └── speech-recognition.d.ts# Web Speech API type declarations
@@ -196,6 +197,12 @@ capacitor.config.ts            # App id, webDir `out`, androidScheme `http`
 - Old sessions: `legacyStrokes.ts` turns strokes into draw shapes. The old canvas erased with `destination-out`, so pen ink under a *later* eraser stroke's swept path (its segments, not just its sampled points) is dropped.
 - **Assets:** fonts, icons and translations are copied from `@tldraw/assets` into `public/tldraw-assets` (gitignored) by the `postinstall` script, so nothing loads from tldraw's CDN. Keep `tldraw` and `@tldraw/assets` on the same exact version.
 - **License:** with no license key tldraw runs on `http://localhost` / `127.0.0.1` (any http origin counts as development) and shows a small "Get a license for production" note. A hosted deployment needs a key from tldraw.dev.
+
+### Ink board (replacing tldraw, in progress)
+- Agreed 2026-10-21 (plan: https://claude.ai/artifact/WgrS9kXhB83B9ardHWxd1Q): our own Notes-like board, one TypeScript implementation on every device, Onyx's pen engine for the pen and eraser on BOOX, behind the same `DrawingCanvasHandle`. One long fixed-width page, whole-stroke eraser, lasso move/delete/copy, inks black and gray (more colors on the computer). If scrolling/zooming a web canvas fails the BOOX trial, the renderer moves into a native view behind the same data format. Steps: 1 format and engine core (done), 2 opt-in board on the computer, 3 BOOX, 4 lasso, 5 pictures/tutor/exports, 6 conversion on open and default flip, 7 remove tldraw, 8 additions.
+- Data (`BoardInk` in `src/types/index.ts`): `page` (`left`, `top`, `width`; grows to fit work, never moves it), `strokes` in drawing order (`tool`, `color` from `INK_COLORS`, `width` at medium pressure, flat `[x, y, pressure, …]` in board units = CSS px at writing scale, rounded to 0.1 / 0.01), `images` under the ink (`problem`: true or an exercise id, like tldraw's `meta.problemImage`).
+- Edits (`src/lib/inkBoard/edits.ts`) return new boards that share untouched strokes; undo keeps the last `UNDO_LIMIT` boards and `changedBounds` finds what to redraw by reference. `GridIndex.update(board)` re-indexes only changed items.
+- `boardFromTldraw` converts draw/highlight shapes (tldraw widths: S 3, M 4.5, L 6, XL 11 × scale; pressure kept only for a pen's "draw" dash), groups (transforms composed) and plain images, and returns other shapes as `leftovers` to be kept as a picture. `boardFromLegacyStrokes` converts pre-tldraw strokes with their erasing applied.
 
 ### Shelf
 - PDFs live in the IndexedDB store `shelf` (db version 2) as `ShelfDocument`s: the file Blob, a cover, the last page read, and the marked `exercises` (`page` plus a `rect` in fractions of the page).
