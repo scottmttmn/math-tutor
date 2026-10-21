@@ -103,6 +103,13 @@ try {
   assert.equal(await page.getByRole('menuitemcheckbox', { name: 'BOOX pen (experiment)' }).count(), 0);
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'resume'));
+  // + New's menu hangs over the board too: the pen must be able to tap its items.
+  const paused = (await calls('pause')).length;
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.waitForFunction((count) => window.__boox.calls.filter((call) => call.method === 'pause').length > count, paused);
+  const resumed = (await calls('resume')).length;
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.waitForFunction((count) => window.__boox.calls.filter((call) => call.method === 'resume').length > count, resumed);
 
   // The highlighter is the SDK's too, previewed with a flat marker tip in the highlight's look on
   // white, without restarting the pen; its stroke becomes a highlight.

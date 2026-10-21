@@ -170,21 +170,22 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, fold
           <span aria-hidden="true">+</span> New
         </button>
         {newOpen && (
-          <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
-            <button onClick={() => startNew('problem')} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
+          // A menu (role): on BOOX the pen SDK pauses while one covers the board, so the pen can tap it.
+          <div role="menu" aria-label="New" className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+            <button role="menuitem" onClick={() => startNew('problem')} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
               <ProblemIcon />New Problem
             </button>
-            <button onClick={() => { setNewOpen(false); setAskingTutor(true); }} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-indigo-700 hover:bg-indigo-50">
+            <button role="menuitem" onClick={() => { setNewOpen(false); setAskingTutor(true); }} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-indigo-700 hover:bg-indigo-50">
               <TutorIcon />Problem from tutor…
             </button>
-            <button onClick={() => startNew('note')} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
+            <button role="menuitem" onClick={() => startNew('note')} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
               <NotesIcon />New Notes
             </button>
-            <button onClick={() => { setNewOpen(false); pdfInput.current?.click(); }} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 border-t border-gray-100 hover:bg-gray-100">
+            <button role="menuitem" onClick={() => { setNewOpen(false); pdfInput.current?.click(); }} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 border-t border-gray-100 hover:bg-gray-100">
               <ShelfIcon />Add a PDF…
             </button>
             {onNewFolder && (
-              <button onClick={() => { setNewOpen(false); onNewFolder(); }} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
+              <button role="menuitem" onClick={() => { setNewOpen(false); onNewFolder(); }} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
                 <FolderIcon />New folder
               </button>
             )}
