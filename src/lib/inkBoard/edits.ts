@@ -29,6 +29,8 @@ export function removeItems(board: BoardInk, ids: ReadonlySet<string>): BoardInk
 /** The board with these items moved by (dx, dy), the page grown to fit where they land. */
 export function moveItems(board: BoardInk, ids: ReadonlySet<string>, dx: number, dy: number): BoardInk {
   if ((dx === 0 && dy === 0) || ids.size === 0) return board;
+  // Ids no longer on the board (a stale selection) move nothing, and make no undo step.
+  if (!board.strokes.some((stroke) => ids.has(stroke.id)) && !board.images.some((image) => ids.has(image.id))) return board;
   const strokes = board.strokes.map((stroke) => {
     if (!ids.has(stroke.id)) return stroke;
     const points = stroke.points.slice();

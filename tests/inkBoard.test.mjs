@@ -51,6 +51,7 @@ test('edits make new boards and keep untouched strokes; undo and redo step throu
   // Removing what isn't there, or a move by nothing, is no step at all.
   assert.equal(edits.commit(history, edits.removeItems(history.board, new Set(['zzz']))), history);
   assert.equal(edits.commit(history, edits.moveItems(history.board, new Set(['b']), 0, 0)), history);
+  assert.equal(edits.commit(history, edits.moveItems(history.board, new Set(['gone']), 5, 5)), history);
   history = edits.undo(edits.undo(history));
   assert.deepEqual(history.board.strokes.map((s) => s.points), [a.points, b.points]);
   history = edits.redo(history);
@@ -202,11 +203,17 @@ test('a tldraw board converts ink, highlights, pictures and groups in drawing or
   assert.deepEqual(converted.page, { left: -45.44, top: -182, width: 1005.44 });
 });
 
-test('a cropped or turned picture stays a leftover, and an empty document is an empty board', () => {
+test('a cropped or turned picture and see-through ink stay leftovers, and an empty document is an empty board', () => {
   const document = tldrawDocument();
   document.store['shape:problem'].props.crop = { topLeft: { x: 0, y: 0 }, bottomRight: { x: 0.5, y: 1 } };
   document.store['shape:problem'].meta = {};
   assert.ok(boardFromTldraw(document).leftovers.includes('shape:problem'));
+  // See-through ink, or ink in a see-through group, is kept as a picture too.
+  document.store['shape:ink'].opacity = 0.5;
+  document.store['shape:group'].opacity = 0.5;
+  const { board: rest, leftovers } = boardFromTldraw(document);
+  assert.ok(leftovers.includes('shape:ink') && leftovers.includes('shape:inGroup'));
+  assert.deepEqual(rest.strokes.map((s) => s.id), ['hl', 'pressed', 'mouse']);
   const empty = boardFromTldraw({ schema: {}, store: { 'page:page': { id: 'page:page', typeName: 'page', index: 'a1' } } });
   assert.deepEqual(empty, { board: model.emptyBoard(), leftovers: [] });
 });

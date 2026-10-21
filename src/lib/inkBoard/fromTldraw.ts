@@ -5,7 +5,7 @@ import { emptyBoard, pageAround, boardBounds, pushPoint } from './model';
 
 // Turning a board saved by tldraw (or by the canvas before it) into an ink board. Pen and
 // highlighter ink and pictures convert exactly; anything else (shapes, text, arrows, notes,
-// frames, cropped or turned pictures) is reported, so the caller can keep it as a picture.
+// frames, cropped or turned pictures, anything see-through) is reported, so the caller can keep it as a picture.
 
 /** tldraw's draw width per size (2 × its stroke size + 1) and its highlighter's (16px × font size × 1.12). */
 const DRAW_WIDTHS: Record<string, number> = { s: 3, m: 4.5, l: 6, xl: 11 };
@@ -31,6 +31,7 @@ interface TLRecord {
   x?: number;
   y?: number;
   rotation?: number;
+  opacity?: number;
   index?: string;
   parentId?: string;
   props?: Record<string, unknown>;
@@ -122,23 +123,26 @@ export function boardFromTldraw(document: CanvasDocument): Conversion {
   const strokes: BoardStroke[] = [];
   const images: BoardImage[] = [];
   const leftovers: string[] = [];
-  const visit = (shape: TLRecord, parent: Transform) => {
+  const visit = (shape: TLRecord, parent: Transform, parentOpacity: number) => {
     const transform = shapeTransform(shape, parent);
+    // tldraw multiplies a shape's opacity by its group's; the board has no see-through ink or pictures.
+    const opacity = parentOpacity * (shape.opacity ?? 1);
     if (shape.type === 'group') {
-      for (const child of children.get(shape.id) ?? []) visit(child, transform);
+      for (const child of children.get(shape.id) ?? []) visit(child, transform, opacity);
       return;
     }
-    const converted = shape.type === 'draw' || shape.type === 'highlight' ? inkStroke(shape, transform)
+    const converted = opacity < 1 ? null
+      : shape.type === 'draw' || shape.type === 'highlight' ? inkStroke(shape, transform)
       : shape.type === 'image' ? inkImage(shape, transform, assets) : null;
     if (!converted) leftovers.push(shape.id);
     else if ('points' in converted) strokes.push(converted);
     else images.push(converted);
     // A frame's shapes are drawn with it in the picture made of the frame; others' children are their own.
-    if (shape.type !== 'frame') for (const child of children.get(shape.id) ?? []) visit(child, transform);
+    if (shape.type !== 'frame') for (const child of children.get(shape.id) ?? []) visit(child, transform, opacity);
   };
   const pages = records.filter((record) => record.typeName === 'page').sort((a, b) => ((a.index ?? '') < (b.index ?? '') ? -1 : 1));
   // The app has one page per board.
-  for (const shape of pages.length ? children.get(pages[0].id) ?? [] : []) visit(shape, [1, 0, 0, 1, 0, 0]);
+  for (const shape of pages.length ? children.get(pages[0].id) ?? [] : []) visit(shape, [1, 0, 0, 1, 0, 0], 1);
 
   const board = { ...emptyBoard(), strokes, images };
   return { board: { ...board, page: pageAround(board.page, boardBounds(board)) }, leftovers };
