@@ -155,6 +155,30 @@ try {
   await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await waitLast('interaction', 'options.active === false');
   assert.ok((await calls('interaction')).length > before);
+
+  // Palm rejection: a hand resting as the pen hovers, just after a stroke, or as wide as a palm
+  // doesn't scroll; a finger a moment later still does.
+  const viewY = async () => Number(await board.getAttribute('data-view-y'));
+  const drag = async (radius = 5) => {
+    const start = await viewY();
+    const at = { id: 3, x: box.x + 600, y: box.y + 500, radiusX: radius, radiusY: radius };
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at] });
+    for (let step = 1; step <= 4; step++) await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...at, y: at.y - step * 40 }] });
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(100);
+    return (await viewY()) - start;
+  };
+  await page.waitForTimeout(900);
+  const pen = await page.context().newCDPSession(page);
+  await pen.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + 300, y: box.y + 300, pointerType: 'pen' });
+  assert.equal(await drag(), 0, 'a palm as the pen hovers');
+  await page.waitForTimeout(900);
+  await page.evaluate((points) => window.__boox.emit('stroke', points), flat.map((value, i) => (i % 4 === 1 ? value + 200 : value)));
+  assert.equal(await drag(), 0, 'a palm just after a stroke');
+  await page.waitForTimeout(900);
+  assert.equal(await drag(40), 0, 'a contact as wide as a palm');
+  assert.ok(await drag() > 0, 'a finger still scrolls');
+  await pen.detach();
   await touch.detach();
 
   // Leaving for Home stops the pen and releases fast mode.
@@ -163,7 +187,7 @@ try {
   await page.waitForFunction(() => window.__boox.calls.at(-1)?.method === 'stop' || window.__boox.calls.filter((call) => call.method === 'stop').length >= 2);
 
   assert.deepEqual(errors, []);
-  console.log('PASS BOOX ink board: the SDK draws the pen and highlighter into ink, erases, previews tool/size/ink/zoom, pauses under menus, fast mode for the eraser and fingers');
+  console.log('PASS BOOX ink board: the SDK draws the pen and highlighter into ink, erases, previews tool/size/ink/zoom, pauses under menus, fast mode for the eraser and fingers, palms rejected');
 } finally {
   await browser.close();
 }
