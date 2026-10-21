@@ -4,7 +4,7 @@ Reviewed against the app on 2026-10-18.
 
 Goal: make Math Tutor a great math notebook on its own, even for someone who never uses the AI tutor. The primary audience is the self-motivated learner who enjoys math, at any skill level.
 
-Direction: pen-first and keyboard-free for the core reading, writing and tutor loop. The Android app is already built; the next hardware decision depends on testing the actual BOOX. It has **not arrived yet** (2026-10-18). Keep checking features with pen and taps at tablet size in the meantime.
+Direction: pen-first and keyboard-free for the core reading, writing and tutor loop. The Android app is already built. The BOOX Go 10.3 arrived on 2026-10-21 and device validation is underway.
 
 Every change goes through a branch and a PR (see CLAUDE.md, "Workflow and CI"). The remaining items below carry forward the existing roadmap; priorities can change after the device test.
 
@@ -34,10 +34,11 @@ Every change goes through a branch and a PR (see CLAUDE.md, "Workflow and CI"). 
 - [ ] Include drawings as images in a write-up; they currently become `\fbox{Figure: …}` placeholders.
 - [ ] Offer TeX write-up on boards opened from PDF marks. It is currently available on free boards through **Board → TeX write-up…**.
 
-## BOOX validation — waiting for the device
+## BOOX validation — device testing underway
 
 - [ ] Test the actual app's small mathematical symbols, stroke latency, palm rejection, erasing, selection, undo, page movement and long reading sessions. The bare `/pen-test` page is available for comparison.
-- [ ] Use those results to decide whether tldraw is suitable and whether a native pen layer / BOOX SDK integration is needed. Keep canvas-specific polish small until then. A first BOOX SDK layer is built but untried: **BOOX pen SDK** on `/pen-test` and **Board → BOOX pen (experiment)**, both offered only on BOOX.
+- [ ] Use those results to decide whether tldraw is suitable and whether a native pen layer / BOOX SDK integration is needed. Keep canvas-specific polish small until then. First Go 10.3 test (2026-10-21): built-in Notes feels immediate; browser pen input is laggy. The SDK receives about 280 samples/s, but per-stroke refreshes interrupt writing; temporarily suppressing them felt much better. The native layer now waits for a pause in writing and keeps the input reader running during refresh. Scott confirmed the installed fix stays smooth after pausing and resuming writing. The real board then felt quite good, with one missed start and blocked writing near the screen edges. Its toolbar layout wrappers excluded tall blank side strips; exclusions now follow only the interactive controls. Scott confirmed writing and starting strokes at both side edges works after that correction. All 177 saved strokes survived an update and reload of the isolated test app. Physical undo validation remains.
+- [ ] Improve the rest of the BOOX board interaction. Scott finds erasing, selection, moving and zooming laggy and flashy, and the newest ink briefly redraws once after writing pauses. The test app is already in EinkWise Speed mode (anti-flicker 10). A temporary WebView monitor during erasing and selection measured 35 ms median input-event delay (64 ms at the 95th percentile), with main-thread tasks up to 117 ms; these measurements exclude the panel's physical refresh delay. The native pen fix does not accelerate these other tools. Investigate tool handling and e-ink refresh before treating device support as complete.
 - [ ] Try the installed Android app's tutor calls and Sign in with ChatGPT on the device, without a Mac.
 - [ ] Test backup/restore on the device and choose its long-term backup location or sync workflow.
 - [ ] Decide whether the pen panel should have fewer colors and no opacity for the monochrome screen.

@@ -81,14 +81,53 @@ try {
   assert.ok(Math.abs(start.region.w - box.width) < 2 && Math.abs(start.region.h - box.height) < 2, 'the pen draws over the canvas');
   assert.ok(start.exclude.length > 0, "tldraw's controls stay tappable");
 
+  // The layout columns stretch down the board, but the blank margins under their controls
+  // remain writable. Check the portrait tablet too, where this previously hid whole side strips.
+  const checkPenBounds = async () => {
+    const result = await page.evaluate(() => {
+      const area = window.__boox.calls.filter((call) => ['start', 'setRegion'].includes(call.method)).at(-1).options;
+      const contains = (rect, point) => point.x >= rect.x && point.x < rect.x + rect.w && point.y >= rect.y && point.y < rect.y + rect.h;
+      const canvas = document.querySelector('.tl-canvas').getBoundingClientRect();
+      const margins = [canvas.left + 12, canvas.right - 12].map((x) => ({ x, y: canvas.top + canvas.height / 2 }));
+      const controls = [...document.querySelectorAll('[data-testid="tools.draw"], button[aria-label^="Pen:"]')];
+      return {
+        marginsAreCanvas: margins.every((point) => document.elementFromPoint(point.x, point.y)?.closest('.tl-canvas')),
+        marginsExcluded: margins.some((point) => area.exclude.some((rect) => contains(rect, point))),
+        controlCount: controls.length,
+        controlsExcluded: controls.every((control) => {
+          const rect = control.getBoundingClientRect();
+          const center = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+          return area.exclude.some((box) => contains(box, center));
+        }),
+      };
+    });
+    assert.equal(result.marginsAreCanvas, true, 'the margin samples are blank drawing space');
+    assert.equal(result.marginsExcluded, false, 'blank side margins stay writable');
+    assert.equal(result.controlCount, 2, 'both the tool and pen-style controls are present');
+    assert.equal(result.controlsExcluded, true, 'the actual toolbars still take taps');
+  };
+  const resizeBoard = async (viewport) => {
+    const previous = (await calls('setRegion')).length;
+    await page.setViewportSize(viewport);
+    await page.waitForFunction((count) => {
+      const changes = window.__boox.calls.filter((call) => call.method === 'setRegion');
+      const region = changes.at(-1)?.options.region;
+      const rect = document.querySelector('.tl-canvas').getBoundingClientRect();
+      return changes.length > count && region
+        && Math.abs(region.w - rect.width) < 1 && Math.abs(region.h - rect.height) < 1
+        && Math.abs(region.x - rect.left) < 1 && Math.abs(region.y - rect.top) < 1;
+    }, previous);
+  };
   // A stroke from the SDK becomes ink where it was drawn, and the screen is let through.
+  const strokeX = box.x + box.width * 0.25, strokeY = box.y + box.height * 0.35;
+  const strokeWidth = box.width * 0.3, strokeHeight = box.height * 0.2;
   const flat = [];
-  for (let i = 0; i <= 20; i += 1) flat.push(box.x + 200 + i * 10, box.y + 200 + i * 4, 0.6, i * 8);
+  for (let i = 0; i <= 20; i += 1) flat.push(strokeX + strokeWidth * i / 20, strokeY + strokeHeight * i / 20, 0.6, i * 8);
   await page.evaluate((points) => window.__boox.emit('stroke', points), flat);
   await page.locator('[data-shape-type="draw"]').first().waitFor();
   assert.equal(await drawShapes(), 1);
   const shape = await page.locator('[data-shape-type="draw"]').first().boundingBox();
-  assert.ok(shape.x < box.x + 210 && shape.x + shape.width > box.x + 390, 'the ink sits where the pen wrote');
+  assert.ok(shape.x < strokeX + 10 && shape.x + shape.width > strokeX + strokeWidth - 10, 'the ink sits where the pen wrote');
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'refresh'));
 
   // An open menu over the board takes the pen back; closing it gives the pen to the SDK again.
@@ -101,10 +140,16 @@ try {
   assert.equal(await penEventBlocked(page), true);
 
   // The eraser end erases the stroke it crosses, even between two far-apart samples; undo brings it back.
-  await page.evaluate(([x, y]) => window.__boox.emit('erase', [x, y - 80, 0.5, 0, x, y + 80, 0.5, 8]), [box.x + 300, box.y + 240]);
+  await page.evaluate(([x, y]) => window.__boox.emit('erase', [x, y - 80, 0.5, 0, x, y + 80, 0.5, 8]), [strokeX + strokeWidth / 2, strokeY + strokeHeight / 2]);
   await page.waitForFunction(() => document.querySelectorAll('[data-shape-type="draw"]').length === 0);
   await page.keyboard.press('Control+z');
   await page.locator('[data-shape-type="draw"]').first().waitFor();
+
+  // Keep layout changes after the stroke checks: tldraw adjusts its viewport while resizing.
+  await checkPenBounds();
+  await resizeBoard({ width: 992, height: 1320 });
+  await checkPenBounds();
+  await resizeBoard({ width: 1024, height: 768 });
 
   // Another tool hands the pen back to tldraw.
   await page.getByTestId('tools.select').click();

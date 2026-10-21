@@ -2,6 +2,8 @@ package com.scottmttmn.mathtutor;
 
 import android.graphics.Rect;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.webkit.WebView;
 import com.getcapacitor.JSArray;
@@ -32,7 +34,7 @@ import org.lsposed.hiddenapibypass.HiddenApiBypass;
  * the page calls refresh() once it has drawn a stroke, and pause() while something covers it.
  *
  * Coordinates to and from the page are CSS pixels relative to the WebView.
- * Not yet tried on a device (written 2026-10-19, before the BOOX Go 10.3 arrived).
+ * Validated on the BOOX Go 10.3: restarting raw input after each stroke causes visible lag.
  */
 @CapacitorPlugin(name = "BooxPen")
 public class BooxPenPlugin extends Plugin {
@@ -43,6 +45,18 @@ public class BooxPenPlugin extends Plugin {
     /** Whether the page wants raw drawing on (start/resume) as opposed to paused or stopped. */
     private boolean wanted = false;
     private float maxPressure = 0;
+    private static final long REFRESH_IDLE_MS = 500;
+    private final Handler refreshHandler = new Handler(Looper.getMainLooper());
+    private final PenRefreshScheduler refreshes = new PenRefreshScheduler(
+        task -> refreshHandler.postDelayed(task, REFRESH_IDLE_MS),
+        refreshHandler::removeCallbacks,
+        () -> {
+            if (touchHelper == null || !wanted) return;
+            // Let page ink through without restarting the input reader (which force-releases the pen).
+            touchHelper.setRawDrawingRenderEnabled(false);
+            touchHelper.setRawDrawingRenderEnabled(true);
+        }
+    );
 
     @Override
     public void load() {
@@ -72,6 +86,7 @@ public class BooxPenPlugin extends Plugin {
         getBridge().executeOnMainThread(() -> {
             try {
                 WebView view = getBridge().getWebView();
+                refreshes.cancel();
                 if (touchHelper == null) {
                     touchHelper = TouchHelper.create(view, callback);
                     maxPressure = EpdController.getMaxTouchPressure();
@@ -100,6 +115,7 @@ public class BooxPenPlugin extends Plugin {
         }
         List<Rect> exclude = rects(call.getArray("exclude"));
         getBridge().executeOnMainThread(() -> {
+            refreshes.cancel();
             touchHelper.setRawDrawingEnabled(false);
             touchHelper.setLimitRect(region, exclude);
             if (wanted) touchHelper.setRawDrawingEnabled(true);
@@ -111,6 +127,7 @@ public class BooxPenPlugin extends Plugin {
     public void pause(PluginCall call) {
         if (!started(call)) return;
         getBridge().executeOnMainThread(() -> {
+            refreshes.cancel();
             wanted = false;
             touchHelper.setRawDrawingEnabled(false);
             call.resolve();
@@ -127,15 +144,12 @@ public class BooxPenPlugin extends Plugin {
         });
     }
 
-    /** Lets the screen show the page again (the stroke the page just drew), then goes on drawing. */
+    /** Requests a page refresh after writing pauses; never stops a stroke to show page ink. */
     @PluginMethod
     public void refresh(PluginCall call) {
         if (!started(call)) return;
         getBridge().executeOnMainThread(() -> {
-            if (wanted) {
-                touchHelper.setRawDrawingEnabled(false);
-                touchHelper.setRawDrawingEnabled(true);
-            }
+            if (wanted) refreshes.request();
             call.resolve();
         });
     }
@@ -150,6 +164,7 @@ public class BooxPenPlugin extends Plugin {
 
     @Override
     protected void handleOnPause() {
+        refreshes.cancel();
         if (touchHelper != null) touchHelper.setRawDrawingEnabled(false);
     }
 
@@ -164,6 +179,7 @@ public class BooxPenPlugin extends Plugin {
     }
 
     private void close() {
+        refreshes.cancel();
         wanted = false;
         if (touchHelper == null) return;
         touchHelper.setRawDrawingEnabled(false);
@@ -175,11 +191,13 @@ public class BooxPenPlugin extends Plugin {
     private final RawInputCallback callback = new RawInputCallback() {
         @Override
         public void onBeginRawDrawing(boolean b, TouchPoint point) {
+            refreshes.beginStroke();
             ignoreFingers(true);
         }
 
         @Override
         public void onEndRawDrawing(boolean b, TouchPoint point) {
+            refreshes.endStroke();
             ignoreFingers(false);
         }
 
@@ -193,11 +211,13 @@ public class BooxPenPlugin extends Plugin {
 
         @Override
         public void onBeginRawErasing(boolean b, TouchPoint point) {
+            refreshes.beginStroke();
             ignoreFingers(true);
         }
 
         @Override
         public void onEndRawErasing(boolean b, TouchPoint point) {
+            refreshes.endStroke();
             ignoreFingers(false);
         }
 
