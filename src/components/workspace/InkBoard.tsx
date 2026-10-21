@@ -278,7 +278,9 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   // Leaving the page mirrors the last change right away, so it is saved.
   useEffect(() => () => {
     if (mirrorTimer.current) { clearTimeout(mirrorTimer.current); mirror(); }
+    // Development mounts twice (Strict Mode): a cancelled frame left in `frame` would stop all repaints.
     cancelAnimationFrame(frame.current);
+    frame.current = 0;
   }, [mirror]);
 
   const doUndo = useCallback(() => {
