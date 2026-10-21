@@ -8,7 +8,7 @@ const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 
 function fakeBooxBridge() {
-  const methods = ['status', 'interaction', 'start', 'setRegion', 'pause', 'resume', 'refresh', 'stop'];
+  const methods = ['status', 'interaction', 'start', 'setWidth', 'setRegion', 'pause', 'resume', 'refresh', 'stop'];
   const calls = [];
   const listeners = new Map();
   let nextId = 1;
@@ -131,7 +131,17 @@ try {
   assert.equal(await drawShapes(), 1);
   const shape = await page.locator('[data-shape-type="draw"]').first().boundingBox();
   assert.ok(shape.x < strokeX + 10 && shape.x + shape.width > strokeX + strokeWidth - 10, 'the ink sits where the pen wrote');
+  const renderedWidth = await page.locator('[data-shape-type="draw"] path[stroke-width]').first().evaluate((path) => Number(path.getAttribute('stroke-width')) * path.getScreenCTM().a);
+  assert.ok(Math.abs(start.width - renderedWidth) < 0.01, 'native preview and finalized ink have the same width');
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'refresh'));
+  const startsBeforeSize = (await calls('start')).length;
+  await page.getByRole('button', { name: 'Pen: black, S', exact: true }).click();
+  await page.getByTestId('style.size.m').click();
+  await page.waitForFunction((width) => Math.abs(window.__boox.calls.filter((call) => call.method === 'setWidth').at(-1)?.options.width - width * 1.5) < 0.01, start.width);
+  await page.getByTestId('style.size.s').click();
+  await page.waitForFunction((width) => Math.abs(window.__boox.calls.filter((call) => call.method === 'setWidth').at(-1)?.options.width - width) < 0.01, start.width);
+  await page.keyboard.press('Escape');
+  assert.equal((await calls('start')).length, startsBeforeSize, 'changing pen size updates the preview without restarting input');
 
   // Autosave keeps the editable document and only a bounded PNG for the library card.
   let preview = null;
@@ -219,6 +229,8 @@ try {
   await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === false);
   await touch.detach();
+  const currentWidth = await page.locator('[data-shape-type="draw"] path[stroke-width]').first().evaluate((path) => Number(path.getAttribute('stroke-width')) * path.getScreenCTM().a);
+  await page.waitForFunction((width) => Math.abs(window.__boox.calls.filter((call) => call.method === 'setWidth').at(-1)?.options.width - width) < 0.01, currentWidth);
 
   await page.mouse.wheel(0, 100);
   await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === true);

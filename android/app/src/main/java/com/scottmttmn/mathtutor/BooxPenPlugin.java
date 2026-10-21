@@ -144,11 +144,28 @@ public class BooxPenPlugin extends Plugin {
                 touchHelper.setStrokeWidth(width).setLimitRect(region, exclude).openRawDrawing();
                 touchHelper.setStrokeStyle(TouchHelper.STROKE_STYLE_PENCIL);
                 touchHelper.setRawDrawingEnabled(true);
+                // Apply after SDK initialization too: the live preview must keep the board's width.
+                touchHelper.setStrokeWidth(width);
                 wanted = true;
                 call.resolve();
             } catch (Throwable error) {
                 call.reject("The BOOX pen couldn't start.", error instanceof Exception ? (Exception) error : null);
             }
+        });
+    }
+
+    /** The preview follows the board's pen size and zoom without interrupting the input reader. */
+    @PluginMethod
+    public void setWidth(PluginCall call) {
+        if (!started(call)) return;
+        Float width = call.getFloat("width");
+        if (width == null || !Float.isFinite(width) || width <= 0) {
+            call.reject("A positive pen width is needed.");
+            return;
+        }
+        getBridge().executeOnMainThread(() -> {
+            if (touchHelper != null) touchHelper.setStrokeWidth(width * density());
+            call.resolve();
         });
     }
 

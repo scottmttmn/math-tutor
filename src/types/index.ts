@@ -598,6 +598,8 @@ export interface BooxPenPlugin {
   /** Fast screen updates for editing tools or finger gestures; leaving does not force a repaint. */
   interaction(options: { active: boolean }): Promise<{ active: boolean }>;
   start(options: { region: BooxPenBox; exclude?: BooxPenBox[]; width: number }): Promise<void>;
+  /** Update the preview width in CSS pixels without restarting pen input. */
+  setWidth(options: { width: number }): Promise<void>;
   setRegion(options: { region: BooxPenBox; exclude?: BooxPenBox[] }): Promise<void>;
   pause(): Promise<void>;
   resume(): Promise<void>;
