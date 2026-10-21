@@ -663,3 +663,11 @@ export interface ChatGPTSignInPlugin {
   close(): Promise<void>;
   openBrowser(options: { url: string }): Promise<void>;
 }
+
+/**
+ * Installs a newer build of the Android app (android/…/AppUpdatePlugin.java): downloads the APK and
+ * opens Android's installer. `permission: false`: Android's "install unknown apps" setting was opened instead.
+ */
+export interface AppUpdatePlugin {
+  install(options: { url: string }): Promise<{ permission: boolean }>;
+}

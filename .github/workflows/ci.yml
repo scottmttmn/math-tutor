@@ -42,10 +42,16 @@ jobs:
         run: cat server.log || true
 
   # The Android app: the app bundled with no server (npm run build:android), checked in a browser
-  # the way the app serves it, then built into an install file (APK) attached to the run.
+  # the way the app serves it, then built into an install file (APK) attached to the run and
+  # published at one link the app updates itself from (Settings → Update).
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    permissions:
+      contents: write
+    env:
+      # Numbers the build: shown in the app, and the APK's versionCode.
+      APP_BUILD: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
 
@@ -67,12 +73,51 @@ jobs:
         run: npx playwright install --with-deps chromium
       - run: npm run test:android:e2e
 
+      # Every build is signed with the same debug key, kept between runs, so each one installs over
+      # the last and the app keeps its data (ChatGPT sign-in and API keys included). It is saved from
+      # main; pull requests read main's. Never commit a key: the repository is public.
+      - name: Restore the signing key
+        id: key
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
+
       - name: Test the native pen scheduler and build the APK
         working-directory: android
         run: ./gradlew testDebugUnitTest assembleDebug --no-daemon
+
+      - name: Keep the signing key
+        if: steps.key.outputs.cache-hit != 'true' && github.event_name == 'push'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
 
       - uses: actions/upload-artifact@v4
         with:
           name: math-tutor-android
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      # The newest build (from main, or a pull request in this repository signed with main's key)
+      # replaces the APK on the "tablet" pre-release; an older run finishing late leaves it alone.
+      - name: Publish for the app's Update
+        if: >-
+          github.event_name == 'push' ||
+          (github.event.pull_request.head.repo.full_name == github.repository && steps.key.outputs.cache-hit == 'true')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FROM: ${{ github.head_ref || github.ref_name }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if ! gh release view tablet > /dev/null 2>&1; then
+            gh release create tablet --prerelease --target main --title "Tablet app (newest build)" --notes "Build: 0"
+          fi
+          published=$(gh release view tablet --json body --jq .body | sed -n 's/^Build: \([0-9]*\)$/\1/p')
+          if [ "${published:-0}" -ge "$APP_BUILD" ]; then
+            echo "Build $published is already published"; exit 0
+          fi
+          cp android/app/build/outputs/apk/debug/app-debug.apk math-tutor.apk
+          gh release upload tablet math-tutor.apk --clobber
+          gh release edit tablet --notes "$(printf 'Build: %s\nFrom: %s at %s\n\nInstall math-tutor.apk on the tablet, or tap Update in the app.' "$APP_BUILD" "$FROM" "${SHA:0:7}")"
