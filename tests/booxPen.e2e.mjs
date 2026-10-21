@@ -77,7 +77,7 @@ try {
   await item.click();
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'start'));
   const [{ options: start }] = await calls('start');
-  const box = await canvas.boundingBox();
+  let box = await canvas.boundingBox();
   assert.ok(Math.abs(start.region.w - box.width) < 2 && Math.abs(start.region.h - box.height) < 2, 'the pen draws over the canvas');
   assert.ok(start.exclude.length > 0, "tldraw's controls stay tappable");
 
@@ -122,15 +122,19 @@ try {
   await resizeBoard({ width: 992, height: 1320 });
   await checkPenBounds();
   await resizeBoard({ width: 1024, height: 768 });
+  box = await canvas.boundingBox();
 
   // A stroke from the SDK becomes ink where it was drawn, and the screen is let through.
+  // Resizing can reposition the board; use its current visible area for the native samples.
+  const strokeX = box.x + box.width * 0.25, strokeY = box.y + box.height * 0.35;
+  const strokeWidth = box.width * 0.3, strokeHeight = box.height * 0.2;
   const flat = [];
-  for (let i = 0; i <= 20; i += 1) flat.push(box.x + 200 + i * 10, box.y + 200 + i * 4, 0.6, i * 8);
+  for (let i = 0; i <= 20; i += 1) flat.push(strokeX + strokeWidth * i / 20, strokeY + strokeHeight * i / 20, 0.6, i * 8);
   await page.evaluate((points) => window.__boox.emit('stroke', points), flat);
   await page.locator('[data-shape-type="draw"]').first().waitFor();
   assert.equal(await drawShapes(), 1);
   const shape = await page.locator('[data-shape-type="draw"]').first().boundingBox();
-  assert.ok(shape.x < box.x + 210 && shape.x + shape.width > box.x + 390, 'the ink sits where the pen wrote');
+  assert.ok(shape.x < strokeX + 10 && shape.x + shape.width > strokeX + strokeWidth - 10, 'the ink sits where the pen wrote');
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'refresh'));
 
   // An open menu over the board takes the pen back; closing it gives the pen to the SDK again.
@@ -143,7 +147,7 @@ try {
   assert.equal(await penEventBlocked(page), true);
 
   // The eraser end erases the stroke it crosses, even between two far-apart samples; undo brings it back.
-  await page.evaluate(([x, y]) => window.__boox.emit('erase', [x, y - 80, 0.5, 0, x, y + 80, 0.5, 8]), [box.x + 300, box.y + 240]);
+  await page.evaluate(([x, y]) => window.__boox.emit('erase', [x, y - 80, 0.5, 0, x, y + 80, 0.5, 8]), [strokeX + strokeWidth / 2, strokeY + strokeHeight / 2]);
   await page.waitForFunction(() => document.querySelectorAll('[data-shape-type="draw"]').length === 0);
   await page.keyboard.press('Control+z');
   await page.locator('[data-shape-type="draw"]').first().waitFor();
