@@ -228,3 +228,29 @@ test('pre-tldraw strokes convert with their erasing applied', () => {
   // The cut falls around x = 50.
   assert.ok(converted.strokes[0].points.at(-3) < 50 && converted.strokes[1].points[0] > 50);
 });
+
+const camera = load('src/lib/inkBoard/camera.ts');
+const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} is not ${expected}`);
+
+test('the camera fits the page\'s width, zooms from there up to four times, and stays within its sides and top', () => {
+  const page = { left: 0, top: 0, width: 960 };
+  const view = { w: 1000, h: 800 };
+  const fit = camera.fitCamera(page, view, 100);
+  near(fit.z, (1000 - 32) / 960);
+  near(fit.x, -16 / fit.z);
+  assert.equal(fit.y, 100);
+  // Never zoomed out past the page, nor in past four times writing scale.
+  near(camera.zoomAbout(fit, 0.5, { x: 500, y: 400 }, page, view).z, fit.z);
+  near(camera.zoomAbout(fit, 10, { x: 500, y: 400 }, page, view).z, fit.z * 4);
+  // Zooming keeps the point under the fingers where it is.
+  const zoomed = camera.zoomAbout(fit, 2, { x: 500, y: 400 }, page, view);
+  const before = camera.toBoard(fit, 500, 400);
+  const after = camera.toBoard(zoomed, 500, 400);
+  assert.ok(Math.abs(before.x - after.x) < 1e-9 && Math.abs(before.y - after.y) < 1e-9);
+  // Not above the page's top (less the gutter), nor past its sides; no bottom.
+  const clamped = camera.clampCamera({ x: -500, y: -500, z: zoomed.z }, page, view);
+  near(clamped.y, -16 / zoomed.z);
+  near(clamped.x, -16 / zoomed.z);
+  assert.equal(camera.clampCamera({ ...zoomed, y: 1e6 }, page, view).y, 1e6);
+  near(camera.clampCamera({ x: 5000, y: 0, z: zoomed.z }, page, view).x, 960 + 16 / zoomed.z - 1000 / zoomed.z);
+});

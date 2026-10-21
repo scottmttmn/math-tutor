@@ -6,6 +6,7 @@ import { useCanvasState } from '@/context/CanvasContext';
 import { useRateLimit } from '@/hooks/useRateLimit';
 import { useNotebookMode } from '@/hooks/useNotebookMode';
 import { useBooxPenAvailable, useBooxPenMode } from '@/hooks/useBooxPen';
+import { useInkBoardMode } from '@/hooks/useInkBoardMode';
 import { RATE_LIMIT_MS } from '@/lib/constants';
 import type { Paper, SessionType } from '@/types';
 import { PAPERS } from '@/lib/paper';
@@ -45,7 +46,9 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
   const [booxPen, toggleBooxPen] = useBooxPenMode();
   const booxAvailable = useBooxPenAvailable();
   const router = useRouter();
-  const { hasContent } = useCanvasState();
+  const { hasContent, editor } = useCanvasState();
+  const [inkForNew, toggleInkForNew] = useInkBoardMode();
+  const onInkBoard = editor === 'ink' || (editor === 'new' && inkForNew);
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
   const helpDisabled = isLimited || isStreaming;
   const askClass = 'flex items-center gap-1.5 min-h-11 px-4 text-sm font-semibold text-white bg-indigo-700 rounded-lg hover:bg-indigo-800 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed';
@@ -89,7 +92,7 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
         <BroomIcon />
       </button>
 
-      {notebook && onFitWidth && <button onClick={onFitWidth} className={plain} title="Return to notebook writing width">Fit width</button>}
+      {(notebook || onInkBoard) && onFitWidth && <button onClick={onFitWidth} className={plain} title="Return to notebook writing width">Fit width</button>}
 
       {(tools || onWriteUp || onSaveAs) && (
         <MoreMenu
@@ -100,7 +103,8 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
           above
           align="left"
           items={[
-            { label: 'Notebook mode (experiment)', role: 'menuitemcheckbox', checked: notebook, onSelect: toggleNotebook },
+            { label: 'Ink board for new boards (experiment)', role: 'menuitemcheckbox', checked: inkForNew, onSelect: toggleInkForNew },
+            ...(onInkBoard ? [] : [{ label: 'Notebook mode (experiment)', role: 'menuitemcheckbox' as const, checked: notebook, onSelect: toggleNotebook }]),
             ...(booxAvailable ? [{ label: 'BOOX pen (experiment)', role: 'menuitemcheckbox' as const, checked: booxPen, onSelect: toggleBooxPen }] : []),
             ...(tools ? [{ label: 'Hide drawing tools', role: 'menuitemcheckbox' as const, checked: tools.hidden, onSelect: tools.toggle }] : []),
             // The Android app has no address bar, so the pen test is reached from here.

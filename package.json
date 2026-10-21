@@ -13,7 +13,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "npm run test:unit",
-    "test:e2e": "npm run test:toolbar:e2e && npm run test:notebook:e2e && npm run test:board:e2e && npm run test:tutor:e2e && npm run test:shelf:e2e && npm run test:reader:e2e && npm run test:backup:e2e && npm run test:memory:e2e && npm run test:checkin:e2e && npm run test:writeup:e2e && npm run test:tutorproblem:e2e && npm run test:pen:e2e && npm run test:boox:e2e",
+    "test:e2e": "npm run test:toolbar:e2e && npm run test:notebook:e2e && npm run test:board:e2e && npm run test:tutor:e2e && npm run test:shelf:e2e && npm run test:reader:e2e && npm run test:backup:e2e && npm run test:memory:e2e && npm run test:checkin:e2e && npm run test:writeup:e2e && npm run test:tutorproblem:e2e && npm run test:pen:e2e && npm run test:boox:e2e && npm run test:ink:e2e",
     "test:unit": "node --test tests/tutor.test.mjs tests/bookContext.test.mjs tests/history.test.mjs tests/tutorContent.test.mjs tests/handwritingScore.test.mjs tests/backup.test.mjs tests/learnerProfile.test.mjs tests/checkIn.test.mjs tests/texWriteUp.test.mjs tests/reader.test.mjs tests/ink.test.mjs tests/tutorAsk.test.mjs tests/siwc.test.mjs tests/bookList.test.mjs tests/paper.test.mjs tests/bookSearch.test.mjs tests/folders.test.mjs tests/db.test.mjs tests/boardProblems.test.mjs tests/tutorBoardImages.test.mjs tests/booxPen.test.mjs tests/tutorProblem.test.mjs tests/inkBoard.test.mjs",
     "test:toolbar:e2e": "node tests/toolbar.e2e.mjs",
     "test:board:e2e": "node tests/board.e2e.mjs",
@@ -27,6 +27,7 @@
     "test:tutorproblem:e2e": "node tests/tutorProblem.e2e.mjs",
     "test:pen:e2e": "node tests/penTest.e2e.mjs",
     "test:boox:e2e": "node tests/booxPen.e2e.mjs",
+    "test:ink:e2e": "node tests/inkBoard.e2e.mjs",
     "handwriting": "node scripts/handwriting/run.mjs",
     "test:android:e2e": "node tests/androidExport.e2e.mjs",
     "test:notebook:e2e": "node tests/notebook.e2e.mjs"

@@ -56,6 +56,7 @@ src/
 │   ├── workspace/
 │   │   ├── DrawingCanvas.tsx  # Client-only wrapper around TldrawCanvas; defines DrawingCanvasHandle
 │   │   ├── TldrawCanvas.tsx   # tldraw editor: loads documents, mirrors them to CanvasContext, exports images
+│   │   ├── InkBoard.tsx       # The ink board (opt-in, replacing tldraw): page, tools, input, the same DrawingCanvasHandle
 │   │   ├── ProblemStatement.tsx   # Textarea + problem figure: Add picture (image or PDF) or Capture as Problem (problem mode)
 │   │   ├── NoteHeader.tsx     # Topic input (notes mode) — replaces ProblemStatement
 │   │   ├── TutorProblemHeader.tsx # A problem the tutor wrote: typeset, not editable, Different problem while the board is empty
@@ -103,7 +104,8 @@ src/
 │   ├── useBackupStatus.ts     # Shared folder-backup state (starts the backup on first use)
 │   ├── useBooxPen.ts          # BOOX pen (experiment): Onyx's pen SDK draws the pen tool's strokes, which become tldraw ink
 │   ├── useBooxBoard.ts        # BOOX boards: immediate camera moves and fast panel updates during interaction
-│   ├── useDeviceToggle.ts     # deviceToggle(key): an on/off choice remembered per device (Notebook mode, BOOX pen)
+│   ├── useDeviceToggle.ts     # deviceToggle(key): an on/off choice remembered per device (Notebook mode, BOOX pen, ink board)
+│   ├── useInkBoardMode.ts     # Board → Ink board for new boards (experiment), `math-tutor:inkBoard`
 │   ├── useAddPdfs.ts          # Adds PDFs to the library (AppBar's Add a PDF, a drop on Home)
 │   └── useChatGPTConnection.ts# Sign in with ChatGPT state for SettingsModal
 ├── lib/
@@ -147,7 +149,7 @@ src/
 │   ├── boardProblems.ts       # A board holding several Shelf exercises: which board a mark is on, picture tags, solved, removing one
 │   ├── tutorAsk.ts            # The drawer's choices (Hint, Check my work, Feedback; notes: Explain this, Check my notes) and the question each sends
 │   ├── legacyStrokes.ts       # Converts pre-tldraw saved strokes into tldraw draw shapes
-│   └── inkBoard/              # The ink board replacing tldraw (pure so far): model (BoardInk, widths, page), edits + undo, hitTest (grid index, eraser, lasso), render (tiles, strokes), fromTldraw (converter)
+│   └── inkBoard/              # The ink board replacing tldraw: model (BoardInk, widths, page), edits + undo, hitTest (grid index, eraser, lasso), render (strokes), camera (fit width, zoom, clamping), capture (tutor/thumbnail/export pictures), fromTldraw (converter)
 └── types/
     ├── index.ts               # All shared TypeScript types
     └── speech-recognition.d.ts# Web Speech API type declarations
@@ -199,9 +201,12 @@ capacitor.config.ts            # App id, webDir `out`, androidScheme `http`
 - **License:** with no license key tldraw runs on `http://localhost` / `127.0.0.1` (any http origin counts as development) and shows a small "Get a license for production" note. A hosted deployment needs a key from tldraw.dev.
 
 ### Ink board (replacing tldraw, in progress)
-- Agreed 2026-10-21 (plan: https://claude.ai/artifact/WgrS9kXhB83B9ardHWxd1Q): our own Notes-like board, one TypeScript implementation on every device, Onyx's pen engine for the pen and eraser on BOOX, behind the same `DrawingCanvasHandle`. One long fixed-width page, whole-stroke eraser, lasso move/delete/copy, inks black and gray (more colors on the computer). If scrolling/zooming a web canvas fails the BOOX trial, the renderer moves into a native view behind the same data format. Steps: 1 format and engine core (done), 2 opt-in board on the computer, 3 BOOX, 4 lasso, 5 pictures/tutor/exports, 6 conversion on open and default flip, 7 remove tldraw, 8 additions.
+- Agreed 2026-10-21 (plan: https://claude.ai/artifact/WgrS9kXhB83B9ardHWxd1Q): our own Notes-like board, one TypeScript implementation on every device, Onyx's pen engine for the pen and eraser on BOOX, behind the same `DrawingCanvasHandle`. One long fixed-width page, whole-stroke eraser, lasso move/delete/copy, inks black and gray (more colors on the computer). If scrolling/zooming a web canvas fails the BOOX trial, the renderer moves into a native view behind the same data format. Steps: 1 format and engine core (done), 2 opt-in board on the computer (done), 3 BOOX, 4 lasso, 5 pictures/tutor/exports, 6 conversion on open and default flip, 7 remove tldraw, 8 additions.
 - Data (`BoardInk` in `src/types/index.ts`): `page` (`left`, `top`, `width`; grows to fit work, never moves it), `strokes` in drawing order (`tool`, `color` from `INK_COLORS`, `width` at medium pressure, flat `[x, y, pressure, …]` in board units = CSS px at writing scale, rounded to 0.1 / 0.01), `images` under the ink (`problem`: true or an exercise id, like tldraw's `meta.problemImage`).
 - Edits (`src/lib/inkBoard/edits.ts`) return new boards that share untouched strokes; undo keeps the last `UNDO_LIMIT` boards and `changedBounds` finds what to redraw by reference. `GridIndex.update(board)` re-indexes only changed items.
+- **Opt-in (step 2):** **Board → Ink board for new boards (experiment)** (`useInkBoardMode`, `math-tutor:inkBoard`). `CanvasContext.editor` says which editor a board belongs to: `ink` (the session has `ink`), `tldraw` (a tldraw document or old strokes) or `new` (nothing drawn yet), which `DrawingCanvas` opens in the editor chosen for new boards; a new board belongs to the one it is first drawn in. A board is saved with `Session.ink` or `canvasDocument`, never both (`getInk()` / `getDocument()` on the handle; the context mirrors `ink` on `INK_CHANGED`). Old boards are not converted yet (step 6).
+- `InkBoard.tsx`: the pen or mouse writes (pressure kept), the pen's eraser end or the Eraser tool takes whole strokes (one undo step per pass), fingers scroll and pinch, the wheel scrolls and Ctrl+wheel zooms; a palm is ignored while the pen writes. Its toolbar (Pen, Highlight, Eraser, sizes S/M/L, five inks, Undo, Redo; Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y) hides with Hide drawing tools. The page fits the width with 16px gutters (`camera.ts`), zooms up to 4×, never above its top; **Fit width** returns to writing scale. Paper is drawn under the ink, never in pictures. It repaints the visible part (via the grid index) on every change for now; cached bitmaps for e-ink come with the BOOX step. `data-strokes`, `data-images` and `data-zoom` on `[data-ink-board]` are for the browser tests (`tests/inkBoard.e2e.mjs`).
+- Its handle matches tldraw's: `captureForTutor` (overview ≤ 2048 px at most 2x, close-ups via `tutorDetailBounds` only where strokes pass), `captureThumbnail` (≤ 512 px), `exportImage` (≤ 6000 px, 2x), `placeProblemImage` (once per key, above the work or, for an added exercise, below it; the view goes to it), `clear` (leaves the problem picture). Selections arrive with the lasso (step 4), so captures are the whole board until then.
 - `boardFromTldraw` converts draw/highlight shapes (tldraw widths: S 3, M 4.5, L 6, XL 11 × scale; pressure kept only for a pen's "draw" dash), groups (transforms composed) and plain images, and returns other shapes as `leftovers` to be kept as a picture. `boardFromLegacyStrokes` converts pre-tldraw strokes with their erasing applied.
 
 ### Shelf

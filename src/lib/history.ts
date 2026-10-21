@@ -1,11 +1,12 @@
 import { folderIndex, itemFolder, bookLocation, isWithin, folderSummary } from '@/lib/folders';
+import { hasWork } from '@/lib/inkBoard/model';
 import type { Folder, HistoryItem, HistoryShow, HistorySort, Session, ShelfDocument } from '@/types';
 
 const SHELF_ENTRY = /^shelf:([^:]+):([^:]+)$/;
 
 // Something drawn: a shape other than the problem's own picture, which a Shelf board gets on opening.
 function hasDrawing(session: Session) {
-  return session.canvasStrokes.length > 0 || Object.entries(session.canvasDocument?.store ?? {}).some(([key, record]) =>
+  return session.canvasStrokes.length > 0 || Boolean(session.ink && hasWork(session.ink)) || Object.entries(session.canvasDocument?.store ?? {}).some(([key, record]) =>
     key.startsWith('shape:') && !(record as { meta?: Record<string, unknown> } | null)?.meta?.problemImage);
 }
 

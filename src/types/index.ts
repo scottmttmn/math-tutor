@@ -103,6 +103,8 @@ export interface Session {
   /** Legacy drawing; new saves leave it empty and use canvasDocument. */
   canvasStrokes: Stroke[];
   canvasDocument?: CanvasDocument | null;
+  /** The drawing of a board on the ink board (replacing tldraw); a session has this or `canvasDocument`. */
+  ink?: BoardInk | null;
   canvasImageBlob: Blob | null;
   chatHistory: ChatMessage[];
   createdAt: number;

@@ -9,6 +9,7 @@ import { boardToOpen, setBoardToOpen } from '@/lib/currentBoard';
 import { checkInTitle } from '@/lib/checkIn';
 import { allSolved, problemsTitle } from '@/lib/boardProblems';
 import type { DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
+import { hasWork } from '@/lib/inkBoard/model';
 import type { AutosaveStatus, Session, SessionType, TutorProblem } from '@/types';
 
 const SAVE_DELAY_MS = 800;
@@ -16,7 +17,7 @@ const SAVE_DELAY_MS = 800;
 // Everything a save writes except timestamps and the thumbnail, so an unchanged session isn't rewritten.
 const contentKey = (session: Session) => JSON.stringify([
   session.problemStatement, session.problemImage, session.chatHistory, session.isSolved, session.sessionType,
-  session.checkIn ?? null, session.writeUp?.tex ?? null, session.paper ?? null, session.canvasDocument?.store ?? null, session.canvasStrokes,
+  session.checkIn ?? null, session.writeUp?.tex ?? null, session.paper ?? null, session.canvasDocument?.store ?? null, session.ink ?? null, session.canvasStrokes,
   session.problems ?? null, session.currentProblem ?? null, session.tutorProblem ?? null,
 ]);
 
@@ -30,12 +31,12 @@ const rememberCurrent = setBoardToOpen;
 export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle | null>, { reopenLast = true }: { reopenLast?: boolean } = {}) {
   const state = useSessionState();
   const sessionDispatch = useSessionDispatch();
-  const { document: canvasDocument, pendingLoad, hasContent } = useCanvasState();
+  const { document: canvasDocument, ink: canvasInk, pendingLoad, hasContent } = useCanvasState();
   const canvasDispatch = useCanvasDispatch();
   const [status, setStatus] = useState<AutosaveStatus>('idle');
 
-  const latest = useRef({ ...state, canvasDocument, pendingLoad, hasContent });
-  useLayoutEffect(() => { latest.current = { ...state, canvasDocument, pendingLoad, hasContent }; });
+  const latest = useRef({ ...state, canvasDocument, canvasInk, pendingLoad, hasContent });
+  useLayoutEffect(() => { latest.current = { ...state, canvasDocument, canvasInk, pendingLoad, hasContent }; });
 
   // Id for a new session until its first save; created lazily so render stays pure.
   const draftId = useRef<string | null>(null);
@@ -56,9 +57,12 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
   const snapshot = useCallback((): Session | null => {
     if (loading.current) return null;
     const s = latest.current;
-    // Read the editor directly: the context mirror lags a just-finished stroke.
-    const document = canvasHandle.current?.getDocument() ?? s.canvasDocument;
-    const hasDrawing = s.hasContent || Object.keys(document?.store ?? {}).some((key) => key.startsWith('shape:'));
+    // Read the editor directly: the context mirror lags a just-finished stroke. A board is drawn
+    // in tldraw or on the ink board, never both.
+    const handle = canvasHandle.current;
+    const ink = handle ? handle.getInk() : s.canvasInk;
+    const document = ink ? null : handle?.getDocument() ?? s.canvasDocument;
+    const hasDrawing = s.hasContent || Boolean(ink && hasWork(ink)) || Object.keys(document?.store ?? {}).some((key) => key.startsWith('shape:'));
     // A paper chosen on a new board counts as a change, so the choice isn't lost.
     if (!s.currentSessionId && !s.problemStatement.trim() && !s.problemImage && s.chatHistory.length === 0 && !hasDrawing && !s.paper) return null;
     if (!s.currentSessionId && !draftId.current) draftId.current = uuidv4();
@@ -69,8 +73,9 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
       problemStatement: s.problemStatement,
       problemImage: s.problemImage,
       // Strokes from a pre-tldraw save stay until the editor has converted them.
-      canvasStrokes: document ? [] : s.pendingLoad?.strokes ?? [],
+      canvasStrokes: document || ink ? [] : s.pendingLoad?.strokes ?? [],
       canvasDocument: document,
+      ...(ink ? { ink } : {}),
       canvasImageBlob: thumbnail.current,
       chatHistory: s.chatHistory,
       createdAt: createdAt.current,
@@ -146,7 +151,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
         problems: session.problems,
         currentProblem: session.currentProblem,
       });
-      canvasDispatch({ type: 'LOAD', document: session.canvasDocument, strokes: session.canvasStrokes });
+      canvasDispatch({ type: 'LOAD', document: session.canvasDocument, strokes: session.canvasStrokes, ink: session.ink });
     } else {
       sessionDispatch({ type: 'NEW_SESSION', sessionType: type, tutorProblem });
       canvasDispatch({ type: 'LOAD' });
@@ -201,7 +206,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
   useEffect(() => {
     const timer = setTimeout(() => { void persist(); }, SAVE_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [state.problemStatement, state.problemImage, state.chatHistory, state.isSolved, state.sessionType, state.paper, state.problems, state.currentProblem, state.tutorProblem, canvasDocument, persist]);
+  }, [state.problemStatement, state.problemImage, state.chatHistory, state.isSolved, state.sessionType, state.paper, state.problems, state.currentProblem, state.tutorProblem, canvasDocument, canvasInk, persist]);
 
   // A reload or closed tab can't wait for IndexedDB; keep a synchronous copy for the next load.
   const flush = useCallback(() => {
