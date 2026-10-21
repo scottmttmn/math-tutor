@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import { useCanvasState } from '@/context/CanvasContext';
 import { useRateLimit } from '@/hooks/useRateLimit';
 import { useNotebookMode } from '@/hooks/useNotebookMode';
@@ -43,6 +44,7 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
   const { notebook, toggleNotebook } = useNotebookMode();
   const [booxPen, toggleBooxPen] = useBooxPenMode();
   const booxAvailable = useBooxPenAvailable();
+  const router = useRouter();
   const { hasContent } = useCanvasState();
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
   const helpDisabled = isLimited || isStreaming;
@@ -101,6 +103,8 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
             { label: 'Notebook mode (experiment)', role: 'menuitemcheckbox', checked: notebook, onSelect: toggleNotebook },
             ...(booxAvailable ? [{ label: 'BOOX pen (experiment)', role: 'menuitemcheckbox' as const, checked: booxPen, onSelect: toggleBooxPen }] : []),
             ...(tools ? [{ label: 'Hide drawing tools', role: 'menuitemcheckbox' as const, checked: tools.hidden, onSelect: tools.toggle }] : []),
+            // The Android app has no address bar, so the pen test is reached from here.
+            { label: 'Pen test…', disabled: isStreaming, onSelect: () => router.push('/pen-test') },
             ...(onWriteUp ? [{ label: 'TeX write-up…', separatorBefore: Boolean(tools), onSelect: onWriteUp }] : []),
             ...(onSaveAs ? [
               { label: 'Save as PNG', separatorBefore: Boolean(tools && !onWriteUp), disabled: !hasContent, onSelect: () => onSaveAs('png') },

@@ -60,6 +60,15 @@ try {
   assert.equal(await page.getByRole('menuitemcheckbox', { name: 'Notebook mode (experiment)', exact: true }).getAttribute('aria-checked'), 'true');
   await page.getByRole('menuitemcheckbox', { name: 'Notebook mode (experiment)', exact: true }).click();
   await page.getByTestId('notebook-paper').waitFor({ state: 'detached' });
+  // The app has no address bar: the pen test is reached from the Board menu.
+  await page.getByRole('button', { name: 'Board menu', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Pen test…', exact: true }).click();
+  await page.getByTestId('pen-test-canvas').waitFor();
+  assert.equal(new URL(page.url()).pathname, '/pen-test');
+  // ← Board goes back to the board it came from.
+  await page.getByRole('button', { name: '← Board', exact: true }).click();
+  await page.locator('.tl-canvas').waitFor();
+  assert.equal(new URL(page.url()).pathname, '/board');
   await page.goto(`${origin}/pen-test`);
   await page.getByTestId('pen-test-canvas').waitFor();
   assert.equal(new URL(page.url()).pathname, '/pen-test');
