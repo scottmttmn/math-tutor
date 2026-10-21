@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { b64Vecs, createShapeId, DefaultColorStyle, DefaultDashStyle, DefaultSizeStyle, useValue, type Editor, type TLDrawShape, type TLShapePartial } from 'tldraw';
 import { BooxPen, booxPenAvailable, boxOf, overlaps, strokePoints, sweep } from '@/lib/booxPen';
 import { deviceToggle } from '@/hooks/useDeviceToggle';
+import type { BooxPenBox } from '@/types';
 
 /** Board → BOOX pen (experiment), remembered on this device; only offered on a BOOX tablet. */
 export const useBooxPenMode = deviceToggle('math-tutor:booxPen');
@@ -29,6 +30,15 @@ const ERASER_REACH = 6;
 const CONTROLS = '.tlui-layout__top > *, .tlui-layout__bottom > *, [data-testid="show-tools"]';
 // Anything that, while open, sits over the board and takes the pen: menus, dialogs, popovers.
 const OVERLAYS = '[role="menu"], [role="dialog"], [role="listbox"], .tlui-popover__content';
+
+/** Layout columns stretch across blank canvas; only their interactive children take the pen. */
+function controlBoxes(element: Element): BooxPenBox[] {
+  if (getComputedStyle(element).pointerEvents === 'none') {
+    return [...element.children].flatMap(controlBoxes);
+  }
+  const box = boxOf(element.getBoundingClientRect());
+  return box ? [box] : [];
+}
 
 /**
  * On a BOOX tablet with the experiment on, the pen tool's strokes are drawn by Onyx's pen SDK
@@ -62,10 +72,8 @@ export function useBooxPen(editor: Editor | null) {
       const canvas = root.querySelector('.tl-canvas');
       const region = canvas ? boxOf(canvas.getBoundingClientRect()) : null;
       if (!region) return null;
-      const exclude = [...root.querySelectorAll(CONTROLS)].flatMap((element) => {
-        const box = boxOf(element.getBoundingClientRect());
-        return box && overlaps(box, region) ? [box] : [];
-      });
+      const exclude = [...root.querySelectorAll(CONTROLS)].flatMap(controlBoxes)
+        .filter((box) => overlaps(box, region));
       return { region, exclude };
     };
 
