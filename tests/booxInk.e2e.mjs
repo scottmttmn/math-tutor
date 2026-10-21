@@ -4,7 +4,8 @@ import { fakeBooxBridge } from './boox-bridge.mjs';
 
 // The ink board on a BOOX tablet, with the native bridge stood in for (tests/boox-bridge.mjs):
 // Onyx's pen draws the pen tool's strokes, which become ink; the eraser end takes strokes; the
-// highlighter and eraser tools and finger gestures use fast screen updates; menus pause the pen.
+// highlighter is the SDK's with a marker tip; the eraser tool and finger gestures use fast screen
+// updates; menus pause the pen.
 // How it all looks and feels on the e-ink screen can only be judged on the device.
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
@@ -103,18 +104,45 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'resume'));
 
-  // The highlighter and eraser are the page's, drawn with fast screen updates.
+  // The highlighter is the SDK's too, previewed with a flat marker tip in the highlight's look on
+  // white, without restarting the pen; its stroke becomes a highlight.
   await page.getByRole('button', { name: 'Highlight', exact: true }).click();
+  await waitLast('setWidth', "options.marker === true && options.color === '#dadcdf'");
+  assert.equal((await calls('start')).length, starts, 'the highlighter keeps the running pen');
+  const highlight = [];
+  for (let i = 0; i <= 20; i += 1) highlight.push(box.x + 200 + i * 15, box.y + 500, 0.5, i * 8);
+  await page.evaluate((points) => window.__boox.emit('stroke', points), highlight);
+  await waitStrokes(3);
+  let saved = null;
+  for (let tries = 0; tries < 50 && !saved; tries++) {
+    saved = await page.evaluate(async () => {
+      const id = localStorage.getItem('math-tutor:currentSession');
+      if (!id) return null;
+      const db = await new Promise((resolve) => { const open = indexedDB.open('math-tutor'); open.onsuccess = () => resolve(open.result); });
+      const session = await new Promise((resolve) => { const get = db.transaction('sessions').objectStore('sessions').get(id); get.onsuccess = () => resolve(get.result); });
+      db.close();
+      const strokes = session?.ink?.strokes ?? [];
+      return strokes.length === 3 ? strokes.at(-1) : null;
+    });
+    if (!saved) await page.waitForTimeout(200);
+  }
+  assert.equal(saved?.tool, 'highlighter');
+  assert.equal(saved.color, 'gray');
+  assert.equal(saved.width, 20);
+
+  // The eraser is the page's, drawn with fast screen updates.
+  await page.getByRole('button', { name: 'Eraser', exact: true }).click();
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'stop'));
   await waitLast('interaction', 'options.active === true');
-  await page.mouse.move(box.x + 200, box.y + 500);
+  await page.mouse.move(box.x + 350, box.y + 470);
   await page.mouse.down();
-  await page.mouse.move(box.x + 500, box.y + 500, { steps: 8 });
+  await page.mouse.move(box.x + 350, box.y + 530, { steps: 8 });
   await page.mouse.up();
-  await waitStrokes(3);
+  await waitStrokes(2);
   await page.getByRole('button', { name: 'Pen', exact: true }).click();
   await waitLast('interaction', 'options.active === false');
   await page.waitForFunction((count) => window.__boox.calls.filter((call) => call.method === 'start').length > count, starts);
+  await waitLast('setWidth', 'options.marker === false');
 
   // Fingers pan in fast mode, released after the last one lifts.
   const touch = await page.context().newCDPSession(page);
@@ -127,6 +155,30 @@ try {
   await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await waitLast('interaction', 'options.active === false');
   assert.ok((await calls('interaction')).length > before);
+
+  // Palm rejection: a hand resting as the pen hovers, just after a stroke, or as wide as a palm
+  // doesn't scroll; a finger a moment later still does.
+  const viewY = async () => Number(await board.getAttribute('data-view-y'));
+  const drag = async (radius = 5) => {
+    const start = await viewY();
+    const at = { id: 3, x: box.x + 600, y: box.y + 500, radiusX: radius, radiusY: radius };
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at] });
+    for (let step = 1; step <= 4; step++) await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...at, y: at.y - step * 40 }] });
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(100);
+    return (await viewY()) - start;
+  };
+  await page.waitForTimeout(900);
+  const pen = await page.context().newCDPSession(page);
+  await pen.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x + 300, y: box.y + 300, pointerType: 'pen' });
+  assert.equal(await drag(), 0, 'a palm as the pen hovers');
+  await page.waitForTimeout(900);
+  await page.evaluate((points) => window.__boox.emit('stroke', points), flat.map((value, i) => (i % 4 === 1 ? value + 200 : value)));
+  assert.equal(await drag(), 0, 'a palm just after a stroke');
+  await page.waitForTimeout(900);
+  assert.equal(await drag(40), 0, 'a contact as wide as a palm');
+  assert.ok(await drag() > 0, 'a finger still scrolls');
+  await pen.detach();
   await touch.detach();
 
   // Leaving for Home stops the pen and releases fast mode.
@@ -135,7 +187,7 @@ try {
   await page.waitForFunction(() => window.__boox.calls.at(-1)?.method === 'stop' || window.__boox.calls.filter((call) => call.method === 'stop').length >= 2);
 
   assert.deepEqual(errors, []);
-  console.log('PASS BOOX ink board: the SDK draws the pen into ink, erases, previews size/ink/zoom, pauses under menus, fast mode for other tools and fingers');
+  console.log('PASS BOOX ink board: the SDK draws the pen and highlighter into ink, erases, previews tool/size/ink/zoom, pauses under menus, fast mode for the eraser and fingers, palms rejected');
 } finally {
   await browser.close();
 }

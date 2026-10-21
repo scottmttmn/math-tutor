@@ -4,7 +4,7 @@ import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref
 import { v4 as uuidv4 } from 'uuid';
 import { useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
 import { GRID_SPACING, LINE_SPACING } from '@/lib/paper';
-import { HIGHLIGHTER_WIDTH, INK_COLORS, PEN_WIDTHS, boardBounds, emptyBoard, pushPoint, type PenSize } from '@/lib/inkBoard/model';
+import { HIGHLIGHTER_WIDTH, HIGHLIGHT_ALPHA, INK_COLORS, PEN_WIDTHS, boardBounds, emptyBoard, pushPoint, type PenSize } from '@/lib/inkBoard/model';
 import { addItems, commit, redo, removeItems, startHistory, undo, type BoardHistory } from '@/lib/inkBoard/edits';
 import { GridIndex, strokesHitByPath } from '@/lib/inkBoard/hitTest';
 import { drawBoard, drawBoardStroke } from '@/lib/inkBoard/render';
@@ -34,6 +34,10 @@ const ERASER_REACH = 8;
 // A problem picture's gap from the page's side or the work, and above it when the view goes to it.
 const PROBLEM_MARGIN = 32;
 const PROBLEM_TOP = 64;
+// Palm rejection: a touch that lands this soon after the pen was near or on the screen, or one this
+// wide (CSS px; a fingertip is about 20), is a resting hand, not a scroll.
+const PALM_GRACE_MS = 800;
+const PALM_SIZE = 48;
 // Room above the first work when a board opens, in screen px.
 const OPEN_TOP = 80;
 const COLORS: InkColor[] = ['black', 'gray', 'blue', 'red', 'green'];
@@ -47,6 +51,12 @@ function loadPicture(src: string): Promise<HTMLImageElement> {
     image.onerror = () => reject(new Error('Image could not be read'));
     image.src = src;
   });
+}
+
+/** A highlight's look on white (its ink at HIGHLIGHT_ALPHA), for the BOOX pen's opaque preview. */
+function highlightPreview(hex: string): string {
+  const channel = (at: number) => Math.round(parseInt(hex.slice(at, at + 2), 16) * HIGHLIGHT_ALPHA + 255 * (1 - HIGHLIGHT_ALPHA));
+  return `#${[1, 3, 5].map((at) => channel(at).toString(16).padStart(2, '0')).join('')}`;
 }
 
 const canvasBlob = (canvas: HTMLCanvasElement, type: string, quality?: number) =>
@@ -90,6 +100,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   const erasing = useRef<{ before: BoardInk; shown: BoardInk; path: number[] } | null>(null);
   const writing = useRef<{ pointer: number; stroke: BoardStroke; lastX: number; lastY: number } | null>(null);
   const touches = useRef(new Map<number, { x: number; y: number }>());
+  // When the pen was last near or on the screen (hovering, writing, or a BOOX stroke arriving).
+  const penSeen = useRef(-Infinity);
   const mirrorTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const frame = useRef(0);
 
@@ -99,8 +111,10 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   const onBooxErase = useCallback((flat: number[]) => fromBoox.current.erase(flat), []);
   const { owns: booxOwns, painted, gesture } = useBooxInk({
     container,
-    pen: tool === 'pen',
-    preview: { width: PEN_WIDTHS[size] * zoom, color: INK_COLORS[color] },
+    sdk: tool !== 'eraser',
+    preview: tool === 'highlighter'
+      ? { width: HIGHLIGHTER_WIDTH * zoom, color: highlightPreview(INK_COLORS[color]), marker: true }
+      : { width: PEN_WIDTHS[size] * zoom, color: INK_COLORS[color], marker: false },
     onStroke: onBooxStroke,
     onErase: onBooxErase,
   });
@@ -168,6 +182,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       images: current.images.filter((image) => visible.has(image.id)),
     }, loaded());
     container.current?.setAttribute('data-zoom', String(Math.round((z / fitZoom(page, view.current)) * 100) / 100));
+    container.current?.setAttribute('data-view-y', String(Math.round(y)));
     setZoom(z);
     painted();
   }, [loaded, painted]);
@@ -228,9 +243,11 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     };
     fromBoox.current = {
       stroke: (flat) => {
+        penSeen.current = performance.now();
         const samples = strokePoints(flat);
         if (samples.length === 0 || loadPending.current) return;
-        const { size: penSize, color: ink } = style.current;
+        const { tool: chosen, size: penSize, color: ink } = style.current;
+        const highlighter = chosen === 'highlighter';
         const step = 1 / camera.current.z;
         const points: number[] = [];
         let last: { x: number; y: number } | null = null;
@@ -240,9 +257,10 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
           pushPoint(points, at.x, at.y, sample.pressure);
           last = at;
         }
-        apply(addItems(board(), [{ id: uuidv4(), tool: 'pen', color: ink, width: PEN_WIDTHS[penSize], points }]));
+        apply(addItems(board(), [{ id: uuidv4(), tool: highlighter ? 'highlighter' : 'pen', color: ink, width: highlighter ? HIGHLIGHTER_WIDTH : PEN_WIDTHS[penSize], points }]));
       },
       erase: (flat) => {
+        penSeen.current = performance.now();
         if (loadPending.current) return;
         // Samples of a fast pass are far apart, so test the path between them too.
         const path = sweep(strokePoints(flat), ERASER_REACH / 2).flatMap(({ x, y }) => {
@@ -422,10 +440,23 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       return true;
     };
 
+    // The pen near the screen (hovering too) means the hand on it is resting: any finger gesture ends.
+    const penNear = (event: PointerEvent) => {
+      if (event.pointerType !== 'pen') return;
+      penSeen.current = performance.now();
+      if (touches.current.size === 0) return;
+      touches.current.clear();
+      touchState();
+      gesture(false);
+    };
+
     const down = (event: PointerEvent) => {
       if (event.pointerType === 'touch') {
-        // A palm resting while the pen writes does nothing.
+        // A palm resting while the pen writes, just after it wrote, or as it hovers does nothing;
+        // nor does a contact as wide as a palm.
         if (writing.current || erasing.current) return;
+        if (performance.now() - penSeen.current < PALM_GRACE_MS) return;
+        if (Math.max(event.width, event.height) > PALM_SIZE) return;
         touches.current.set(event.pointerId, local(event));
         canvas.setPointerCapture(event.pointerId);
         touchState();
@@ -542,12 +573,14 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       setCamera({ ...camera.current, x: camera.current.x + (event.deltaX * scale) / camera.current.z, y: camera.current.y + (event.deltaY * scale) / camera.current.z });
     };
 
+    for (const type of ['pointerdown', 'pointermove', 'pointerup'] as const) window.addEventListener(type, penNear, true);
     canvas.addEventListener('pointerdown', down);
     canvas.addEventListener('pointermove', move);
     canvas.addEventListener('pointerup', up);
     canvas.addEventListener('pointercancel', up);
     canvas.addEventListener('wheel', wheel, { passive: false });
     return () => {
+      for (const type of ['pointerdown', 'pointermove', 'pointerup'] as const) window.removeEventListener(type, penNear, true);
       canvas.removeEventListener('pointerdown', down);
       canvas.removeEventListener('pointermove', move);
       canvas.removeEventListener('pointerup', up);

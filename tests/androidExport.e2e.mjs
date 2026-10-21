@@ -118,9 +118,14 @@ try {
         { name: 'DeviceKeys', methods: ['get', 'set', 'remove'].map((name) => ({ name, rtype: 'promise' })) },
         { name: 'ChatGPTSignIn', methods: ['listen', 'waitForCallback', 'close', 'openBrowser'].map((name) => ({ name, rtype: 'promise' })) },
         { name: 'CapacitorHttp', methods: [{ name: 'request', rtype: 'promise' }] },
+        { name: 'AppUpdate', methods: [{ name: 'install', rtype: 'promise' }] },
       ],
       nativePromise: async (plugin, method, options) => {
         if (plugin === 'CapacitorHttp') return window.authServer(options);
+        if (plugin === 'AppUpdate') {
+          window.updates = [...(window.updates ?? []), options.url];
+          return { permission: window.updates.length > 1 };
+        }
         if (plugin === 'ChatGPTSignIn') {
           if (method === 'listen') {
             callback = { state: options.state };
@@ -297,6 +302,27 @@ try {
   await app.getByRole('button', { name: 'Done' }).click();
   assert.equal(await app.getByRole('button', { name: 'Back up', exact: true }).count(), 0);
   console.log('PASS in the app, Save as and the backup go through the Save dialog; a cancelled one keeps the reminder');
+
+  // A build from CI offers a newer published one: Update opens Settings, the first tap opens
+  // Android's install permission, the next downloads and opens the installer.
+  const build = Number(process.env.APP_BUILD);
+  if (build) {
+    await app.route('https://api.github.com/repos/scottmttmn/math-tutor/releases/tags/tablet', (route) => route.fulfill({
+      status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' },
+      body: JSON.stringify({ body: `Build: ${build + 1}\r\nFrom: main at 1a2b3c4` }),
+    }));
+    await app.goto(`${origin}/`);
+    await app.getByRole('button', { name: 'Update', exact: true }).click();
+    await app.getByText(`Build ${build}. Build ${build + 1} is ready.`).waitFor();
+    await app.getByRole('dialog').getByRole('button', { name: 'Update', exact: true }).click();
+    await app.getByText(/Allow from this source/).waitFor();
+    await app.getByRole('dialog').getByRole('button', { name: 'Update', exact: true }).click();
+    await app.getByText(/Tap Update in Android/).waitFor();
+    assert.deepEqual(await app.evaluate(() => window.updates), Array(2).fill('https://github.com/scottmttmn/math-tutor/releases/download/tablet/math-tutor.apk'));
+    console.log('PASS a newer published build is offered and installed through the app');
+  } else {
+    console.log('SKIP updates: this bundle has no build number (APP_BUILD)');
+  }
 
   assert.deepEqual(errors, []);
   console.log('PASS no browser exceptions');

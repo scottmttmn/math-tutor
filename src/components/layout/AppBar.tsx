@@ -10,6 +10,7 @@ import { RESTORE_RESULT_KEY } from './BackupSettings';
 import { useBackupStatus } from '@/hooks/useBackupStatus';
 import { backupDue, resumeBackup } from '@/lib/autoBackup';
 import { useAddPdfs } from '@/hooks/useAddPdfs';
+import { useAppUpdate } from '@/hooks/useAppUpdate';
 import { FolderIcon, GearIcon, HomeIcon, NotesIcon, ProblemIcon, ShelfIcon, TutorIcon } from '@/components/common/Icons';
 import { folderHref } from '@/lib/folders';
 import { readerHref } from '@/components/shelf/BookCard';
@@ -55,6 +56,8 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, fold
   // The Settings dialog: which tab, and a restore's result to show on Backup.
   const [settings, setSettings] = useState<{ tab: SettingsTab; restored?: string } | null>(null);
   const backup = useBackupStatus();
+  // The Android app: a newer build from CI, installed from Settings.
+  const update = useAppUpdate();
 
   // A restore reloads the page; show what it did in the Backup settings it was started from
   // (after hydration, since sessionStorage is the browser's).
@@ -127,6 +130,16 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, fold
 
       <div className="flex-1" />
       {children}
+
+      {update.newer !== null && (
+        <button
+          onClick={() => setSettings({ tab: 'tutor' })}
+          title={`Build ${update.newer} of the app is ready to install`}
+          className="min-h-11 px-3 text-sm text-gray-800 border border-gray-300 rounded-lg bg-white hover:bg-gray-50"
+        >
+          Update
+        </button>
+      )}
 
       {/* Folder backup needs the browser's permission again after a restart, and it only asks from a click. */}
       {backup.state === 'paused' ? (

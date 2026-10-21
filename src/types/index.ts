@@ -641,10 +641,10 @@ export interface BooxPenPlugin {
   status(): Promise<{ onyx: boolean; active: boolean; fast?: boolean }>;
   /** Fast screen updates for editing tools or finger gestures; leaving does not force a repaint. */
   interaction(options: { active: boolean }): Promise<{ active: boolean }>;
-  /** `color` is the preview's ink as #rrggbb (black when left out). */
-  start(options: { region: BooxPenBox; exclude?: BooxPenBox[]; width: number; color?: string }): Promise<void>;
-  /** Update the preview width in CSS pixels (and its color) without restarting pen input. */
-  setWidth(options: { width: number; color?: string }): Promise<void>;
+  /** `color` is the preview's ink as #rrggbb (black when left out); `marker` draws it with a flat marker tip (a highlighter). */
+  start(options: { region: BooxPenBox; exclude?: BooxPenBox[]; width: number; color?: string; marker?: boolean }): Promise<void>;
+  /** Update the preview width in CSS pixels (and its color and tip) without restarting pen input. */
+  setWidth(options: { width: number; color?: string; marker?: boolean }): Promise<void>;
   setRegion(options: { region: BooxPenBox; exclude?: BooxPenBox[] }): Promise<void>;
   pause(): Promise<void>;
   resume(): Promise<void>;
@@ -662,4 +662,12 @@ export interface ChatGPTSignInPlugin {
   waitForCallback(): Promise<{ query: string }>;
   close(): Promise<void>;
   openBrowser(options: { url: string }): Promise<void>;
+}
+
+/**
+ * Installs a newer build of the Android app (android/…/AppUpdatePlugin.java): downloads the APK and
+ * opens Android's installer. `permission: false`: Android's "install unknown apps" setting was opened instead.
+ */
+export interface AppUpdatePlugin {
+  install(options: { url: string }): Promise<{ permission: boolean }>;
 }

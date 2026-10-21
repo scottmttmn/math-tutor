@@ -6,6 +6,7 @@ import type { ModelConfig, Provider } from '@/types';
 import { DEFAULT_ANTHROPIC_MODEL, DEFAULT_GEMINI_MODEL, GEMINI_BASE_URL, getModelConfig, isGeminiEndpoint, saveModelConfig } from '@/lib/modelConfig';
 import { useChatGPTConnection } from '@/hooks/useChatGPTConnection';
 import { CHATGPT_DEFAULT_MODEL_PATTERN, CHATGPT_USAGE_URL } from '@/lib/constants';
+import { useAppUpdate } from '@/hooks/useAppUpdate';
 import { TUTOR_DIRECT } from '@/lib/tutorRequest';
 import { DEVICE_KEY_LABELS, deviceKeyName } from '@/lib/deviceKeys';
 import { useDeviceKey } from '@/hooks/useDeviceKey';
@@ -66,6 +67,7 @@ function SettingsDialog({ onClose, initialTab, saveOpenBoard, restoredMessage }:
           ))}
         </div>
         {tab === 'tutor' ? <SettingsForm onClose={onClose} saveOpenBoard={saveOpenBoard} /> : <BackupSettings onClose={onClose} saveOpenBoard={saveOpenBoard} restoredMessage={restoredMessage} />}
+        {TUTOR_DIRECT && <AppUpdateNote />}
       </div>
     </div>
   );
@@ -279,4 +281,36 @@ function SettingsForm({ onClose, saveOpenBoard }: { onClose: () => void; saveOpe
       </div>
     </>
   );
+}
+
+/** The Android app's build, and Update when CI has published a newer one. */
+function AppUpdateNote() {
+  const { build, newer, state, install } = useAppUpdate();
+  if (build === null) return null;
+  return (
+    <div className="mt-4 pt-3 border-t border-gray-200 text-sm text-gray-600">
+      <p>
+        Build {build}. {newer === null ? 'This is the newest build.' : `Build ${newer} is ready.`}
+      </p>
+      {newer !== null && (
+        <>
+          <button
+            onClick={install}
+            disabled={state === 'downloading'}
+            className="mt-2 min-h-11 px-4 text-sm font-medium text-gray-900 border-2 border-gray-900 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-50"
+          >
+            {state === 'downloading' ? 'Downloading…' : 'Update'}
+          </button>
+          <UpdateStatus state={state} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function UpdateStatus({ state }: { state: ReturnType<typeof useAppUpdate>['state'] }) {
+  if (state === 'allow') return <p className="mt-2">Turn on <strong>Allow from this source</strong> for Math Tutor, come back and tap Update again.</p>;
+  if (state === 'opened') return <p className="mt-2">Tap Update in Android&apos;s installer. Your boards, sign-in and keys stay. If it says the app can&apos;t be installed, the new build has a different signature: back up, uninstall Math Tutor once, then install it.</p>;
+  if (state === 'failed') return <p className="mt-2 text-red-700">Couldn&apos;t download the update. Check the connection and try again.</p>;
+  return null;
 }
