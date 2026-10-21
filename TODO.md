@@ -48,6 +48,7 @@ Every change goes through a branch and a PR (see CLAUDE.md, "Workflow and CI"). 
 - [ ] Continuous reading instead of only page-by-page navigation; design it first. Page ink, highlights and note boards are already built.
 - [ ] Function plots on the canvas. Grid/graph paper is already built.
 - [ ] **DRM-free EPUB as texts.** Reflow needs a different approach to marks, ink anchors and page references; math rendering also needs evaluation. DRM-locked books are outside this import path. The existing workaround is EPUB-to-PDF conversion, then **Add a PDF…**.
+- [ ] **Typed boards** (discussed 2026-10-21, not now). Recommended shape if picked up: a Typed board kind beside Problem and Notes, lines of text or visual math (MathLive, so no LaTeX needed), with the tutor reading exact text instead of handwriting. Alternatives considered: typed text/math boxes on the ink board (custom tldraw shape) and a Markdown + LaTeX source editor. It pulls against the keyboard-free BOOX direction, so it would be an addition, not a replacement for ink.
 - [ ] A shared problem collection and recommendations from other learners. Personal Favorites already provide the "interesting problem" star.
 
 ## Delivered
