@@ -63,7 +63,7 @@ try {
   // + New → Add a PDF puts the book in a folder of its own and opens it, with the book's page
   // count; Start reading opens the reader.
   await page.getByRole('button', { name: 'New', exact: true }).click();
-  await page.getByRole('button', { name: 'Add a PDF…' }).waitFor();
+  await page.getByRole('menuitem', { name: 'Add a PDF…' }).waitFor();
   await page.locator('input[aria-label="Add a PDF"]').setInputFiles(pdfPath);
   await page.getByRole('heading', { name: 'Algebra drills', exact: true }).waitFor();
   assert.match(new URL(page.url()).pathname, /^\/folder$/);
@@ -84,7 +84,7 @@ try {
   await folders.waitFor({ state: 'detached' });
   // New folder makes one here, for the book's chapters.
   await page.getByRole('button', { name: 'New', exact: true }).click();
-  await page.getByRole('button', { name: 'New folder' }).click();
+  await page.getByRole('menuitem', { name: 'New folder' }).click();
   await page.getByLabel('New folder in Algebra drills').fill('Chapter 2');
   await page.getByRole('button', { name: 'Make folder' }).click();
   await folders.getByRole('link', { name: 'Open Chapter 2' }).waitFor();
@@ -311,7 +311,7 @@ try {
   // Any picture will do as the problem; take one of the page's top.
   await writeFile(imagePath, await page.screenshot({ clip: { x: 0, y: 0, width: 240, height: 80 } }));
   await page.getByRole('button', { name: 'New', exact: true }).click();
-  await page.getByRole('button', { name: 'New Problem' }).click();
+  await page.getByRole('menuitem', { name: 'New Problem' }).click();
   await page.waitForURL(`${origin}/board`);
   await page.locator('input[aria-label="Problem picture"]').setInputFiles(imagePath);
   await page.getByAltText(/problem/i).first().waitFor();
@@ -431,7 +431,7 @@ try {
   await page.getByRole('link', { name: 'Open Chapter 2' }).click();
   await page.getByRole('heading', { name: 'Chapter 2', exact: true }).waitFor();
   await page.getByRole('button', { name: 'New', exact: true }).click();
-  await page.getByRole('button', { name: 'New Problem' }).click();
+  await page.getByRole('menuitem', { name: 'New Problem' }).click();
   await page.waitForURL(`${origin}/board`);
   await page.getByPlaceholder("Type the math problem you're working on...").fill('Sum the angles of a pentagon');
   await page.getByText('Saved', { exact: true }).waitFor();

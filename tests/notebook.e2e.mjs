@@ -221,14 +221,14 @@ try {
   await toggle(); await toggle();
   assert.deepEqual(await savedShapes(), wideShapes, 'entering notebook does not rewrite legacy ink');
   await page.getByRole('button', { name: 'New', exact: true }).click();
-  await page.getByRole('button', { name: /New Notes/ }).click();
+  await page.getByRole('menuitem', { name: /New Notes/ }).click();
   await page.getByPlaceholder('Topic or concept you\'re studying...').waitFor();
   await page.waitForFunction(() => document.querySelector('[data-testid="notebook-paper"]')?.getAttribute('data-page-width') === '960');
   await assertFit();
   assert.equal(await page.locator('.tl-shape').count(), 0, 'switching boards clears previous ink');
   await page.getByPlaceholder('Topic or concept you\'re studying...').fill('A fresh notebook');
   await page.getByRole('button', { name: 'New', exact: true }).click();
-  await page.getByRole('button', { name: /New Problem/ }).click();
+  await page.getByRole('menuitem', { name: /New Problem/ }).click();
   await page.getByPlaceholder("Type the math problem you're working on...").waitFor();
   await page.waitForFunction(() => !document.querySelector('[data-loading]'));
   const picture = await page.evaluate(() => {

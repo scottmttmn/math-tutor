@@ -98,7 +98,7 @@ try {
 
   // The choice is off by default; turning it on makes the open, still empty… board an ink board for new boards.
   await page.getByRole('button', { name: 'New', exact: true }).click();
-  await page.getByRole('button', { name: 'New Problem' }).click();
+  await page.getByRole('menuitem', { name: 'New Problem' }).click();
   await page.waitForFunction(() => !document.querySelector('[data-loading]') && document.querySelector('.tl-canvas'));
   await boardMenu('Ink board for new boards (experiment)');
   await ink().waitFor();
@@ -201,7 +201,7 @@ try {
   await stroke(100, 300, 300, 300);
   await saved('session.ink?.strokes?.length === 1');
   await page.getByRole('button', { name: 'New', exact: true }).click();
-  await page.getByRole('button', { name: 'New Problem' }).click();
+  await page.getByRole('menuitem', { name: 'New Problem' }).click();
   await page.locator('.tl-canvas').first().waitFor();
   assert.equal(await ink().count(), 0);
   console.log('PASS with the choice off, new boards are tldraw boards');
