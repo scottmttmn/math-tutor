@@ -73,26 +73,39 @@ jobs:
         run: npx playwright install --with-deps chromium
       - run: npm run test:android:e2e
 
-      # Every build is signed with the same debug key, kept between runs, so each one installs over
-      # the last and the app keeps its data (ChatGPT sign-in and API keys included). It is saved from
-      # main; pull requests read main's. Never commit a key: the repository is public.
+      # Every build is signed with one key, kept between runs, so each installs over the last and the
+      # app keeps its data (ChatGPT sign-in and API keys included). Main makes it once and saves it;
+      # pull requests read main's. Gradle signs with it through APP_KEYSTORE (android/app/build.gradle).
+      # Never commit a key: the repository is public.
       - name: Restore the signing key
         id: key
         uses: actions/cache/restore@v4
         with:
-          path: ~/.android/debug.keystore
-          key: android-debug-keystore-v1
+          path: ~/app-signing/app.keystore
+          key: android-app-keystore-v1
+
+      - name: Make the signing key (first run only)
+        run: |
+          if [ ! -f ~/app-signing/app.keystore ]; then
+            mkdir -p ~/app-signing
+            keytool -genkeypair -keystore ~/app-signing/app.keystore -storepass android -keypass android \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 36500 -dname "CN=Math Tutor"
+          fi
+          echo "APP_KEYSTORE=$HOME/app-signing/app.keystore" >> "$GITHUB_ENV"
 
       - name: Test the native pen scheduler and build the APK
         working-directory: android
         run: ./gradlew testDebugUnitTest assembleDebug --no-daemon
 
+      - name: Show the signing key's fingerprint
+        run: keytool -list -v -keystore ~/app-signing/app.keystore -storepass android | grep 'SHA256:'
+
       - name: Keep the signing key
         if: steps.key.outputs.cache-hit != 'true' && github.event_name == 'push'
         uses: actions/cache/save@v4
         with:
-          path: ~/.android/debug.keystore
-          key: android-debug-keystore-v1
+          path: ~/app-signing/app.keystore
+          key: android-app-keystore-v1
 
       - uses: actions/upload-artifact@v4
         with:
