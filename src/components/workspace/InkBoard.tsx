@@ -11,12 +11,15 @@ import { drawBoard, drawBoardStroke } from '@/lib/inkBoard/render';
 import { EXPORT_PADDING, MAX_EXPORT_SIDE, THUMBNAIL_SIDE, problemImage, renderItems, tutorImages } from '@/lib/inkBoard/capture';
 import { VIEW_MARGIN, clampCamera, fitCamera, fitZoom, toBoard, zoomAbout, type Camera, type ViewSize } from '@/lib/inkBoard/camera';
 import { TUTOR_IMAGE_PADDING, TUTOR_IMAGE_SIDE } from '@/lib/tutorBoardImages';
+import { strokePoints, sweep } from '@/lib/booxPen';
+import { useBooxInk } from '@/hooks/useBooxInk';
 import type { BoardImage, BoardInk, BoardStroke, InkColor, Paper } from '@/types';
 import type { DrawingCanvasHandle } from './DrawingCanvas';
 
 // The ink board: our own Notes-like canvas (replacing tldraw). One long page of fixed width; the
 // pen or mouse writes, fingers scroll and pinch, the wheel scrolls (with Ctrl, zooms). The drawing
 // is plain 2D canvas: finished ink on one canvas, the stroke being written on another above it.
+// On a BOOX tablet Onyx's pen SDK draws the pen tool's strokes and hands them over (useBooxInk).
 
 type Tool = 'pen' | 'highlighter' | 'eraser';
 
@@ -64,6 +67,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   const [tool, setTool] = useState<Tool>('pen');
   const [size, setSize] = useState<PenSize>('s');
   const [color, setColor] = useState<InkColor>('black');
+  // The zoom, for the BOOX pen's preview width (the camera itself lives in a ref).
+  const [zoom, setZoom] = useState(1);
   const style = useRef({ tool, size, color });
   useEffect(() => { style.current = { tool, size, color }; }, [tool, size, color]);
 
@@ -87,6 +92,18 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   const touches = useRef(new Map<number, { x: number; y: number }>());
   const mirrorTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const frame = useRef(0);
+
+  // Strokes and eraser passes the BOOX pen hands over (set below, once the edits exist).
+  const fromBoox = useRef({ stroke: (flat: number[]) => void flat, erase: (flat: number[]) => void flat });
+  const onBooxStroke = useCallback((flat: number[]) => fromBoox.current.stroke(flat), []);
+  const onBooxErase = useCallback((flat: number[]) => fromBoox.current.erase(flat), []);
+  const { owns: booxOwns, painted, gesture } = useBooxInk({
+    container,
+    pen: tool === 'pen',
+    preview: { width: PEN_WIDTHS[size] * zoom, color: INK_COLORS[color] },
+    onStroke: onBooxStroke,
+    onErase: onBooxErase,
+  });
 
   const board = () => history.current.board;
   const showSteps = () => setSteps({ undo: history.current.past.length > 0, redo: history.current.future.length > 0 });
@@ -151,7 +168,9 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       images: current.images.filter((image) => visible.has(image.id)),
     }, loaded());
     container.current?.setAttribute('data-zoom', String(Math.round((z / fitZoom(page, view.current)) * 100) / 100));
-  }, [loaded]);
+    setZoom(z);
+    painted();
+  }, [loaded, painted]);
 
   const repaint = useCallback(() => {
     if (!frame.current) frame.current = requestAnimationFrame(paint);
@@ -200,6 +219,42 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     camera.current = clampCamera(next, board().page, view.current);
     repaint();
   }, [repaint]);
+
+  // A finished BOOX stroke becomes ink in the pen's style; an eraser pass takes the strokes it crossed.
+  useEffect(() => {
+    const local = (x: number, y: number) => {
+      const rect = liveCanvas.current?.getBoundingClientRect();
+      return toBoard(camera.current, x - (rect?.left ?? 0), y - (rect?.top ?? 0));
+    };
+    fromBoox.current = {
+      stroke: (flat) => {
+        const samples = strokePoints(flat);
+        if (samples.length === 0 || loadPending.current) return;
+        const { size: penSize, color: ink } = style.current;
+        const step = 1 / camera.current.z;
+        const points: number[] = [];
+        let last: { x: number; y: number } | null = null;
+        for (const sample of samples) {
+          const at = local(sample.x, sample.y);
+          if (last && Math.hypot(at.x - last.x, at.y - last.y) < step) continue;
+          pushPoint(points, at.x, at.y, sample.pressure);
+          last = at;
+        }
+        apply(addItems(board(), [{ id: uuidv4(), tool: 'pen', color: ink, width: PEN_WIDTHS[penSize], points }]));
+      },
+      erase: (flat) => {
+        if (loadPending.current) return;
+        // Samples of a fast pass are far apart, so test the path between them too.
+        const path = sweep(strokePoints(flat), ERASER_REACH / 2).flatMap(({ x, y }) => {
+          const at = local(x, y);
+          return [at.x, at.y];
+        });
+        if (path.length === 2) path.push(path[0], path[1]);
+        const hit = strokesHitByPath(board(), index.current, path, ERASER_REACH / camera.current.z);
+        if (hit.size > 0) apply(removeItems(board(), hit));
+      },
+    };
+  }, [apply]);
 
   /** Writing scale with the board's `top` (board units) at the top of the view. */
   const fitTo = useCallback((top: number) => {
@@ -278,7 +333,9 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   // Leaving the page mirrors the last change right away, so it is saved.
   useEffect(() => () => {
     if (mirrorTimer.current) { clearTimeout(mirrorTimer.current); mirror(); }
+    // Development mounts twice (Strict Mode): a cancelled frame left in `frame` would stop all repaints.
     cancelAnimationFrame(frame.current);
+    frame.current = 0;
   }, [mirror]);
 
   const doUndo = useCallback(() => {
@@ -358,6 +415,13 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       }
     };
 
+    // On a BOOX the SDK has the pen; if the page still hears it, it mustn't draw it twice.
+    const booxPen = (event: PointerEvent) => {
+      if (event.pointerType !== 'pen' || !booxOwns()) return false;
+      event.preventDefault();
+      return true;
+    };
+
     const down = (event: PointerEvent) => {
       if (event.pointerType === 'touch') {
         // A palm resting while the pen writes does nothing.
@@ -365,12 +429,15 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         touches.current.set(event.pointerId, local(event));
         canvas.setPointerCapture(event.pointerId);
         touchState();
+        gesture(true);
         return;
       }
+      if (booxPen(event)) return;
       if (event.button !== 0 && event.button !== 5) return;
       event.preventDefault();
       canvas.setPointerCapture(event.pointerId);
       // The pen takes over from any finger already down: its gesture ends here.
+      if (touches.current.size > 0) gesture(false);
       touches.current.clear();
       touchState();
       const at = toBoard(camera.current, local(event).x, local(event).y);
@@ -414,6 +481,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         }
         return;
       }
+      if (booxPen(event)) return;
       const samples = event.getCoalescedEvents?.().length ? event.getCoalescedEvents() : [event];
       if (erasing.current) {
         for (const sample of samples) {
@@ -439,10 +507,12 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
 
     const up = (event: PointerEvent) => {
       if (event.pointerType === 'touch') {
-        touches.current.delete(event.pointerId);
+        if (!touches.current.delete(event.pointerId)) return;
         touchState();
+        if (touches.current.size === 0) gesture(false);
         return;
       }
+      if (booxPen(event) && !writing.current && !erasing.current) return;
       if (erasing.current) {
         const pass = erasing.current;
         erasing.current = null;
@@ -460,6 +530,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
 
     const wheel = (event: WheelEvent) => {
       event.preventDefault();
+      gesture(true);
+      gesture(false);
       const at = local(event);
       if (event.ctrlKey || event.metaKey) {
         fitted.current = false;
@@ -482,7 +554,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       canvas.removeEventListener('pointercancel', up);
       canvas.removeEventListener('wheel', wheel);
     };
-  }, [apply, paintLive, repaint, setCamera]);
+  }, [apply, paintLive, repaint, setCamera, booxOwns, gesture]);
 
   useImperativeHandle(handleRef, () => ({
     fitWidth: () => fitTo(camera.current.y),

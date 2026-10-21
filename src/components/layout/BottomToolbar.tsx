@@ -105,7 +105,8 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
           items={[
             { label: 'Ink board for new boards (experiment)', role: 'menuitemcheckbox', checked: inkForNew, onSelect: toggleInkForNew },
             ...(onInkBoard ? [] : [{ label: 'Notebook mode (experiment)', role: 'menuitemcheckbox' as const, checked: notebook, onSelect: toggleNotebook }]),
-            ...(booxAvailable ? [{ label: 'BOOX pen (experiment)', role: 'menuitemcheckbox' as const, checked: booxPen, onSelect: toggleBooxPen }] : []),
+            // The ink board always uses Onyx's pen on a BOOX; the choice is tldraw's.
+            ...(booxAvailable && !onInkBoard ? [{ label: 'BOOX pen (experiment)', role: 'menuitemcheckbox' as const, checked: booxPen, onSelect: toggleBooxPen }] : []),
             ...(tools ? [{ label: 'Hide drawing tools', role: 'menuitemcheckbox' as const, checked: tools.hidden, onSelect: tools.toggle }] : []),
             // The Android app has no address bar, so the pen test is reached from here.
             { label: 'Pen test…', disabled: isStreaming, onSelect: () => router.push('/pen-test') },
