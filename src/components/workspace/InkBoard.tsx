@@ -370,6 +370,9 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       if (event.button !== 0 && event.button !== 5) return;
       event.preventDefault();
       canvas.setPointerCapture(event.pointerId);
+      // The pen takes over from any finger already down: its gesture ends here.
+      touches.current.clear();
+      touchState();
       const at = toBoard(camera.current, local(event).x, local(event).y);
       // Button 5 / bit 32: the pen's eraser end.
       const eraser = event.button === 5 || (event.buttons & 32) !== 0 || style.current.tool === 'eraser';
@@ -392,7 +395,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
 
     const move = (event: PointerEvent) => {
       if (event.pointerType === 'touch') {
-        if (!touches.current.has(event.pointerId)) return;
+        // Fingers that were down before the pen don't move the page under it.
+        if (!touches.current.has(event.pointerId) || writing.current || erasing.current) return;
         touches.current.set(event.pointerId, local(event));
         const points = [...touches.current.values()];
         if (pinch && points.length >= 2) {

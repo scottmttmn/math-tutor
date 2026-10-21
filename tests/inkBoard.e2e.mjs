@@ -206,6 +206,19 @@ try {
   assert.equal(await ink().count(), 0);
   console.log('PASS with the choice off, new boards are tldraw boards');
 
+  // A board with only its problem typed is saved with no drawing, so it stays new: with the
+  // choice back on it reopens as an ink board.
+  await problemBox().fill('Nothing drawn yet.');
+  const untouched = await saved("session.problemStatement === 'Nothing drawn yet.'");
+  assert.equal(untouched.canvasDocument, null);
+  assert.equal(untouched.ink, undefined);
+  await boardMenu('Ink board for new boards (experiment)');
+  await ink().waitFor();
+  await page.reload();
+  await ink().waitFor();
+  assert.equal(await problemBox().inputValue(), 'Nothing drawn yet.');
+  console.log('PASS a board saved with nothing drawn follows the choice for new boards');
+
   assert.deepEqual(errors, []);
 } finally {
   await context.close();

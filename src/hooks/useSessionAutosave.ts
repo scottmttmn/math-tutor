@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
+import { drawnDocument, drawnInk, useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
 import { useSessionDispatch, useSessionState } from '@/context/SessionContext';
 import { hasRecoveryCopy, loadRecoveredSession, saveRecoverableSession, settleInterruptedReplies, stageSession } from '@/lib/sessionRecovery';
 import { boardToOpen, setBoardToOpen } from '@/lib/currentBoard';
@@ -58,10 +58,11 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
     if (loading.current) return null;
     const s = latest.current;
     // Read the editor directly: the context mirror lags a just-finished stroke. A board is drawn
-    // in tldraw or on the ink board, never both.
+    // in tldraw or on the ink board, never both, and an empty board is saved as neither so it
+    // stays new: it belongs to whichever editor it is first drawn in.
     const handle = canvasHandle.current;
-    const ink = handle ? handle.getInk() : s.canvasInk;
-    const document = ink ? null : handle?.getDocument() ?? s.canvasDocument;
+    const ink = drawnInk(handle ? handle.getInk() : s.canvasInk);
+    const document = ink ? null : drawnDocument(handle?.getDocument() ?? s.canvasDocument);
     const hasDrawing = s.hasContent || Boolean(ink && hasWork(ink)) || Object.keys(document?.store ?? {}).some((key) => key.startsWith('shape:'));
     // A paper chosen on a new board counts as a change, so the choice isn't lost.
     if (!s.currentSessionId && !s.problemStatement.trim() && !s.problemImage && s.chatHistory.length === 0 && !hasDrawing && !s.paper) return null;

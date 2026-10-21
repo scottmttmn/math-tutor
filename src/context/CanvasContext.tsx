@@ -37,6 +37,16 @@ interface CanvasState {
   pendingLoad: CanvasLoad | null;
 }
 
+/** The ink board, if anything is on it (strokes or pictures). */
+export function drawnInk(ink: BoardInk | null | undefined): BoardInk | null {
+  return ink && (ink.strokes.length > 0 || ink.images.length > 0) ? ink : null;
+}
+
+/** The tldraw document, if it holds any shape. */
+export function drawnDocument(document: CanvasDocument | null | undefined): CanvasDocument | null {
+  return document && Object.keys(document.store ?? {}).some((key) => key.startsWith('shape:')) ? document : null;
+}
+
 const initialState: CanvasState = { document: null, ink: null, hasContent: false, editor: 'new', pendingLoad: null };
 
 function canvasReducer(state: CanvasState, action: CanvasAction): CanvasState {
@@ -46,8 +56,9 @@ function canvasReducer(state: CanvasState, action: CanvasAction): CanvasState {
       return {
         document: load.document,
         ink: load.ink,
-        hasContent: load.strokes.some((stroke) => stroke.tool === 'pen') || Boolean(load.document) || Boolean(load.ink),
-        editor: load.ink ? 'ink' : load.document || load.strokes.length > 0 ? 'tldraw' : 'new',
+        hasContent: load.strokes.some((stroke) => stroke.tool === 'pen') || Boolean(load.document) || Boolean(drawnInk(load.ink)),
+        // A board saved empty is still new.
+        editor: drawnInk(load.ink) ? 'ink' : drawnDocument(load.document) || load.strokes.length > 0 ? 'tldraw' : 'new',
         pendingLoad: load,
       };
     }
