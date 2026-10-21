@@ -23,6 +23,7 @@ export async function chatgptStatus(chatgpt: ChatGPTClient): Promise<ChatGPTStat
   if (session.status === 'connected' && session.sharing) {
     try {
       status.models = await chatgpt.listModels();
+      delete status.error;
     } catch (error) {
       status.error = errorMessage(error);
     }
