@@ -684,6 +684,7 @@ export default function ShelfReader() {
         tool={inkTool}
         onInk={(strokes) => changeInk(page, strokes)}
         lit={litOnPage}
+        boox={!exercise}
       />
     </div>
   );
@@ -852,9 +853,9 @@ export default function ShelfReader() {
           )}
           <div className="flex-1 min-h-0 relative">
             <div className="absolute inset-0 overflow-y-auto">{pageView}</div>
-            {askPanel && <div className="absolute inset-x-0 bottom-0 z-30 h-[55%] flex flex-col shadow-lg">{askPanel}</div>}
+            {askPanel && <div data-pen-control className="absolute inset-x-0 bottom-0 z-30 h-[55%] flex flex-col shadow-lg">{askPanel}</div>}
             {barsShown && panelOpen && !askPanel && (
-              <section aria-label="Lists" className="absolute inset-y-0 left-0 z-20 w-[min(22rem,85%)] flex flex-col bg-white border-r border-gray-900 shadow-lg">
+              <section aria-label="Lists" data-pen-control className="absolute inset-y-0 left-0 z-20 w-[min(22rem,85%)] flex flex-col bg-white border-r border-gray-900 shadow-lg">
                 {listPanel}
               </section>
             )}

@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { renderPage } from '@/lib/pdf';
 import { toPage, toShown } from '@/lib/reader';
-import { ERASER_RADIUS, drawStroke, drawStrokes, eraseAt, inkPoint, pageScale } from '@/lib/ink';
+import { ERASER_RADIUS, HIGHLIGHTER_WIDTH, PEN_COLOR, PEN_WIDTH, drawStroke, drawStrokes, eraseAt, inkPoint, pageScale } from '@/lib/ink';
+import { strokePoints, sweep } from '@/lib/booxPen';
+import { useBooxInk } from '@/hooks/useBooxInk';
 import type { InkStroke, InkTool, PageRect, ShelfExercise } from '@/types';
 import { NotesIcon } from '@/components/common/Icons';
 
@@ -35,7 +37,14 @@ interface Props {
   onInk: (strokes: InkStroke[]) => void;
   /** Words found by a search, lit on the page (fractions of the whole page). */
   lit?: PageRect[];
+  /** On a BOOX, whether Onyx's pen may write on the page: not while a board beside it has the pen. */
+  boox?: boolean;
 }
+
+// The highlighter's look on white (HIGHLIGHTER_COLOR), for the BOOX pen's opaque preview.
+const HIGHLIGHTER_PREVIEW = '#cfd1d4';
+// Controls over the page, outside it in the layout, that the BOOX pen must leave tappable.
+const PEN_CONTROLS = '[data-pen-control]';
 
 // A box smaller than this (as a fraction of the page) is a stray tap, not a mark.
 const MIN_MARK = 0.02;
@@ -63,7 +72,7 @@ const TAP_SLOP = 10;
 const percent = (rect: PageRect) => ({ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%` });
 
 /** One PDF page (or its printed part), fit to its container's width, with marked exercises drawn over it. */
-export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, marking, pending, pendingForm, onMark, onOpenMark, crop, onTurn, onTapMiddle, ink, tool, onInk, lit = [] }: Props) {
+export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, marking, pending, pendingForm, onMark, onOpenMark, crop, onTurn, onTapMiddle, ink, tool, onInk, lit = [], boox = false }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [width, setWidth] = useState(0);
@@ -79,6 +88,60 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
   const [shownSize, setShownSize] = useState<{ width: number; height: number } | null>(null);
   // The stroke being written, or the strokes left so far by the eraser.
   const writing = useRef<{ id: number; tool: InkTool; points: number[]; strokes: InkStroke[]; last?: { x: number; y: number } } | null>(null);
+  // The latest ink, size and tool, for strokes the BOOX pen hands over between renders.
+  const latest = useRef({ ink, shownSize, crop, onInk, tool });
+  useEffect(() => { latest.current = { ink, shownSize, crop, onInk, tool }; }, [ink, shownSize, crop, onInk, tool]);
+
+  // On a BOOX, Onyx's pen draws the pen and highlighter over the page and hands each finished
+  // stroke (or eraser-end pass) over; the Eraser tool is the page's, with fast screen updates.
+  const toPageAt = useCallback((x: number, y: number) => {
+    const bounds = overlay.current?.getBoundingClientRect();
+    if (!bounds || !bounds.width || !bounds.height) return null;
+    return toPage({ x: (x - bounds.left) / bounds.width, y: (y - bounds.top) / bounds.height }, latest.current.crop);
+  }, []);
+  const onBooxStroke = useCallback((flat: number[]) => {
+    const { ink: strokes, shownSize: size, crop: shownCrop, onInk: save, tool: chosen } = latest.current;
+    if (!size || (chosen !== 'pen' && chosen !== 'highlighter')) return;
+    const scaled = pageScale(size.width, size.height, shownCrop);
+    const points: number[] = [];
+    for (const sample of strokePoints(flat)) {
+      const at = toPageAt(sample.x, sample.y);
+      if (!at) return;
+      const [x, y, pressure] = inkPoint(clamp(at.x), clamp(at.y), sample.pressure);
+      const last = points.length - 3;
+      if (last >= 0 && Math.hypot((x - points[last]) * scaled.x, (y - points[last + 1]) * scaled.y) < 0.5) continue;
+      points.push(x, y, pressure);
+    }
+    if (points.length) save([...strokes, { tool: chosen, points }]);
+  }, [toPageAt]);
+  const onBooxErase = useCallback((flat: number[]) => {
+    const { ink: strokes, shownSize: size, crop: shownCrop, onInk: save } = latest.current;
+    if (!size) return;
+    const scaled = pageScale(size.width, size.height, shownCrop);
+    let left = strokes;
+    let last: { x: number; y: number } | undefined;
+    // Samples of a fast pass are far apart: the path between them counts too.
+    for (const sample of sweep(strokePoints(flat), ERASER_RADIUS / 2)) {
+      const at = toPageAt(sample.x, sample.y);
+      if (!at) return;
+      left = eraseAt(left, at, ERASER_RADIUS, scaled, last);
+      last = at;
+    }
+    if (left !== strokes) save(left);
+  }, [toPageAt]);
+  const pageWidth = shownSize ? pageScale(shownSize.width, shownSize.height, crop).x : 0;
+  const pen = useBooxInk({
+    container: overlay,
+    enabled: boox && Boolean(tool) && !marking,
+    exclude: PEN_CONTROLS,
+    sdk: tool === 'pen' || tool === 'highlighter',
+    preview: tool === 'highlighter'
+      ? { width: HIGHLIGHTER_WIDTH * pageWidth, color: HIGHLIGHTER_PREVIEW, marker: true }
+      : { width: PEN_WIDTH * pageWidth, color: PEN_COLOR, marker: false },
+    onStroke: onBooxStroke,
+    onErase: onBooxErase,
+  });
+  const { painted, gesture } = pen;
 
   // The page may be scrolled: bring the form into view and put the cursor in its name field.
   useEffect(() => {
@@ -120,7 +183,21 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
     }
     const context = target.getContext('2d');
     if (context) drawStrokes(context, writing.current?.tool === 'eraser' ? writing.current.strokes : ink, pageScale(shownSize.width, shownSize.height, crop), crop);
-  }, [ink, shownSize, crop]);
+    painted();
+  }, [ink, shownSize, crop, painted]);
+
+  // Scrolling the page on a BOOX: fast screen updates while it moves, then the screen is let through.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const scrolled = (event: Event) => {
+      if (!(event.target instanceof Node) || !event.target.contains(overlay.current)) return;
+      gesture(true);
+      clearTimeout(timer);
+      timer = setTimeout(() => { gesture(false); painted(); }, 100);
+    };
+    window.addEventListener('scroll', scrolled, true);
+    return () => { clearTimeout(timer); window.removeEventListener('scroll', scrolled, true); };
+  }, [gesture, painted]);
 
   // A pen on the page writes rather than scrolling it: its touch events (browsers send them for a
   // pen too) are cancelled, while fingers still scroll and pinch.
@@ -146,12 +223,12 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
         task = renderPage(page, canvas.current, width, crop);
         return task.promise;
       })
-      .then(() => { if (!cancelled) setFailed(false); })
+      .then(() => { if (!cancelled) { setFailed(false); painted(); } })
       .catch((error: unknown) => {
         if (!cancelled && (error as { name?: string })?.name !== 'RenderingCancelledException') setFailed(true);
       });
     return () => { cancelled = true; task?.cancel(); };
-  }, [pdf, pageNumber, width, crop]);
+  }, [pdf, pageNumber, width, crop, painted]);
 
   // Where the pointer is on the page, in fractions of the whole page (not just the part shown).
   const point = (event: React.PointerEvent) => {
@@ -267,6 +344,8 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
           data-testid="page-overlay"
           onContextMenu={(event) => { if (tool) event.preventDefault(); }}
           onPointerDown={(event) => {
+            // Onyx's pen has drawn it already, and hands the stroke over when it ends.
+            if (tool && event.pointerType === 'pen' && pen.owns()) { event.preventDefault(); return; }
             // With a tool on, the pen (or mouse) writes; a finger still turns, scrolls and zooms.
             if (tool && !marking && event.pointerType !== 'touch' && (event.button === 0 || event.button === 5)) { startInk(event); return; }
             // A palm resting while the pen writes does nothing.

@@ -18,8 +18,12 @@ const CONTROLS = '[role="toolbar"] > *, [data-testid="show-tools"]';
 const OVERLAYS = '[role="menu"], [role="dialog"], [role="listbox"]';
 
 export interface BooxInkOptions {
-  /** The board's element: the region is its box less the controls over it. */
+  /** The board's element: the region is its box (the part its scrolling ancestors show) less the controls over it. */
   container: RefObject<HTMLElement | null>;
+  /** Whether the BOOX handles the board at all (default true): off, the pen and screen are left alone. */
+  enabled?: boolean;
+  /** Other elements, anywhere on the page, that sit over the board and must stay tappable. */
+  exclude?: string;
   /** Whether the SDK takes the pen (the Pen or Highlight tool). The eraser is the page's, with fast screen updates. */
   sdk: boolean;
   /** The live preview's width (CSS px at the current zoom), color, and a marker's flat tip for the highlighter. */
@@ -41,14 +45,27 @@ export interface BooxInk {
   frameGap: () => number;
 }
 
+/** The part of an element its scrolling ancestors show (a page scrolled partly out of view), or null when none is. */
+function clipped(element: HTMLElement): BooxPenBox | null {
+  const rect = element.getBoundingClientRect();
+  let [left, top, right, bottom] = [rect.left, rect.top, rect.right, rect.bottom];
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    const style = getComputedStyle(parent);
+    if (style.overflowX === 'visible' && style.overflowY === 'visible') continue;
+    const view = parent.getBoundingClientRect();
+    [left, top, right, bottom] = [Math.max(left, view.left), Math.max(top, view.top), Math.min(right, view.right), Math.min(bottom, view.bottom)];
+  }
+  return boxOf({ left, top, width: right - left, height: bottom - top });
+}
+
 /**
  * The ink board on a BOOX tablet (the Android app): Onyx's pen SDK draws the pen on the e-ink
  * controller and hands each finished stroke (or eraser pass) to the board, finger gestures and
  * the other tools use the panel's fast mode, and the screen is refreshed after the board changes.
  * Everywhere else it does nothing. If the SDK never starts the pen stays the page's.
  */
-export function useBooxInk({ container, sdk, preview, onStroke, onErase }: BooxInkOptions): BooxInk {
-  const available = useBooxPenAvailable();
+export function useBooxInk({ container, enabled = true, exclude: excluded, sdk, preview, onStroke, onErase }: BooxInkOptions): BooxInk {
+  const available = useBooxPenAvailable() && enabled;
   const state = useRef({ started: false, running: false, paused: false, failed: false });
   const handlers = useRef({ onStroke, onErase });
   useEffect(() => { handlers.current = { onStroke, onErase }; }, [onStroke, onErase]);
@@ -99,9 +116,10 @@ export function useBooxInk({ container, sdk, preview, onStroke, onErase }: BooxI
     const removers: (() => void)[] = [];
 
     const measure = (): { region: BooxPenBox; exclude: BooxPenBox[] } | null => {
-      const region = boxOf(element.getBoundingClientRect());
+      const region = clipped(element);
       if (!region) return null;
-      const exclude = [...element.querySelectorAll(CONTROLS), ...document.querySelectorAll('[data-testid="show-tools"]')]
+      const others = [...document.querySelectorAll('[data-testid="show-tools"]'), ...(excluded ? document.querySelectorAll(excluded) : [])];
+      const exclude = [...element.querySelectorAll(CONTROLS), ...others]
         .map((control) => boxOf(control.getBoundingClientRect()))
         .filter((box): box is BooxPenBox => Boolean(box && overlaps(box, region)));
       return { region, exclude };
@@ -177,7 +195,7 @@ export function useBooxInk({ container, sdk, preview, onStroke, onErase }: BooxI
       removers.forEach((remove) => remove());
       if (status.started) void BooxPen.stop().catch(() => undefined);
     };
-  }, [available, sdk, container]);
+  }, [available, sdk, container, excluded]);
 
   // The preview follows the tool, size, color and zoom without restarting the pen.
   const { width, color, marker } = preview;
