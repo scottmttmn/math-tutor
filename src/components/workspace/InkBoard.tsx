@@ -5,8 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
 import { GRID_SPACING, LINE_SPACING } from '@/lib/paper';
 import { HIGHLIGHTER_WIDTH, HIGHLIGHT_ALPHA, INK_COLORS, PEN_WIDTHS, boardBounds, emptyBoard, pushPoint, type PenSize } from '@/lib/inkBoard/model';
-import { addItems, commit, redo, removeItems, startHistory, undo, type BoardHistory } from '@/lib/inkBoard/edits';
-import { GridIndex, strokesHitByPath } from '@/lib/inkBoard/hitTest';
+import { addItems, commit, copyItems, moveItems, redo, removeItems, startHistory, undo, type BoardHistory } from '@/lib/inkBoard/edits';
+import { GridIndex, itemsInLasso, strokesHitByPath } from '@/lib/inkBoard/hitTest';
 import { drawBoard, drawBoardStroke } from '@/lib/inkBoard/render';
 import { EXPORT_PADDING, MAX_EXPORT_SIDE, THUMBNAIL_SIDE, problemImage, renderItems, tutorImages } from '@/lib/inkBoard/capture';
 import { VIEW_MARGIN, clampCamera, fitCamera, fitZoom, toBoard, zoomAbout, type Camera, type ViewSize } from '@/lib/inkBoard/camera';
@@ -20,8 +20,10 @@ import type { DrawingCanvasHandle } from './DrawingCanvas';
 // pen or mouse writes, fingers scroll and pinch, the wheel scrolls (with Ctrl, zooms). The drawing
 // is plain 2D canvas: finished ink on one canvas, the stroke being written on another above it.
 // On a BOOX tablet Onyx's pen SDK draws the pen tool's strokes and hands them over (useBooxInk).
+// The lasso circles ink to select it: drag it to move it, or delete or duplicate it; the tutor
+// then reads only the selection.
 
-type Tool = 'pen' | 'highlighter' | 'eraser';
+type Tool = 'pen' | 'highlighter' | 'eraser' | 'lasso';
 
 // Bumped synchronously on every drawing change (see DrawingCanvasHandle.getRevision). Module-level
 // so it never repeats across remounts.
@@ -42,6 +44,9 @@ const PALM_SIZE = 48;
 // contact), and zoom only once their spread has changed by this fraction (a resting hand drifts).
 const PINCH_WINDOW_MS = 250;
 const PINCH_START = 0.15;
+// The selection's box sits this far outside its ink, in screen px; a duplicate lands this far off, in board units.
+const SELECTION_PAD = 8;
+const DUPLICATE_OFFSET = 24;
 // Room above the first work when a board opens, in screen px.
 const OPEN_TOP = 80;
 const COLORS: InkColor[] = ['black', 'gray', 'blue', 'red', 'green'];
@@ -81,6 +86,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   const [tool, setTool] = useState<Tool>('pen');
   const [size, setSize] = useState<PenSize>('s');
   const [color, setColor] = useState<InkColor>('black');
+  // How many items the lasso holds, for its toolbar (the ids live in `selection`).
+  const [selected, setSelected] = useState(0);
   // The zoom, for the BOOX pen's preview width (the camera itself lives in a ref).
   const [zoom, setZoom] = useState(1);
   const style = useRef({ tool, size, color });
@@ -103,6 +110,10 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   // A pass of the eraser shows its result before it becomes one undo step.
   const erasing = useRef<{ before: BoardInk; shown: BoardInk; path: number[] } | null>(null);
   const writing = useRef<{ pointer: number; stroke: BoardStroke; lastX: number; lastY: number } | null>(null);
+  // The lasso: what it holds, the loop being drawn, and a drag of the selection (shown before it becomes one undo step).
+  const selection = useRef<Set<string>>(new Set());
+  const lassoing = useRef<{ pointer: number; path: number[] } | null>(null);
+  const moving = useRef<{ pointer: number; fromX: number; fromY: number; dx: number; dy: number } | null>(null);
   const touches = useRef(new Map<number, { x: number; y: number }>());
   // When the pen was last near or on the screen (hovering, writing, or a BOOX stroke arriving).
   const penSeen = useRef(-Infinity);
@@ -118,7 +129,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   const onBooxErase = useCallback((flat: number[]) => fromBoox.current.erase(flat), []);
   const { owns: booxOwns, painted, gesture, frameGap } = useBooxInk({
     container,
-    sdk: tool !== 'eraser',
+    sdk: tool === 'pen' || tool === 'highlighter',
     preview: tool === 'highlighter'
       ? { width: HIGHLIGHTER_WIDTH * zoom, color: highlightPreview(INK_COLORS[color]), marker: true }
       : { width: PEN_WIDTHS[size] * zoom, color: INK_COLORS[color], marker: false },
@@ -149,7 +160,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     const context = canvas.getContext('2d');
     if (!context) return;
     const { x, y, z } = camera.current;
-    const current = erasing.current?.shown ?? history.current.board;
+    const drag = moving.current;
+    const current = erasing.current?.shown ?? (drag ? moveItems(history.current.board, selection.current, drag.dx, drag.dy) : history.current.board);
     const { page } = current;
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.fillStyle = DESK;
@@ -182,13 +194,25 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       }
     }
     const area = { minX: x, minY: y, maxX: x + w / z, maxY: bottom };
-    // Only what is in view; the index was built from the board, and erasing only removes strokes.
+    // Only what is in view; the index was built from the board, and erasing only removes strokes
+    // (a dragged selection is drawn wherever it is).
     const visible = index.current.query(area);
+    const shown = (id: string) => visible.has(id) || (drag !== null && selection.current.has(id));
     drawBoard(context, {
       ...current,
-      strokes: current.strokes.filter((stroke) => visible.has(stroke.id)),
-      images: current.images.filter((image) => visible.has(image.id)),
+      strokes: current.strokes.filter((stroke) => shown(stroke.id)),
+      images: current.images.filter((image) => shown(image.id)),
     }, loaded());
+    const box = selection.current.size > 0 ? boardBounds(current, selection.current) : null;
+    if (box) {
+      const pad = SELECTION_PAD / z;
+      context.save();
+      context.strokeStyle = '#111827';
+      context.lineWidth = 1.5 / z;
+      context.setLineDash([6 / z, 4 / z]);
+      context.strokeRect(box.minX - pad, box.minY - pad, box.maxX - box.minX + pad * 2, box.maxY - box.minY + pad * 2);
+      context.restore();
+    }
     container.current?.setAttribute('data-zoom', String(Math.round((z / fitZoom(page, view.current)) * 100) / 100));
     container.current?.setAttribute('data-view-y', String(Math.round(y)));
     setZoom(z);
@@ -249,6 +273,35 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     repaint();
   }, [repaint]);
 
+  const select = useCallback((ids: Set<string>) => {
+    if (ids.size === 0 && selection.current.size === 0) return;
+    selection.current = ids;
+    moving.current = null;
+    setSelected(ids.size);
+    container.current?.setAttribute('data-selected', String(ids.size));
+    repaint();
+  }, [repaint]);
+
+  /** A tool chosen; leaving the lasso lets go of its selection. */
+  const chooseTool = useCallback((next: Tool) => {
+    if (next !== 'lasso') select(new Set());
+    setTool(next);
+  }, [select]);
+
+  const deleteSelection = useCallback(() => {
+    if (selection.current.size === 0) return;
+    const ids = selection.current;
+    select(new Set());
+    apply(removeItems(board(), ids));
+  }, [apply, select]);
+
+  const duplicateSelection = useCallback(() => {
+    if (selection.current.size === 0) return;
+    const copy = copyItems(board(), selection.current, DUPLICATE_OFFSET, DUPLICATE_OFFSET, uuidv4);
+    apply(copy.board);
+    select(copy.ids);
+  }, [apply, select]);
+
   // A finished BOOX stroke becomes ink in the pen's style; an eraser pass takes the strokes it crossed.
   useEffect(() => {
     const local = (x: number, y: number) => {
@@ -302,6 +355,11 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     pictures.current.clear();
     erasing.current = null;
     writing.current = null;
+    lassoing.current = null;
+    selection.current = new Set();
+    moving.current = null;
+    setSelected(0);
+    container.current?.setAttribute('data-selected', '0');
     setTool('pen');
     setSize('s');
     const content = boardBounds(next);
@@ -372,27 +430,35 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     paced.current = undefined;
   }, [mirror]);
 
+  // Undo and redo let go of the selection: what it held may be gone or back elsewhere.
   const doUndo = useCallback(() => {
     const before = history.current;
     history.current = undo(before);
-    if (history.current !== before) changed();
-  }, [changed]);
+    if (history.current !== before) { select(new Set()); changed(); }
+  }, [changed, select]);
   const doRedo = useCallback(() => {
     const before = history.current;
     history.current = redo(before);
-    if (history.current !== before) changed();
-  }, [changed]);
+    if (history.current !== before) { select(new Set()); changed(); }
+  }, [changed, select]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || typing(event.target) || !container.current?.offsetParent) return;
+      if (typing(event.target) || !container.current?.offsetParent) return;
       const key = event.key.toLowerCase();
+      if (!(event.metaKey || event.ctrlKey)) {
+        if (selection.current.size === 0) return;
+        if (key === 'delete' || key === 'backspace') { event.preventDefault(); deleteSelection(); }
+        else if (key === 'escape') select(new Set());
+        return;
+      }
       if (key === 'z' && !event.shiftKey) { event.preventDefault(); doUndo(); }
       else if ((key === 'z' && event.shiftKey) || key === 'y') { event.preventDefault(); doRedo(); }
+      else if (key === 'd' && selection.current.size > 0) { event.preventDefault(); duplicateSelection(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [doUndo, doRedo]);
+  }, [doUndo, doRedo, deleteSelection, duplicateSelection, select]);
 
   // The stroke being written, drawn whole on the live canvas at each move.
   const paintLive = useCallback(() => {
@@ -409,10 +475,21 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.clearRect(0, 0, canvas.width, canvas.height);
     const stroke = writing.current?.stroke;
-    if (!stroke) return;
+    const loop = lassoing.current?.path;
+    if (!stroke && !loop) return;
     const { x, y, z } = camera.current;
     context.setTransform(ratio * z, 0, 0, ratio * z, -x * z * ratio, -y * z * ratio);
-    drawBoardStroke(context, stroke);
+    if (stroke) drawBoardStroke(context, stroke);
+    if (loop && loop.length >= 4) {
+      context.strokeStyle = '#111827';
+      context.lineWidth = 1.5 / z;
+      context.setLineDash([6 / z, 4 / z]);
+      context.beginPath();
+      context.moveTo(loop[0], loop[1]);
+      for (let i = 2; i < loop.length; i += 2) context.lineTo(loop[i], loop[i + 1]);
+      context.stroke();
+      context.setLineDash([]);
+    }
   }, []);
 
   const local = (event: { clientX: number; clientY: number }) => {
@@ -481,7 +558,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         // A palm resting while the pen writes, just after it wrote, or as it hovers does nothing;
         // nor does a contact as wide as a palm.
         const now = performance.now();
-        const palm = writing.current || erasing.current || now - penSeen.current < PALM_GRACE_MS || Math.max(event.width, event.height) > PALM_SIZE;
+        const palm = writing.current || erasing.current || lassoing.current || moving.current || now - penSeen.current < PALM_GRACE_MS || Math.max(event.width, event.height) > PALM_SIZE;
         // A third contact, or a second one landing late, is a hand settling, not a pinch.
         const late = touches.current.size >= 2 || (touches.current.size === 1 && now - firstTouch > PINCH_WINDOW_MS);
         if (palm || late || blocked.size > 0) {
@@ -512,6 +589,19 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         eraseAlong(at, at);
         return;
       }
+      if (style.current.tool === 'lasso') {
+        // Inside the selection's box drags it; anywhere else starts a new loop.
+        const box = selection.current.size > 0 ? boardBounds(board(), selection.current) : null;
+        const pad = SELECTION_PAD / camera.current.z;
+        if (box && at.x >= box.minX - pad && at.x <= box.maxX + pad && at.y >= box.minY - pad && at.y <= box.maxY + pad) {
+          moving.current = { pointer: event.pointerId, fromX: at.x, fromY: at.y, dx: 0, dy: 0 };
+          return;
+        }
+        select(new Set());
+        lassoing.current = { pointer: event.pointerId, path: [at.x, at.y] };
+        paintLive();
+        return;
+      }
       const { tool: chosen, size: penSize, color: ink } = style.current;
       const highlighter = chosen === 'highlighter';
       const points: number[] = [];
@@ -527,7 +617,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     const move = (event: PointerEvent) => {
       if (event.pointerType === 'touch') {
         // Fingers that were down before the pen don't move the page under it.
-        if (!touches.current.has(event.pointerId) || writing.current || erasing.current) return;
+        if (!touches.current.has(event.pointerId) || writing.current || erasing.current || lassoing.current || moving.current) return;
         touches.current.set(event.pointerId, local(event));
         const points = [...touches.current.values()];
         if (pinch && points.length >= 2) {
@@ -560,6 +650,25 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         }
         return;
       }
+      const drag = moving.current;
+      if (drag && drag.pointer === event.pointerId) {
+        const at = toBoard(camera.current, local(event).x, local(event).y);
+        drag.dx = at.x - drag.fromX;
+        drag.dy = at.y - drag.fromY;
+        repaint();
+        return;
+      }
+      const loop = lassoing.current;
+      if (loop && loop.pointer === event.pointerId) {
+        const step = 2 / camera.current.z;
+        for (const sample of samples) {
+          const at = toBoard(camera.current, local(sample).x, local(sample).y);
+          const [lastX, lastY] = loop.path.slice(-2);
+          if (Math.hypot(at.x - lastX, at.y - lastY) >= step) loop.path.push(at.x, at.y);
+        }
+        paintLive();
+        return;
+      }
       const current = writing.current;
       if (!current || current.pointer !== event.pointerId) return;
       // Samples closer than a screen pixel add nothing but weight.
@@ -582,6 +691,21 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         return;
       }
       if (booxPen(event) && !writing.current && !erasing.current) return;
+      const drag = moving.current;
+      if (drag && drag.pointer === event.pointerId) {
+        moving.current = null;
+        // The selection keeps its ids, so it stays selected where it landed.
+        if (event.type !== 'pointercancel' && (drag.dx !== 0 || drag.dy !== 0)) apply(moveItems(board(), selection.current, drag.dx, drag.dy));
+        else repaint();
+        return;
+      }
+      const loop = lassoing.current;
+      if (loop && loop.pointer === event.pointerId) {
+        lassoing.current = null;
+        paintLive();
+        if (event.type !== 'pointercancel') select(itemsInLasso(board(), index.current, loop.path));
+        return;
+      }
       if (erasing.current) {
         const pass = erasing.current;
         erasing.current = null;
@@ -631,7 +755,13 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       canvas.removeEventListener('pointercancel', up);
       canvas.removeEventListener('wheel', wheel);
     };
-  }, [apply, paintLive, repaint, setCamera, booxOwns, gesture]);
+  }, [apply, paintLive, repaint, setCamera, booxOwns, gesture, select]);
+
+  /** The lasso's selection still on the board, or null for the whole board. */
+  const selectedIds = (current: BoardInk) => {
+    const ids = new Set([...current.strokes, ...current.images].map((item) => item.id).filter((id) => selection.current.has(id)));
+    return ids.size > 0 ? ids : null;
+  };
 
   useImperativeHandle(handleRef, () => ({
     fitWidth: () => fitTo(camera.current.y),
@@ -640,10 +770,11 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       const load = loads.current;
       const revision = inkRevision;
       const current = board();
+      const ids = selectedIds(current);
       await loadPictures(current);
       if (loads.current !== load || loadPending.current || inkRevision !== revision) throw new Error('The board changed during capture');
       try {
-        return tutorImages(current, loaded(), null);
+        return tutorImages(current, loaded(), ids);
       } catch (error) {
         // Too many close-ups asks for a selection; anything else is a failed picture.
         if (error instanceof Error && error.message.includes('close-ups')) throw error;
@@ -653,7 +784,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     captureImage: async () => {
       const current = board();
       await loadPictures(current);
-      const picture = renderItems(current, loaded(), null, TUTOR_IMAGE_PADDING, TUTOR_IMAGE_SIDE, 2);
+      const picture = renderItems(current, loaded(), selectedIds(current), TUTOR_IMAGE_PADDING, TUTOR_IMAGE_SIDE, 2);
       return picture ? picture.canvas.toDataURL('image/png').split(',')[1] ?? '' : '';
     },
     captureThumbnail: async () => {
@@ -695,25 +826,25 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       pictures.current.set(image.id, { src, image: picture, ready: Promise.resolve() });
       apply(addItems(current, [], [image]));
       fitTo(y - PROBLEM_TOP / fitZoom(board().page, view.current));
-      setTool('pen');
+      chooseTool('pen');
       return true;
     },
     getRevision: () => inkRevision,
     getDocument: () => null,
     getInk: () => (loadPending.current ? null : board()),
     // Clear leaves the problem picture, as it is locked.
-    clear: () => apply(removeItems(board(), new Set([...board().strokes.map((stroke) => stroke.id), ...board().images.filter((image) => !image.problem).map((image) => image.id)]))),
-  }), [apply, fitTo, loadPictures, loaded]);
+    clear: () => { select(new Set()); apply(removeItems(board(), new Set([...board().strokes.map((stroke) => stroke.id), ...board().images.filter((image) => !image.problem).map((image) => image.id)]))); },
+  }), [apply, chooseTool, fitTo, loadPictures, loaded, select]);
 
   const button = 'flex items-center justify-center min-h-11 min-w-11 px-2 text-sm rounded-lg border bg-white hover:bg-gray-50 disabled:opacity-40';
   const pressed = (on: boolean) => `${button} ${on ? 'border-2 border-gray-900 font-semibold text-gray-900' : 'border-gray-300 text-gray-800'}`;
 
   return (
-    <div ref={container} className="absolute inset-0 overflow-hidden" data-ink-board="true" data-strokes="0" data-images="0">
+    <div ref={container} className="absolute inset-0 overflow-hidden" data-ink-board="true" data-strokes="0" data-images="0" data-selected="0">
       <canvas ref={inkCanvas} className="absolute inset-0" aria-hidden="true" />
       <canvas
         ref={liveCanvas}
-        className={`absolute inset-0 touch-none ${tool === 'eraser' ? 'cursor-cell' : 'cursor-crosshair'}`}
+        className={`absolute inset-0 touch-none ${tool === 'eraser' ? 'cursor-cell' : tool === 'lasso' ? 'cursor-default' : 'cursor-crosshair'}`}
         role="img"
         aria-label="Ink board"
         data-testid="ink-board"
@@ -721,10 +852,23 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       {!toolsHidden && (
         <div role="toolbar" aria-label="Ink tools" className="absolute top-2 left-2 right-2 flex flex-wrap items-center gap-1.5 pointer-events-none [&>*]:pointer-events-auto">
           <div className="flex gap-1 p-1 bg-white/95 border border-gray-200 rounded-xl shadow-sm">
-            <button className={pressed(tool === 'pen')} aria-pressed={tool === 'pen'} onClick={() => setTool('pen')}>Pen</button>
-            <button className={pressed(tool === 'highlighter')} aria-pressed={tool === 'highlighter'} onClick={() => setTool('highlighter')}>Highlight</button>
-            <button className={pressed(tool === 'eraser')} aria-pressed={tool === 'eraser'} onClick={() => setTool('eraser')}>Eraser</button>
+            <button className={pressed(tool === 'pen')} aria-pressed={tool === 'pen'} onClick={() => chooseTool('pen')}>Pen</button>
+            <button className={pressed(tool === 'highlighter')} aria-pressed={tool === 'highlighter'} onClick={() => chooseTool('highlighter')}>Highlight</button>
+            <button className={pressed(tool === 'eraser')} aria-pressed={tool === 'eraser'} onClick={() => chooseTool('eraser')}>Eraser</button>
+            <button className={pressed(tool === 'lasso')} aria-pressed={tool === 'lasso'} title="Circle ink to select it" onClick={() => chooseTool('lasso')}>Lasso</button>
           </div>
+          {tool === 'lasso' && (
+            <div className="flex items-center gap-1 p-1 bg-white/95 border border-gray-200 rounded-xl shadow-sm" role="group" aria-label="Selection">
+              {selected === 0 && <span className="px-2 text-sm text-gray-600">Circle ink to select it</span>}
+              {selected > 0 && (
+                <>
+                  <button className={pressed(false)} title="Delete the selection (Delete)" onClick={deleteSelection}>Delete</button>
+                  <button className={pressed(false)} title="Put a copy beside it (Ctrl+D)" onClick={duplicateSelection}>Duplicate</button>
+                  <button className={pressed(false)} title="Let go of the selection (Esc)" onClick={() => select(new Set())}>Done</button>
+                </>
+              )}
+            </div>
+          )}
           {tool === 'pen' && (
             <div className="flex gap-1 p-1 bg-white/95 border border-gray-200 rounded-xl shadow-sm" role="group" aria-label="Pen size">
               {(Object.keys(PEN_WIDTHS) as PenSize[]).map((value) => (
@@ -734,7 +878,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
               ))}
             </div>
           )}
-          {tool !== 'eraser' && (
+          {(tool === 'pen' || tool === 'highlighter') && (
             <div className="flex gap-1 p-1 bg-white/95 border border-gray-200 rounded-xl shadow-sm" role="group" aria-label="Ink color">
               {COLORS.map((value) => (
                 <button key={value} className={pressed(color === value)} aria-pressed={color === value} aria-label={value[0].toUpperCase() + value.slice(1)} title={value[0].toUpperCase() + value.slice(1)} onClick={() => setColor(value)}>
