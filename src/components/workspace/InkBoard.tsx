@@ -38,6 +38,10 @@ const PROBLEM_TOP = 64;
 // wide (CSS px; a fingertip is about 20), is a resting hand, not a scroll.
 const PALM_GRACE_MS = 800;
 const PALM_SIZE = 48;
+// Two fingers pinch only when the second lands this soon after the first (a palm settles contact by
+// contact), and zoom only once their spread has changed by this fraction (a resting hand drifts).
+const PINCH_WINDOW_MS = 250;
+const PINCH_START = 0.15;
 // Room above the first work when a board opens, in screen px.
 const OPEN_TOP = 80;
 const COLORS: InkColor[] = ['black', 'gray', 'blue', 'red', 'green'];
@@ -104,12 +108,15 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   const penSeen = useRef(-Infinity);
   const mirrorTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const frame = useRef(0);
+  // On a BOOX, a gesture's frames are spaced out (frameGap): when the last one was painted, and the wait for the next.
+  const lastPaint = useRef(0);
+  const paced = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Strokes and eraser passes the BOOX pen hands over (set below, once the edits exist).
   const fromBoox = useRef({ stroke: (flat: number[]) => void flat, erase: (flat: number[]) => void flat });
   const onBooxStroke = useCallback((flat: number[]) => fromBoox.current.stroke(flat), []);
   const onBooxErase = useCallback((flat: number[]) => fromBoox.current.erase(flat), []);
-  const { owns: booxOwns, painted, gesture } = useBooxInk({
+  const { owns: booxOwns, painted, gesture, frameGap } = useBooxInk({
     container,
     sdk: tool !== 'eraser',
     preview: tool === 'highlighter'
@@ -130,6 +137,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
 
   const paint = useCallback(() => {
     frame.current = 0;
+    lastPaint.current = performance.now();
     const canvas = inkCanvas.current;
     const { w, h } = view.current;
     if (!canvas || w === 0 || h === 0) return;
@@ -188,8 +196,14 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   }, [loaded, painted]);
 
   const repaint = useCallback(() => {
-    if (!frame.current) frame.current = requestAnimationFrame(paint);
-  }, [paint]);
+    if (frame.current || paced.current) return;
+    const wait = lastPaint.current + frameGap() - performance.now();
+    if (wait <= 0) { frame.current = requestAnimationFrame(paint); return; }
+    paced.current = setTimeout(() => {
+      paced.current = undefined;
+      if (!frame.current) frame.current = requestAnimationFrame(paint);
+    }, wait);
+  }, [paint, frameGap]);
 
   /** Starts loading the board's pictures; resolves when all have loaded (or failed). */
   const loadPictures = useCallback((current: BoardInk) => {
@@ -354,6 +368,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     // Development mounts twice (Strict Mode): a cancelled frame left in `frame` would stop all repaints.
     cancelAnimationFrame(frame.current);
     frame.current = 0;
+    clearTimeout(paced.current);
+    paced.current = undefined;
   }, [mirror]);
 
   const doUndo = useCallback(() => {
@@ -408,8 +424,11 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   useEffect(() => {
     const canvas = liveCanvas.current;
     if (!canvas) return;
-    let pinch: { distance: number; mid: { x: number; y: number } } | null = null;
+    let pinch: { distance: number; mid: { x: number; y: number }; start: number; zooming: boolean } | null = null;
     let lastTouch: { x: number; y: number } | null = null;
+    // Contacts taken for a hand (and every contact while one is down) move nothing until they lift.
+    const blocked = new Set<number>();
+    let firstTouch = 0;
 
     const eraseAlong = (from: { x: number; y: number }, to: { x: number; y: number }) => {
       const pass = erasing.current;
@@ -425,7 +444,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       const points = [...touches.current.values()];
       if (points.length >= 2) {
         const [a, b] = points;
-        pinch = { distance: Math.hypot(a.x - b.x, a.y - b.y), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+        const distance = Math.hypot(a.x - b.x, a.y - b.y);
+        pinch = { distance, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, start: distance, zooming: false };
         lastTouch = null;
       } else {
         pinch = null;
@@ -445,6 +465,12 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       if (event.pointerType !== 'pen') return;
       penSeen.current = performance.now();
       if (touches.current.size === 0) return;
+      handDown();
+    };
+
+    // The fingers down are a hand after all: the gesture ends and they do nothing until lifted.
+    const handDown = () => {
+      for (const id of touches.current.keys()) blocked.add(id);
       touches.current.clear();
       touchState();
       gesture(false);
@@ -454,9 +480,16 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       if (event.pointerType === 'touch') {
         // A palm resting while the pen writes, just after it wrote, or as it hovers does nothing;
         // nor does a contact as wide as a palm.
-        if (writing.current || erasing.current) return;
-        if (performance.now() - penSeen.current < PALM_GRACE_MS) return;
-        if (Math.max(event.width, event.height) > PALM_SIZE) return;
+        const now = performance.now();
+        const palm = writing.current || erasing.current || now - penSeen.current < PALM_GRACE_MS || Math.max(event.width, event.height) > PALM_SIZE;
+        // A third contact, or a second one landing late, is a hand settling, not a pinch.
+        const late = touches.current.size >= 2 || (touches.current.size === 1 && now - firstTouch > PINCH_WINDOW_MS);
+        if (palm || late || blocked.size > 0) {
+          blocked.add(event.pointerId);
+          if (touches.current.size > 0) handDown();
+          return;
+        }
+        if (touches.current.size === 0) firstTouch = now;
         touches.current.set(event.pointerId, local(event));
         canvas.setPointerCapture(event.pointerId);
         touchState();
@@ -501,10 +534,15 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
           const [a, b] = points;
           const distance = Math.hypot(a.x - b.x, a.y - b.y);
           const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+          if (!pinch.zooming) {
+            // Nothing moves until the fingers clearly spread or close; then the zoom starts from here.
+            if (Math.abs(distance / pinch.start - 1) < PINCH_START) return;
+            pinch = { ...pinch, distance, mid, zooming: true };
+          }
           fitted.current = false;
           const zoomed = zoomAbout(camera.current, distance / pinch.distance, mid, board().page, view.current);
           setCamera({ ...zoomed, x: zoomed.x - (mid.x - pinch.mid.x) / zoomed.z, y: zoomed.y - (mid.y - pinch.mid.y) / zoomed.z });
-          pinch = { distance, mid };
+          pinch = { ...pinch, distance, mid };
         } else if (lastTouch) {
           const at = local(event);
           setCamera({ ...camera.current, x: camera.current.x - (at.x - lastTouch.x) / camera.current.z, y: camera.current.y - (at.y - lastTouch.y) / camera.current.z });
@@ -573,7 +611,11 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       setCamera({ ...camera.current, x: camera.current.x + (event.deltaX * scale) / camera.current.z, y: camera.current.y + (event.deltaY * scale) / camera.current.z });
     };
 
+    // A hand lifting anywhere (it may have slid off the board) frees its contacts.
+    const lifted = (event: PointerEvent) => { blocked.delete(event.pointerId); };
     for (const type of ['pointerdown', 'pointermove', 'pointerup'] as const) window.addEventListener(type, penNear, true);
+    window.addEventListener('pointerup', lifted, true);
+    window.addEventListener('pointercancel', lifted, true);
     canvas.addEventListener('pointerdown', down);
     canvas.addEventListener('pointermove', move);
     canvas.addEventListener('pointerup', up);
@@ -581,6 +623,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     canvas.addEventListener('wheel', wheel, { passive: false });
     return () => {
       for (const type of ['pointerdown', 'pointermove', 'pointerup'] as const) window.removeEventListener(type, penNear, true);
+      window.removeEventListener('pointerup', lifted, true);
+      window.removeEventListener('pointercancel', lifted, true);
       canvas.removeEventListener('pointerdown', down);
       canvas.removeEventListener('pointermove', move);
       canvas.removeEventListener('pointerup', up);

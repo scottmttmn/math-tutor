@@ -88,6 +88,8 @@ try {
   await page.keyboard.down('Control');
   await page.mouse.wheel(0, -300);
   await page.keyboard.up('Control');
+  // Wheel frames come at the panel's pace on a BOOX, so the zoom shows a moment later.
+  await page.waitForFunction(() => Number(document.querySelector('[data-ink-board]').getAttribute('data-zoom')) > 1.2);
   const zoomed = Number(await board.getAttribute('data-zoom'));
   assert.ok(zoomed > 1.2);
   await waitLast('setWidth', `options.width > ${small * 1.5 * 1.2}`);
@@ -163,6 +165,25 @@ try {
   await waitLast('interaction', 'options.active === false');
   assert.ok((await calls('interaction')).length > before);
 
+  // A fast drag is painted at the panel's pace, not every frame, and ends where the finger stopped.
+  await page.evaluate(() => {
+    window.__paints = 0;
+    new MutationObserver(() => { window.__paints += 1; }).observe(document.querySelector('[data-ink-board]'), { attributeFilter: ['data-view-y'] });
+  });
+  const startY = Number(await board.getAttribute('data-view-y'));
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [finger] });
+  for (let step = 1; step <= 30; step += 1) {
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...finger, y: finger.y - step * 4 }] });
+    await page.waitForTimeout(10);
+  }
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.waitForTimeout(400);
+  const paints = await page.evaluate(() => window.__paints);
+  assert.ok(paints >= 1 && paints <= 8, `a fast drag painted ${paints} times`);
+  const endY = Number(await board.getAttribute('data-view-y'));
+  // The last move is painted once the drag ends: the view moved the whole 120 px (fit zoom is near 1 here).
+  assert.ok(endY - startY > 80, `the view followed the finger (${startY} to ${endY})`);
+
   // Palm rejection: a hand resting as the pen hovers, just after a stroke, or as wide as a palm
   // doesn't scroll; a finger a moment later still does.
   const viewY = async () => Number(await board.getAttribute('data-view-y'));
@@ -185,6 +206,31 @@ try {
   await page.waitForTimeout(900);
   assert.equal(await drag(40), 0, 'a contact as wide as a palm');
   assert.ok(await drag() > 0, 'a finger still scrolls');
+
+  // A hand settling contact by contact, or two fingers resting and drifting, neither zooms nor
+  // scrolls; a deliberate pinch still zooms.
+  await page.waitForTimeout(300);
+  const zoomNow = async () => Number(await board.getAttribute('data-zoom'));
+  const twoFingers = async ({ gap, spread }) => {
+    const before = { zoom: await zoomNow(), y: await viewY() };
+    const a = { id: 4, x: box.x + 450, y: box.y + 450, radiusX: 5, radiusY: 5 };
+    const b = { id: 5, x: box.x + 550, y: box.y + 450, radiusX: 5, radiusY: 5 };
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [a] });
+    await page.waitForTimeout(gap);
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [a, b] });
+    for (let step = 1; step <= 5; step++) {
+      const out = (spread * step) / 5;
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...a, x: a.x - out, y: a.y - step * 10 }, { ...b, x: b.x + out, y: b.y - step * 10 }] });
+    }
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(400);
+    return { zoom: (await zoomNow()) / before.zoom, moved: (await viewY()) - before.y };
+  };
+  const settling = await twoFingers({ gap: 400, spread: 40 });
+  assert.equal(settling.zoom, 1, 'a hand settling contact by contact does not zoom');
+  assert.equal(settling.moved, 0, 'a hand settling contact by contact does not scroll');
+  assert.equal((await twoFingers({ gap: 20, spread: 4 })).zoom, 1, 'two resting fingers drifting do not zoom');
+  assert.ok((await twoFingers({ gap: 20, spread: 60 })).zoom > 1.2, 'a pinch zooms');
   await pen.detach();
   await touch.detach();
 
@@ -194,7 +240,7 @@ try {
   await page.waitForFunction(() => window.__boox.calls.at(-1)?.method === 'stop' || window.__boox.calls.filter((call) => call.method === 'stop').length >= 2);
 
   assert.deepEqual(errors, []);
-  console.log('PASS BOOX ink board: the SDK draws the pen and highlighter into ink, erases, previews tool/size/ink/zoom, pauses under menus, fast mode for the eraser and fingers, palms rejected');
+  console.log('PASS BOOX ink board: the SDK draws the pen and highlighter into ink, erases, previews tool/size/ink/zoom, pauses under menus, fast mode for the eraser and fingers, palms rejected (pinches too)');
 } finally {
   await browser.close();
 }

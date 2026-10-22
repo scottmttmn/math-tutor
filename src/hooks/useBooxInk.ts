@@ -9,6 +9,9 @@ import type { BooxPenBox } from '@/types';
 const REFRESH_DELAY_MS = 300;
 // Finger and wheel gestures keep the panel's fast mode until they have rested this long.
 const SETTLE_MS = 180;
+// While a gesture moves the board, frames come no faster than the panel draws them in fast mode:
+// at 60 a second each was drawn over the last unfinished one, and the ink showed many times over.
+const GESTURE_FRAME_MS = 150;
 // The board's own controls over the canvas, which the pen must still be able to tap.
 const CONTROLS = '[role="toolbar"] > *, [data-testid="show-tools"]';
 // Anything that, while open, sits over the board and takes the pen: menus, dialogs, popovers.
@@ -34,6 +37,8 @@ export interface BooxInk {
   painted: () => void;
   /** A finger or wheel gesture began (true) or its last contact ended (false). */
   gesture: (active: boolean) => void;
+  /** How long the board waits between frames now: while a finger or wheel moves it on a BOOX, the panel's pace. */
+  frameGap: () => number;
 }
 
 /**
@@ -207,5 +212,7 @@ export function useBooxInk({ container, sdk, preview, onStroke, onErase }: BooxI
     fast.current.timer = setTimeout(() => { fast.current.gesture = false; setFast(); }, SETTLE_MS);
   }, [available, setFast]);
 
-  return { owns, painted, gesture };
+  const frameGap = useCallback(() => (available && fast.current.gesture ? GESTURE_FRAME_MS : 0), [available]);
+
+  return { owns, painted, gesture, frameGap };
 }
