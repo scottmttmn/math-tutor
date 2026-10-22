@@ -61,7 +61,10 @@ async function nativeFetch(url: string, init: RequestInit): Promise<Response> {
   });
   const response = await Promise.race([request, aborted]);
   const body = typeof response.data === 'string' ? response.data : JSON.stringify(response.data ?? null);
-  return new Response(response.status === 204 || response.status === 304 ? null : body, { status: response.status, headers: response.headers });
+  // Bytes, not a string: a string body would add Content-Type text/plain where OpenAI sent none,
+  // and the SDK only takes a reply stream that is text/event-stream or unlabelled.
+  const bytes = response.status === 204 || response.status === 304 ? null : new TextEncoder().encode(body);
+  return new Response(bytes, { status: response.status, headers: response.headers });
 }
 
 interface SavedConnection {
