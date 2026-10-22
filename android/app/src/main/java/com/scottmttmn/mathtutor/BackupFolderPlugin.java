@@ -126,7 +126,7 @@ public class BackupFolderPlugin extends Plugin {
         call.resolve();
     }
 
-    /** The files and folders in a folder: { entries: [{ name, directory, size }] }, made first when create is set. */
+    /** The files and folders in a folder: { entries: [{ name, directory, size }] } (size -1 when the provider doesn't say), made first when create is set. */
     @PluginMethod
     public void list(PluginCall call) {
         guarded(call, () -> {
@@ -148,23 +148,57 @@ public class BackupFolderPlugin extends Plugin {
         });
     }
 
-    /** Opens a file in a folder for writing, replacing what it held: { id } for write() and close(). */
+    /**
+     * Opens a file in a folder for writing: { id } for write() and close(). A file that is already
+     * there is replaced only once the new one is whole: it is written as a hidden ".partial" copy
+     * beside it, which close() renames into its place, so a write cut off (the app killed, a failed
+     * piece) leaves the old file as it was. Where the provider can't rename, the file is written
+     * in place.
+     */
     @PluginMethod
     public void openWrite(PluginCall call) {
         guarded(call, () -> {
             Uri tree = Uri.parse(call.getString("tree"));
             String name = call.getString("name");
             String folder = folder(tree, call.getArray("path"), true);
+            Uri parent = DocumentsContract.buildDocumentUriUsingTree(tree, folder);
             Child existing = find(tree, folder, name);
             if (existing != null && existing.directory) throw new IOException(name + " is a folder.");
-            Uri file = existing != null ? DocumentsContract.buildDocumentUriUsingTree(tree, existing.id)
-                : DocumentsContract.createDocument(resolver(), DocumentsContract.buildDocumentUriUsingTree(tree, folder), BYTES, name);
-            if (file == null) throw new IOException("Couldn't make " + name + ".");
-            OutputStream out = OpenFiles.openReplacing(resolver(), file);
             JSObject answer = new JSObject();
-            answer.put("id", OpenFiles.add(out, file));
+            if (existing == null) {
+                Uri file = DocumentsContract.createDocument(resolver(), parent, BYTES, name);
+                if (file == null) throw new IOException("Couldn't make " + name + ".");
+                answer.put("id", OpenFiles.add(OpenFiles.openReplacing(resolver(), file), file));
+                call.resolve(answer);
+                return;
+            }
+            Uri old = DocumentsContract.buildDocumentUriUsingTree(tree, existing.id);
+            String partialName = "." + name + ".partial";
+            Child left = find(tree, folder, partialName);
+            if (left != null) DocumentsContract.deleteDocument(resolver(), DocumentsContract.buildDocumentUriUsingTree(tree, left.id));
+            Uri partial = DocumentsContract.createDocument(resolver(), parent, BYTES, partialName);
+            if (partial != null && !canRename(partial)) {
+                DocumentsContract.deleteDocument(resolver(), partial);
+                partial = null;
+            }
+            if (partial == null) {
+                answer.put("id", OpenFiles.add(OpenFiles.openReplacing(resolver(), old), old));
+                call.resolve(answer);
+                return;
+            }
+            Uri written = partial;
+            answer.put("id", OpenFiles.add(OpenFiles.openReplacing(resolver(), written), written, () -> {
+                DocumentsContract.deleteDocument(resolver(), old);
+                if (DocumentsContract.renameDocument(resolver(), written, name) == null) throw new IOException("Couldn't rename " + partialName + ".");
+            }));
             call.resolve(answer);
         });
+    }
+
+    private boolean canRename(Uri document) {
+        try (Cursor cursor = resolver().query(document, new String[] { Document.COLUMN_FLAGS }, null, null, null)) {
+            return cursor != null && cursor.moveToFirst() && (cursor.getInt(0) & Document.FLAG_SUPPORTS_RENAME) != 0;
+        }
     }
 
     @PluginMethod
@@ -291,7 +325,7 @@ public class BackupFolderPlugin extends Plugin {
         try (Cursor cursor = resolver().query(uri, columns, null, null, null)) {
             if (cursor == null) throw new IOException("Couldn't read the folder.");
             while (cursor.moveToNext()) {
-                children.add(new Child(cursor.getString(0), cursor.getString(1), Document.MIME_TYPE_DIR.equals(cursor.getString(2)), cursor.isNull(3) ? 0 : cursor.getLong(3)));
+                children.add(new Child(cursor.getString(0), cursor.getString(1), Document.MIME_TYPE_DIR.equals(cursor.getString(2)), cursor.isNull(3) ? -1 : cursor.getLong(3)));
             }
         }
         return children;

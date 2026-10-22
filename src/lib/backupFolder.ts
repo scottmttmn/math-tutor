@@ -1,5 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import { BOARD_FOLDER, PDF_FOLDER } from '@/lib/backup';
+import { BOARD_FOLDER, MANIFEST_NAME, PDF_FOLDER } from '@/lib/backup';
 import { CHUNK_BYTES, base64ToBlob, writeInChunks } from '@/lib/nativeFiles';
 import type { BackupDirectory, BackupFolderPlugin } from '@/types';
 
@@ -44,7 +44,7 @@ async function native<T>(call: Promise<T>): Promise<T> {
 export function androidDirectory(tree: string, name: string, path: string[] = []): BackupDirectory {
   let listing: Promise<Map<string, number | null>> | undefined;
   const entries = () => (listing ??= native(BackupFolder.list({ tree, path, create: true }))
-    .then(({ entries }) => new Map(entries.map((entry) => [entry.name, entry.directory ? null : entry.size])))
+    .then(({ entries }) => new Map(entries.map((entry) => [entry.name, entry.directory || entry.size < 0 ? null : entry.size])))
     .catch((error) => { listing = undefined; throw error; }));
   return {
     name,
@@ -72,13 +72,15 @@ export async function pickAndroidFolder(keep = true): Promise<{ tree: string; na
 export const androidFolderAllowed = (tree: string) => BackupFolder.check({ tree }).then(({ granted }) => granted, () => false);
 export const releaseAndroidFolder = (tree: string) => BackupFolder.release({ tree }).catch(() => undefined);
 
-async function readFile(tree: string, path: string[], name: string, size: number): Promise<Blob> {
+// Read up to a short piece, not to the listed size: some providers don't say a file's size.
+async function readFile(tree: string, path: string[], name: string): Promise<Blob> {
   const parts: Blob[] = [];
-  for (let offset = 0; offset < size; offset += CHUNK_BYTES) {
+  for (let offset = 0; ; offset += CHUNK_BYTES) {
     const { data } = await native(BackupFolder.read({ tree, path, name, offset, length: CHUNK_BYTES }));
-    parts.push(await base64ToBlob(data));
+    const part = await base64ToBlob(data);
+    parts.push(part);
+    if (part.size < CHUNK_BYTES) return new Blob(parts);
   }
-  return new Blob(parts);
 }
 
 /**
@@ -93,14 +95,16 @@ export async function pickAndroidBackupFiles(backupFolderName: string): Promise<
   const list = async (path: string[]) => (await native(BackupFolder.list({ tree, path }))).entries;
   let root: string[] = [];
   let top = await list(root);
+  // The picked folder is the backup only if it holds a backup's own JSON, not any JSON file.
+  const isBackup = (entries: typeof top) => entries.some((entry) => !entry.directory && (entry.name === MANIFEST_NAME || /^backup-\d{4}-\d{2}-\d{2}\.json$/.test(entry.name)));
   const inside = top.find((entry) => entry.directory && entry.name === backupFolderName);
-  if (!top.some((entry) => !entry.directory && entry.name.endsWith('.json')) && inside) {
+  if (!isBackup(top) && inside) {
     root = [backupFolderName];
     top = await list(root);
   }
   const files: File[] = [];
-  const add = async (path: string[], entry: { name: string; size: number }) => {
-    const file = new File([await readFile(tree, [...root, ...path], entry.name, entry.size)], entry.name);
+  const add = async (path: string[], entry: { name: string }) => {
+    const file = new File([await readFile(tree, [...root, ...path], entry.name)], entry.name);
     Object.defineProperty(file, 'webkitRelativePath', { value: [backupFolderName, ...path, entry.name].join('/') });
     files.push(file);
   };

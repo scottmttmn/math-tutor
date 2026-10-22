@@ -386,7 +386,9 @@ try {
   await app.getByRole('button', { name: 'Pick folder and back up' }).click();
   await app.getByRole('button', { name: 'Back up now' }).waitFor();
 
-  // Restore from folder reads the picked folder through Android (just this once) and offers its days.
+  // Restore from folder reads the picked folder through Android (just this once) and offers its
+  // days; the folder holding the backup works too, whatever else is in it.
+  await app.evaluate(() => { window.folderTree.files['settings.json'] = btoa('{}'); });
   await app.getByRole('button', { name: 'Restore from folder…' }).click();
   await app.getByText('Restore this folder as it was').waitFor();
   assert.deepEqual((await app.evaluate(() => window.folderPicks)).at(-1), { keep: false });

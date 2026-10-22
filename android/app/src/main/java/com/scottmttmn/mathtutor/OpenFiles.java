@@ -17,13 +17,20 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 final class OpenFiles {
 
+    /** Runs once the file is whole, e.g. to put a finished copy in the place of the old file. */
+    interface Finish {
+        void run() throws Exception;
+    }
+
     private static final class Open {
         final OutputStream out;
         final Uri uri;
+        final Finish finish;
 
-        Open(OutputStream out, Uri uri) {
+        Open(OutputStream out, Uri uri, Finish finish) {
             this.out = out;
             this.uri = uri;
+            this.finish = finish;
         }
     }
 
@@ -45,8 +52,12 @@ final class OpenFiles {
     }
 
     static String add(OutputStream out, Uri uri) {
+        return add(out, uri, null);
+    }
+
+    static String add(OutputStream out, Uri uri, Finish finish) {
         String id = String.valueOf(next.getAndIncrement());
-        open.put(id, new Open(out, uri));
+        open.put(id, new Open(out, uri, finish));
         return id;
     }
 
@@ -60,6 +71,14 @@ final class OpenFiles {
         Open file = id == null ? null : open.remove(id);
         if (file == null) throw new IOException("That file isn't open.");
         file.out.close();
+        if (file.finish == null) return;
+        try {
+            file.finish.run();
+        } catch (IOException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new IOException("Couldn't finish the file.", error);
+        }
     }
 
     static void abort(ContentResolver resolver, String id) {
