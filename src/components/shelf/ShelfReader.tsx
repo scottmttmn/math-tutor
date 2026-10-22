@@ -117,6 +117,8 @@ export default function ShelfReader() {
   // Ink on the pages, by page number; the tool writing (null: reading); earlier ink for Undo.
   const [ink, setInk] = useState<Record<number, InkStroke[]>>({});
   const [inkTool, setInkTool] = useState<InkTool | null>(null);
+  // On a narrow screen the open board can swap out for the page, which then has the BOOX pen.
+  const [pageSwapped, setPageSwapped] = useState(false);
   const [inkUndo, setInkUndo] = useState<Record<number, InkStroke[][]>>({});
   const inkWrites = useRef<Promise<unknown>>(Promise.resolve());
   const switching = useRef(false);
@@ -684,7 +686,7 @@ export default function ShelfReader() {
         tool={inkTool}
         onInk={(strokes) => changeInk(page, strokes)}
         lit={litOnPage}
-        boox={!exercise}
+        boox={!exercise || pageSwapped}
       />
     </div>
   );
@@ -765,7 +767,7 @@ export default function ShelfReader() {
       {exercise ? (
         <BoardFrame
           fullScreen={fullScreen}
-          source={{ label: 'Page', wide: true, toolbar: pageToolbar, content: pageView, swap: { label: `Page ${name}`, key: `${exercise.id}:${openings}` } }}
+          source={{ label: 'Page', wide: true, toolbar: pageToolbar, content: pageView, swap: { label: `Page ${name}`, key: `${exercise.id}:${openings}`, onFlip: setPageSwapped } }}
           title={(
             <>
               <h2 className="font-semibold text-gray-900 truncate">{exercise.label}</h2>

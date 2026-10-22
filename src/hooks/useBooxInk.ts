@@ -45,6 +45,10 @@ export interface BooxInk {
   frameGap: () => number;
 }
 
+// The SDK has one session for the whole app: the board or the page that started it last. Another
+// one's stale calls must not stop or move it, and its strokes go to that one alone.
+let penOwner: object | null = null;
+
 /** The part of an element its scrolling ancestors show (a page scrolled partly out of view), or null when none is. */
 function clipped(element: HTMLElement): BooxPenBox | null {
   const rect = element.getBoundingClientRect();
@@ -127,6 +131,8 @@ export function useBooxInk({ container, enabled = true, exclude: excluded, sdk, 
 
     const sync = () => {
       if (stopped || status.failed) return;
+      // Another board or page took the pen meanwhile: start again once this one is shown.
+      if (status.started && penOwner !== status) Object.assign(status, { started: false, running: false, paused: false });
       const area = measure();
       const covered = Boolean(area) && [...document.querySelectorAll(OVERLAYS)].some((overlay) => {
         const box = boxOf(overlay.getBoundingClientRect());
@@ -139,6 +145,7 @@ export function useBooxInk({ container, enabled = true, exclude: excluded, sdk, 
       const key = JSON.stringify(area);
       if (!status.started) {
         status.started = true;
+        penOwner = status;
         lastRegion = key;
         void BooxPen.start({ ...area, ...previewRef.current }).then(
           () => {
@@ -180,7 +187,7 @@ export function useBooxInk({ container, enabled = true, exclude: excluded, sdk, 
 
     const listen = (event: 'stroke' | 'erase') => {
       const added = BooxPen.addListener(event, ({ points }) => {
-        if (stopped) return;
+        if (stopped || penOwner !== status) return;
         if (event === 'stroke') handlers.current.onStroke(points);
         else handlers.current.onErase(points);
       });
@@ -193,7 +200,10 @@ export function useBooxInk({ container, enabled = true, exclude: excluded, sdk, 
       stopped = true;
       status.running = false;
       removers.forEach((remove) => remove());
-      if (status.started) void BooxPen.stop().catch(() => undefined);
+      if (status.started && penOwner === status) {
+        penOwner = null;
+        void BooxPen.stop().catch(() => undefined);
+      }
     };
   }, [available, sdk, container, excluded]);
 
@@ -203,19 +213,19 @@ export function useBooxInk({ container, enabled = true, exclude: excluded, sdk, 
     const { current } = previewRef;
     const changed = current.width !== width || current.color !== color || current.marker !== marker;
     previewRef.current = { width, color, marker };
-    if (!changed || !state.current.running) return;
+    if (!changed || !state.current.running || penOwner !== state.current) return;
     void BooxPen.setWidth({ width, color, marker }).catch(() => undefined);
   }, [width, color, marker]);
 
   useEffect(() => () => clearTimeout(refreshTimer.current), []);
 
-  const owns = useCallback(() => state.current.running && !state.current.paused, []);
+  const owns = useCallback(() => state.current.running && !state.current.paused && penOwner === state.current, []);
 
   const painted = useCallback(() => {
     if (!available) return;
     clearTimeout(refreshTimer.current);
     refreshTimer.current = setTimeout(() => {
-      if (state.current.started && !state.current.paused) void BooxPen.refresh().catch(() => undefined);
+      if (state.current.started && !state.current.paused && penOwner === state.current) void BooxPen.refresh().catch(() => undefined);
     }, REFRESH_DELAY_MS);
   }, [available]);
 

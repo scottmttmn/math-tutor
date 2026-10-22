@@ -97,8 +97,47 @@ try {
   await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === true);
   await page.getByRole('button', { name: 'Eraser', exact: true }).click();
   await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === false);
-  assert.deepEqual(errors, []);
   console.log('PASS BOOX pen on a page: SDK strokes and highlights become page ink, the eraser end rubs out, the Eraser tool uses fast mode, reading leaves the pen alone');
+
+  // An upright tablet: the exercise's board has the pen; swapped for the page, the page takes it,
+  // and its strokes never reach the hidden board; back on the board, the board takes it again.
+  await page.evaluate(() => localStorage.setItem('math-tutor:inkBoard', '1'));
+  await page.setViewportSize({ width: 800, height: 1100 });
+  await page.getByRole('button', { name: 'Mark', exact: true }).click();
+  const area = await overlay.boundingBox();
+  await page.mouse.move(area.x + area.width * 0.1, area.y + area.height * 0.1);
+  await page.mouse.down();
+  await page.mouse.move(area.x + area.width * 0.7, area.y + area.height * 0.25, { steps: 5 });
+  await page.mouse.up();
+  await page.getByRole('radio', { name: 'Exercise' }).click();
+  await page.getByRole('button', { name: 'Save and open' }).click();
+  const board = page.locator('[data-ink-board]');
+  await board.waitFor();
+  await overlay.waitFor({ state: 'hidden' });
+  const startsWith = async (count) => page.waitForFunction((n) => window.__boox.calls.filter((call) => call.method === 'start').length >= n, count);
+  let starts = (await calls('start')).length;
+  await startsWith(starts + 1).catch(() => undefined);
+  starts = (await calls('start')).length;
+  await page.getByRole('button', { name: /^Page \d+$/ }).click();
+  await overlay.waitFor();
+  await page.getByRole('button', { name: 'Pen', exact: true }).click();
+  await startsWith(starts + 1);
+  const shownPage = await overlay.boundingBox();
+  const lastStart = (await calls('start')).at(-1).options.region;
+  assert.ok(Math.abs(lastStart.x - shownPage.x) < 2 && Math.abs(lastStart.w - shownPage.width) < 2, 'the swapped-in page has the pen');
+  const before = await inkPixels();
+  await page.evaluate(([x, y]) => window.__boox.emit('stroke', [x, y, 0.5, 0, x + 200, y + 20, 0.5, 80]), [shownPage.x + 60, shownPage.y + 100]);
+  await inkShown(`count > ${before}`);
+  assert.equal(await board.getAttribute('data-strokes'), '0', 'the hidden board gets none of it');
+  starts = (await calls('start')).length;
+  await page.getByRole('button', { name: 'Back to board' }).click();
+  await board.waitFor();
+  await startsWith(starts + 1);
+  const boardBox = await board.boundingBox();
+  await page.evaluate(([x, y]) => window.__boox.emit('stroke', [x, y, 0.5, 0, x + 200, y + 20, 0.5, 80]), [boardBox.x + 100, boardBox.y + 300]);
+  await page.waitForFunction(() => document.querySelector('[data-ink-board]')?.getAttribute('data-strokes') === '1');
+  assert.deepEqual(errors, []);
+  console.log('PASS on an upright tablet the swapped-in page takes the BOOX pen, and the board takes it back');
 } finally {
   await browser.close();
 }
