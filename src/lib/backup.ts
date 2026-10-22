@@ -1,6 +1,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { listFolders, listInk, listSessions, listShelf, loadProfile, restoreRecords } from '@/lib/db';
 import { readZip, writeZip } from '@/lib/zip';
+import { writeInChunks } from '@/lib/nativeFiles';
 import { MAX_NOTEBOOK, RATINGS, favoriteEntry } from '@/lib/learnerProfile';
 import type { BackupManifest, BackupSession, FavoriteProblem, Folder, InkStroke, LearnerProfile, PageInk, ProfileTopic, RestoreResult, SaveFilePlugin, Session, ShelfDocument, TopicRating, TutorNote } from '@/types';
 
@@ -266,10 +267,12 @@ export async function restoreFromFiles(files: File[], day?: string): Promise<Res
 /** Saves a file through the browser's download. */
 export async function downloadBlob(blob: Blob, name: string): Promise<boolean> {
   // The Android app's WebView can't save a blob: link, so there the file goes through Android's
-  // own Save dialog (SaveFilePlugin in android/). False when the student cancels it.
+  // own Save dialog (SaveFilePlugin in android/), in pieces. False when the student cancels it.
   if (Capacitor.isNativePlatform()) {
-    const { saved } = await SaveFile.save({ name, mimeType: blob.type || 'application/octet-stream', data: await toBase64(blob) });
-    return saved;
+    const { id } = await SaveFile.open({ name, mimeType: blob.type || 'application/octet-stream' });
+    if (!id) return false;
+    await writeInChunks(SaveFile, id, blob);
+    return true;
   }
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -283,12 +286,3 @@ export async function downloadBlob(blob: Blob, name: string): Promise<boolean> {
 }
 
 const SaveFile = registerPlugin<SaveFilePlugin>('SaveFile');
-
-function toBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).slice(String(reader.result).indexOf(',') + 1));
-    reader.onerror = () => reject(reader.error ?? new Error("Couldn't read the file."));
-    reader.readAsDataURL(blob);
-  });
-}
