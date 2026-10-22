@@ -88,6 +88,8 @@ try {
   await page.keyboard.down('Control');
   await page.mouse.wheel(0, -300);
   await page.keyboard.up('Control');
+  // Wheel frames come at the panel's pace on a BOOX, so the zoom shows a moment later.
+  await page.waitForFunction(() => Number(document.querySelector('[data-ink-board]').getAttribute('data-zoom')) > 1.2);
   const zoomed = Number(await board.getAttribute('data-zoom'));
   assert.ok(zoomed > 1.2);
   await waitLast('setWidth', `options.width > ${small * 1.5 * 1.2}`);
@@ -162,6 +164,25 @@ try {
   await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await waitLast('interaction', 'options.active === false');
   assert.ok((await calls('interaction')).length > before);
+
+  // A fast drag is painted at the panel's pace, not every frame, and ends where the finger stopped.
+  await page.evaluate(() => {
+    window.__paints = 0;
+    new MutationObserver(() => { window.__paints += 1; }).observe(document.querySelector('[data-ink-board]'), { attributeFilter: ['data-view-y'] });
+  });
+  const startY = Number(await board.getAttribute('data-view-y'));
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [finger] });
+  for (let step = 1; step <= 30; step += 1) {
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...finger, y: finger.y - step * 4 }] });
+    await page.waitForTimeout(10);
+  }
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.waitForTimeout(400);
+  const paints = await page.evaluate(() => window.__paints);
+  assert.ok(paints >= 1 && paints <= 8, `a fast drag painted ${paints} times`);
+  const endY = Number(await board.getAttribute('data-view-y'));
+  // The last move is painted once the drag ends: the view moved the whole 120 px (fit zoom is near 1 here).
+  assert.ok(endY - startY > 80, `the view followed the finger (${startY} to ${endY})`);
 
   // Palm rejection: a hand resting as the pen hovers, just after a stroke, or as wide as a palm
   // doesn't scroll; a finger a moment later still does.

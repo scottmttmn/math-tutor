@@ -104,12 +104,15 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   const penSeen = useRef(-Infinity);
   const mirrorTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const frame = useRef(0);
+  // On a BOOX, a gesture's frames are spaced out (frameGap): when the last one was painted, and the wait for the next.
+  const lastPaint = useRef(0);
+  const paced = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Strokes and eraser passes the BOOX pen hands over (set below, once the edits exist).
   const fromBoox = useRef({ stroke: (flat: number[]) => void flat, erase: (flat: number[]) => void flat });
   const onBooxStroke = useCallback((flat: number[]) => fromBoox.current.stroke(flat), []);
   const onBooxErase = useCallback((flat: number[]) => fromBoox.current.erase(flat), []);
-  const { owns: booxOwns, painted, gesture } = useBooxInk({
+  const { owns: booxOwns, painted, gesture, frameGap } = useBooxInk({
     container,
     sdk: tool !== 'eraser',
     preview: tool === 'highlighter'
@@ -130,6 +133,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
 
   const paint = useCallback(() => {
     frame.current = 0;
+    lastPaint.current = performance.now();
     const canvas = inkCanvas.current;
     const { w, h } = view.current;
     if (!canvas || w === 0 || h === 0) return;
@@ -188,8 +192,14 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   }, [loaded, painted]);
 
   const repaint = useCallback(() => {
-    if (!frame.current) frame.current = requestAnimationFrame(paint);
-  }, [paint]);
+    if (frame.current || paced.current) return;
+    const wait = lastPaint.current + frameGap() - performance.now();
+    if (wait <= 0) { frame.current = requestAnimationFrame(paint); return; }
+    paced.current = setTimeout(() => {
+      paced.current = undefined;
+      if (!frame.current) frame.current = requestAnimationFrame(paint);
+    }, wait);
+  }, [paint, frameGap]);
 
   /** Starts loading the board's pictures; resolves when all have loaded (or failed). */
   const loadPictures = useCallback((current: BoardInk) => {
@@ -354,6 +364,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     // Development mounts twice (Strict Mode): a cancelled frame left in `frame` would stop all repaints.
     cancelAnimationFrame(frame.current);
     frame.current = 0;
+    clearTimeout(paced.current);
+    paced.current = undefined;
   }, [mirror]);
 
   const doUndo = useCallback(() => {
