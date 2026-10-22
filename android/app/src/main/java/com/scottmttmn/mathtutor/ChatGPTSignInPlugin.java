@@ -26,6 +26,10 @@ import java.security.MessageDigest;
  * browser, and listens on 127.0.0.1 for the browser coming back to /auth/callback, the way the
  * SDK's Node listener does on a computer. Only a GET from 127.0.0.1:port with the expected state
  * counts; anything else gets an error page and the listener keeps waiting.
+ *
+ * The callback reaches the page only once the app is back in front: the page then exchanges the
+ * code with OpenAI, and on the BOOX Go 10.3 that request failed ("Could not reach ChatGPT") while
+ * the browser was in front and the app in the background.
  */
 @CapacitorPlugin(name = "ChatGPTSignIn")
 public class ChatGPTSignInPlugin extends Plugin {
@@ -39,6 +43,8 @@ public class ChatGPTSignInPlugin extends Plugin {
     private String expectedState;
     private PluginCall waiting;
     private String received;
+    /** Whether the app is in front, where its requests can reach OpenAI. */
+    private boolean foreground = true;
 
     @PluginMethod
     public void listen(PluginCall call) {
@@ -72,19 +78,17 @@ public class ChatGPTSignInPlugin extends Plugin {
         call.resolve(result);
     }
 
-    /** Resolves with the callback's query string once the browser comes back. */
+    /** Resolves with the callback's query string once the browser has come back and the app is in front. */
     @PluginMethod
     public void waitForCallback(PluginCall call) {
         synchronized (this) {
-            if (received != null) {
-                resolveWith(call, received);
-                received = null;
-            } else if (server == null) {
+            if (received == null && server == null) {
                 call.reject("Not listening");
-            } else {
-                if (waiting != null) waiting.reject("Replaced");
-                waiting = call;
+                return;
             }
+            if (waiting != null) waiting.reject("Replaced");
+            waiting = call;
+            flush();
         }
     }
 
@@ -111,6 +115,29 @@ public class ChatGPTSignInPlugin extends Plugin {
         } catch (ActivityNotFoundException e) {
             call.reject("No browser is installed", "NO_BROWSER");
         }
+    }
+
+    @Override
+    protected void handleOnPause() {
+        synchronized (this) {
+            foreground = false;
+        }
+    }
+
+    @Override
+    protected void handleOnResume() {
+        synchronized (this) {
+            foreground = true;
+            flush();
+        }
+    }
+
+    /** Hands a received callback to the page once it waits and the app is in front. Call with the lock held. */
+    private void flush() {
+        if (!foreground || waiting == null || received == null) return;
+        resolveWith(waiting, received);
+        waiting = null;
+        received = null;
     }
 
     @Override
@@ -173,12 +200,8 @@ public class ChatGPTSignInPlugin extends Plugin {
     private void deliver(ServerSocket socket, String query) {
         synchronized (this) {
             if (server != socket) return;
-            if (waiting != null) {
-                resolveWith(waiting, query);
-                waiting = null;
-            } else {
-                received = query;
-            }
+            received = query;
+            flush();
             try {
                 socket.close();
             } catch (IOException ignored) {}
@@ -222,7 +245,7 @@ public class ChatGPTSignInPlugin extends Plugin {
         return "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\">"
             + "<title>Return to Math Tutor</title><style>body{font:18px system-ui;max-width:32rem;margin:18vh auto;padding:24px;color:#111}"
             + "a{display:inline-block;margin-top:16px;padding:12px 20px;border:2px solid #111;border-radius:8px;color:#111;text-decoration:none}</style>"
-            + "<h1>Signed in</h1><p>Math Tutor will finish connecting your ChatGPT plan. You can close this tab.</p>"
+            + "<h1>Almost done</h1><p>Return to Math Tutor to finish connecting your ChatGPT plan.</p>"
             + "<a href=\"" + RETURN_URL + "\">Return to Math Tutor</a></html>";
     }
 
