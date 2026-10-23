@@ -122,6 +122,12 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   // On a BOOX, a gesture's frames are spaced out (frameGap): when the last one was painted, and the wait for the next.
   const lastPaint = useRef(0);
   const paced = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The lasso's loop and a dragged selection are drawn on the live canvas, paced the same way;
+  // `liveDrag` says it holds a dragged selection, cleared once the board under it is painted again.
+  const liveFrame = useRef(0);
+  const livePaced = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const lastLive = useRef(0);
+  const liveDrag = useRef(false);
 
   // Strokes and eraser passes the BOOX pen hands over (set below, once the edits exist).
   const fromBoox = useRef({ stroke: (flat: number[]) => void flat, erase: (flat: number[]) => void flat });
@@ -161,7 +167,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     if (!context) return;
     const { x, y, z } = camera.current;
     const drag = moving.current;
-    const current = erasing.current?.shown ?? (drag ? moveItems(history.current.board, selection.current, drag.dx, drag.dy) : history.current.board);
+    // A dragged selection is left out here and drawn moving on the live canvas, so a drag repaints only it.
+    const current = erasing.current?.shown ?? (drag ? removeItems(history.current.board, selection.current) : history.current.board);
     const { page } = current;
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.fillStyle = DESK;
@@ -194,16 +201,15 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       }
     }
     const area = { minX: x, minY: y, maxX: x + w / z, maxY: bottom };
-    // Only what is in view; the index was built from the board, and erasing only removes strokes
-    // (a dragged selection is drawn wherever it is).
+    // Only what is in view; the index was built from the board, and erasing only removes strokes.
     const visible = index.current.query(area);
-    const shown = (id: string) => visible.has(id) || (drag !== null && selection.current.has(id));
+    const shown = (id: string) => visible.has(id);
     drawBoard(context, {
       ...current,
       strokes: current.strokes.filter((stroke) => shown(stroke.id)),
       images: current.images.filter((image) => shown(image.id)),
     }, loaded());
-    const box = selection.current.size > 0 ? boardBounds(current, selection.current) : null;
+    const box = !drag && selection.current.size > 0 ? boardBounds(current, selection.current) : null;
     if (box) {
       const pad = SELECTION_PAD / z;
       context.save();
@@ -212,6 +218,12 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       context.setLineDash([6 / z, 4 / z]);
       context.strokeRect(box.minX - pad, box.minY - pad, box.maxX - box.minX + pad * 2, box.maxY - box.minY + pad * 2);
       context.restore();
+    }
+    // The drag has landed: the selection is on the board again, so the live canvas lets it go.
+    if (!drag && liveDrag.current) {
+      liveDrag.current = false;
+      const live = liveCanvas.current;
+      live?.getContext('2d')?.clearRect(0, 0, live.width, live.height);
     }
     container.current?.setAttribute('data-zoom', String(Math.round((z / fitZoom(page, view.current)) * 100) / 100));
     container.current?.setAttribute('data-view-y', String(Math.round(y)));
@@ -428,6 +440,10 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     frame.current = 0;
     clearTimeout(paced.current);
     paced.current = undefined;
+    cancelAnimationFrame(liveFrame.current);
+    liveFrame.current = 0;
+    clearTimeout(livePaced.current);
+    livePaced.current = undefined;
   }, [mirror]);
 
   // Undo and redo let go of the selection: what it held may be gone or back elsewhere.
@@ -476,10 +492,26 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     context.clearRect(0, 0, canvas.width, canvas.height);
     const stroke = writing.current?.stroke;
     const loop = lassoing.current?.path;
-    if (!stroke && !loop) return;
+    const drag = moving.current;
+    if (!stroke && !loop && !drag) return;
     const { x, y, z } = camera.current;
     context.setTransform(ratio * z, 0, 0, ratio * z, -x * z * ratio, -y * z * ratio);
     if (stroke) drawBoardStroke(context, stroke);
+    if (drag) {
+      liveDrag.current = true;
+      const moved = moveItems(history.current.board, selection.current, drag.dx, drag.dy);
+      const ids = selection.current;
+      drawBoard(context, { ...moved, strokes: moved.strokes.filter((item) => ids.has(item.id)), images: moved.images.filter((item) => ids.has(item.id)) }, loaded());
+      const box = boardBounds(moved, ids);
+      if (box) {
+        const pad = SELECTION_PAD / z;
+        context.strokeStyle = '#111827';
+        context.lineWidth = 1.5 / z;
+        context.setLineDash([6 / z, 4 / z]);
+        context.strokeRect(box.minX - pad, box.minY - pad, box.maxX - box.minX + pad * 2, box.maxY - box.minY + pad * 2);
+        context.setLineDash([]);
+      }
+    }
     if (loop && loop.length >= 4) {
       context.strokeStyle = '#111827';
       context.lineWidth = 1.5 / z;
@@ -490,7 +522,22 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       context.stroke();
       context.setLineDash([]);
     }
-  }, []);
+  }, [loaded]);
+
+  // The lasso's loop and a dragged selection, at most one frame per `frameGap` (on a BOOX the panel's pace).
+  const repaintLive = useCallback(() => {
+    if (liveFrame.current || livePaced.current) return;
+    const run = () => {
+      liveFrame.current = requestAnimationFrame(() => {
+        liveFrame.current = 0;
+        lastLive.current = performance.now();
+        paintLive();
+      });
+    };
+    const wait = lastLive.current + frameGap() - performance.now();
+    if (wait <= 0) { run(); return; }
+    livePaced.current = setTimeout(() => { livePaced.current = undefined; run(); }, wait);
+  }, [paintLive, frameGap]);
 
   const local = (event: { clientX: number; clientY: number }) => {
     const rect = liveCanvas.current!.getBoundingClientRect();
@@ -594,10 +641,15 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         const box = selection.current.size > 0 ? boardBounds(board(), selection.current) : null;
         const pad = SELECTION_PAD / camera.current.z;
         if (box && at.x >= box.minX - pad && at.x <= box.maxX + pad && at.y >= box.minY - pad && at.y <= box.maxY + pad) {
+          // Paced like a finger gesture on a BOOX: the panel can't keep up with every move.
+          gesture(true);
           moving.current = { pointer: event.pointerId, fromX: at.x, fromY: at.y, dx: 0, dy: 0 };
+          repaint();
+          paintLive();
           return;
         }
         select(new Set());
+        gesture(true);
         lassoing.current = { pointer: event.pointerId, path: [at.x, at.y] };
         paintLive();
         return;
@@ -655,7 +707,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         const at = toBoard(camera.current, local(event).x, local(event).y);
         drag.dx = at.x - drag.fromX;
         drag.dy = at.y - drag.fromY;
-        repaint();
+        repaintLive();
         return;
       }
       const loop = lassoing.current;
@@ -666,7 +718,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
           const [lastX, lastY] = loop.path.slice(-2);
           if (Math.hypot(at.x - lastX, at.y - lastY) >= step) loop.path.push(at.x, at.y);
         }
-        paintLive();
+        repaintLive();
         return;
       }
       const current = writing.current;
@@ -694,6 +746,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       const drag = moving.current;
       if (drag && drag.pointer === event.pointerId) {
         moving.current = null;
+        gesture(false);
         // The selection keeps its ids, so it stays selected where it landed.
         if (event.type !== 'pointercancel' && (drag.dx !== 0 || drag.dy !== 0)) apply(moveItems(board(), selection.current, drag.dx, drag.dy));
         else repaint();
@@ -702,6 +755,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       const loop = lassoing.current;
       if (loop && loop.pointer === event.pointerId) {
         lassoing.current = null;
+        gesture(false);
         paintLive();
         if (event.type !== 'pointercancel') select(itemsInLasso(board(), index.current, loop.path));
         return;
@@ -755,7 +809,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       canvas.removeEventListener('pointercancel', up);
       canvas.removeEventListener('wheel', wheel);
     };
-  }, [apply, paintLive, repaint, setCamera, booxOwns, gesture, select]);
+  }, [apply, paintLive, repaint, repaintLive, setCamera, booxOwns, gesture, select]);
 
   /** The lasso's selection still on the board, or null for the whole board. */
   const selectedIds = (current: BoardInk) => {

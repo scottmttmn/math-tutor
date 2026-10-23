@@ -234,6 +234,38 @@ try {
   await pen.detach();
   await touch.detach();
 
+  // The lasso on a BOOX: its loop and a dragged selection come at the panel's pace, and the board
+  // under a drag is painted only as it starts and ends.
+  await page.getByRole('button', { name: 'Fit width', exact: true }).click();
+  await page.waitForTimeout(400);
+  const lineY = box.y + 260;
+  const line = [];
+  for (let i = 0; i <= 20; i += 1) line.push(box.x + 120 + i * 12, lineY, 0.5, i * 8);
+  const strokesBefore = await strokes();
+  await page.evaluate((points) => window.__boox.emit('stroke', points), line);
+  await waitStrokes(strokesBefore + 1);
+  await page.getByRole('button', { name: 'Lasso', exact: true }).click();
+  const mouseLoop = [[box.x + 100, lineY - 30], [box.x + 400, lineY - 30], [box.x + 400, lineY + 30], [box.x + 100, lineY + 30], [box.x + 100, lineY - 30]];
+  await page.mouse.move(...mouseLoop[0]);
+  await page.mouse.down();
+  for (const point of mouseLoop.slice(1)) await page.mouse.move(...point, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForFunction(() => document.querySelector('[data-ink-board]')?.getAttribute('data-selected') === '1');
+  await page.evaluate(() => { window.__paints = 0; });
+  await page.mouse.move(box.x + 250, lineY);
+  await page.mouse.down();
+  for (let step = 1; step <= 30; step += 1) {
+    await page.mouse.move(box.x + 250, lineY + step * 4);
+    await page.waitForTimeout(10);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  const lassoPaints = await page.evaluate(() => window.__paints);
+  assert.ok(lassoPaints >= 2 && lassoPaints <= 3, `the board under a drag painted ${lassoPaints} times`);
+  assert.equal(await board.getAttribute('data-selected'), '1', 'the moved ink stays selected');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await page.getByRole('button', { name: 'Pen', exact: true }).click();
+
   // Leaving for Home stops the pen and releases fast mode.
   await page.getByRole('link', { name: 'Home' }).click();
   await page.waitForURL(`${origin}/`);
