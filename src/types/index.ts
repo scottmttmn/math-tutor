@@ -585,8 +585,10 @@ export interface RestoreResult {
 
 /** Automatic backup to a folder, as the Backup settings and the top bar show it. */
 export interface BackupStatus {
-  /** False where the browser can't write to a folder (e.g. Android); downloads still work. */
+  /** False where the browser can't write to a folder (e.g. Firefox); downloads still work. */
   folderSupported: boolean;
+  /** The Android app: the folder is picked through Android (BackupFolderPlugin), not the browser. */
+  androidFolder: boolean;
   folderName: string | null;
   /** off: no folder chosen; paused: the browser needs permission again; writing; ok; error. */
   state: 'off' | 'ok' | 'paused' | 'writing' | 'error';
@@ -599,9 +601,45 @@ export interface BackupStatus {
   hasWork: boolean;
 }
 
-/** The Android app's native Save dialog (android/…/SaveFilePlugin.java); data is base64. */
-export interface SaveFilePlugin {
-  save(options: { name: string; mimeType: string; data: string }): Promise<{ saved: boolean }>;
+/** A file the Android app writes a piece at a time (SaveFilePlugin, BackupFolderPlugin): data is base64. */
+export interface ChunkWriterPlugin {
+  write(options: { id: string; data: string }): Promise<void>;
+  close(options: { id: string }): Promise<void>;
+  /** Closes and deletes the file. */
+  abort(options: { id: string }): Promise<void>;
+}
+
+/** The Android app's native Save dialog (android/…/SaveFilePlugin.java): no id when it was cancelled. */
+export interface SaveFilePlugin extends ChunkWriterPlugin {
+  open(options: { name: string; mimeType: string }): Promise<{ id?: string }>;
+}
+
+/** Where in a backup folder (android/…/BackupFolderPlugin.java): the picked tree and the folders inside it. */
+export interface BackupFolderPlace { tree: string; path: string[] }
+
+/** The Android app's backup folder, picked with Android's folder picker and kept across starts. */
+export interface BackupFolderPlugin extends ChunkWriterPlugin {
+  /** No tree when the picker was cancelled; keep: false reads it this once (a restore). */
+  pick(options?: { keep?: boolean }): Promise<{ tree?: string; name?: string }>;
+  check(options: { tree: string }): Promise<{ granted: boolean }>;
+  release(options: { tree: string }): Promise<void>;
+  list(options: BackupFolderPlace & { create?: boolean }): Promise<{ entries: { name: string; directory: boolean; size: number }[] }>;
+  openWrite(options: BackupFolderPlace & { name: string }): Promise<{ id: string }>;
+  read(options: BackupFolderPlace & { name: string; offset: number; length: number }): Promise<{ data: string }>;
+  remove(options: BackupFolderPlace & { name: string }): Promise<void>;
+}
+
+/** A folder the backup writes into: a browser's folder handle, or a folder picked in the Android app. */
+export interface BackupDirectory {
+  readonly name: string;
+  /** The folder of that name inside this one, made when missing. */
+  directory(name: string): Promise<BackupDirectory>;
+  names(): Promise<string[]>;
+  /** A file's size; null when it isn't there. */
+  size(name: string): Promise<number | null>;
+  write(name: string, contents: Blob): Promise<void>;
+  /** Deletes a file or a folder with what is in it. */
+  remove(name: string): Promise<void>;
 }
 
 /**

@@ -34,8 +34,10 @@ export async function writeZip(files: Map<string, Blob>, date = new Date()): Pro
   let offset = 0;
   for (const [path, blob] of files) {
     const name = encoder.encode(path);
-    const data = new Uint8Array(await blob.arrayBuffer());
-    const crc = crc32(data);
+    // Read once for the checksum; the ZIP then holds the blob itself, so a backup's PDFs aren't
+    // all in memory at once.
+    const crc = crc32(new Uint8Array(await blob.arrayBuffer()));
+    const size = blob.size;
     const local = new DataView(new ArrayBuffer(30));
     local.setUint32(0, 0x04034b50, true);
     local.setUint16(4, 20, true);
@@ -44,10 +46,10 @@ export async function writeZip(files: Map<string, Blob>, date = new Date()): Pro
     local.setUint16(10, time, true);
     local.setUint16(12, day, true);
     local.setUint32(14, crc, true);
-    local.setUint32(18, data.length, true);
-    local.setUint32(22, data.length, true);
+    local.setUint32(18, size, true);
+    local.setUint32(22, size, true);
     local.setUint16(26, name.length, true);
-    parts.push(new Uint8Array(local.buffer), name, data);
+    parts.push(new Uint8Array(local.buffer), name, blob);
 
     const entry = new DataView(new ArrayBuffer(46));
     entry.setUint32(0, 0x02014b50, true);
@@ -58,13 +60,13 @@ export async function writeZip(files: Map<string, Blob>, date = new Date()): Pro
     entry.setUint16(12, time, true);
     entry.setUint16(14, day, true);
     entry.setUint32(16, crc, true);
-    entry.setUint32(20, data.length, true);
-    entry.setUint32(24, data.length, true);
+    entry.setUint32(20, size, true);
+    entry.setUint32(24, size, true);
     entry.setUint16(28, name.length, true);
     entry.setUint32(42, offset, true);
     central.push(new Uint8Array(entry.buffer), name);
     centralSize += 46 + name.length;
-    offset += 30 + name.length + data.length;
+    offset += 30 + name.length + size;
   }
   const end = new DataView(new ArrayBuffer(22));
   end.setUint32(0, 0x06054b50, true);
@@ -106,7 +108,7 @@ export async function readZip(zip: Blob): Promise<Map<string, Blob>> {
     const dataStart = localOffset + 30 + local.getUint16(26, true) + local.getUint16(28, true);
     const data = new Uint8Array(await zip.slice(dataStart, dataStart + size).arrayBuffer());
     if (data.length !== size || crc32(data) !== crc) throw new Error(`Damaged ZIP entry: ${name}`);
-    files.set(name, new Blob([data]));
+    files.set(name, zip.slice(dataStart, dataStart + size));
     at += 46 + nameLength + extraLength + commentLength;
   }
   return files;
