@@ -244,13 +244,17 @@ try {
   const strokesBefore = await strokes();
   await page.evaluate((points) => window.__boox.emit('stroke', points), line);
   await waitStrokes(strokesBefore + 1);
+  // The loop is Onyx's pen's too (drawn at once, thin and gray); the selection box is left to the
+  // page, so the pen drags it there.
   await page.getByRole('button', { name: 'Lasso', exact: true }).click();
-  const mouseLoop = [[box.x + 100, lineY - 30], [box.x + 400, lineY - 30], [box.x + 400, lineY + 30], [box.x + 100, lineY + 30], [box.x + 100, lineY - 30]];
-  await page.mouse.move(...mouseLoop[0]);
-  await page.mouse.down();
-  for (const point of mouseLoop.slice(1)) await page.mouse.move(...point, { steps: 6 });
-  await page.mouse.up();
+  await waitLast('setWidth', "options.color === '#6b7280'");
+  const loopPoints = [[box.x + 100, lineY - 30], [box.x + 400, lineY - 30], [box.x + 400, lineY + 30], [box.x + 100, lineY + 30], [box.x + 100, lineY - 30]];
+  await page.evaluate((points) => window.__boox.emit('stroke', points.flatMap(([x, y], i) => [x, y, 0.5, i * 20])), loopPoints);
   await page.waitForFunction(() => document.querySelector('[data-ink-board]')?.getAttribute('data-selected') === '1');
+  await page.waitForFunction(([x, y]) => {
+    const exclude = window.__boox.calls.filter((call) => call.method === 'setRegion' || call.method === 'start').at(-1)?.options.exclude ?? [];
+    return exclude.some((rect) => x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h);
+  }, [box.x + 250, lineY]);
   await page.evaluate(() => { window.__paints = 0; });
   await page.mouse.move(box.x + 250, lineY);
   await page.mouse.down();
