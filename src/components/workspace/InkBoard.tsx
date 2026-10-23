@@ -46,6 +46,8 @@ const PINCH_WINDOW_MS = 250;
 const PINCH_START = 0.15;
 // The selection's box sits this far outside its ink, in screen px; a duplicate lands this far off, in board units.
 const SELECTION_PAD = 8;
+// The lasso's loop as Onyx's pen draws it on a BOOX: thin and gray.
+const LASSO_PREVIEW = { width: 1.5, color: '#6b7280', marker: false };
 const DUPLICATE_OFFSET = 24;
 // Room above the first work when a board opens, in screen px.
 const OPEN_TOP = 80;
@@ -81,6 +83,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   const container = useRef<HTMLDivElement>(null);
   const inkCanvas = useRef<HTMLCanvasElement>(null);
   const liveCanvas = useRef<HTMLCanvasElement>(null);
+  // Over the lasso's selection, for a BOOX: Onyx's pen leaves it to the page, which drags it.
+  const selectionArea = useRef<HTMLDivElement>(null);
   // Undo/redo availability for the toolbar; the ink itself is drawn directly, without re-rendering.
   const [steps, setSteps] = useState({ undo: false, redo: false });
   const [tool, setTool] = useState<Tool>('pen');
@@ -135,8 +139,9 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   const onBooxErase = useCallback((flat: number[]) => fromBoox.current.erase(flat), []);
   const { owns: booxOwns, painted, gesture, frameGap } = useBooxInk({
     container,
-    sdk: tool === 'pen' || tool === 'highlighter',
-    preview: tool === 'highlighter'
+    // The lasso's loop is the SDK's too, drawn at once as the pen's is; its selection is the page's.
+    sdk: tool === 'pen' || tool === 'highlighter' || tool === 'lasso',
+    preview: tool === 'lasso' ? LASSO_PREVIEW : tool === 'highlighter'
       ? { width: HIGHLIGHTER_WIDTH * zoom, color: highlightPreview(INK_COLORS[color]), marker: true }
       : { width: PEN_WIDTHS[size] * zoom, color: INK_COLORS[color], marker: false },
     onStroke: onBooxStroke,
@@ -210,6 +215,12 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       images: current.images.filter((image) => shown(image.id)),
     }, loaded());
     const box = !drag && selection.current.size > 0 ? boardBounds(current, selection.current) : null;
+    const skip = selectionArea.current;
+    if (skip) {
+      const pad = SELECTION_PAD / z;
+      const shown = box ? { left: (box.minX - pad - x) * z, top: (box.minY - pad - y) * z, width: (box.maxX - box.minX + pad * 2) * z, height: (box.maxY - box.minY + pad * 2) * z } : null;
+      Object.assign(skip.style, shown ? { left: `${shown.left}px`, top: `${shown.top}px`, width: `${shown.width}px`, height: `${shown.height}px` } : { width: '0px', height: '0px' });
+    }
     if (box) {
       const pad = SELECTION_PAD / z;
       context.save();
@@ -326,6 +337,14 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         const samples = strokePoints(flat);
         if (samples.length === 0 || loadPending.current) return;
         const { tool: chosen, size: penSize, color: ink } = style.current;
+        if (chosen === 'lasso') {
+          select(itemsInLasso(board(), index.current, samples.flatMap(({ x, y }) => {
+            const at = local(x, y);
+            return [at.x, at.y];
+          })));
+          painted();
+          return;
+        }
         const highlighter = chosen === 'highlighter';
         const step = 1 / camera.current.z;
         const points: number[] = [];
@@ -351,7 +370,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         if (hit.size > 0) apply(removeItems(board(), hit));
       },
     };
-  }, [apply]);
+  }, [apply, select, painted]);
 
   /** Writing scale with the board's `top` (board units) at the top of the view. */
   const fitTo = useCallback((top: number) => {
@@ -578,8 +597,17 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     };
 
     // On a BOOX the SDK has the pen; if the page still hears it, it mustn't draw it twice.
+    // Whether a board point is inside the lasso's selection box (padded), where the pen drags it.
+    const inSelection = (at: { x: number; y: number }) => {
+      const box = selection.current.size > 0 ? boardBounds(board(), selection.current) : null;
+      const pad = SELECTION_PAD / camera.current.z;
+      return Boolean(box && at.x >= box.minX - pad && at.x <= box.maxX + pad && at.y >= box.minY - pad && at.y <= box.maxY + pad);
+    };
+
     const booxPen = (event: PointerEvent) => {
       if (event.pointerType !== 'pen' || !booxOwns()) return false;
+      // Onyx's pen leaves the lasso's selection to the page, which drags it.
+      if (style.current.tool === 'lasso' && inSelection(toBoard(camera.current, local(event).x, local(event).y))) return false;
       event.preventDefault();
       return true;
     };
@@ -638,9 +666,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       }
       if (style.current.tool === 'lasso') {
         // Inside the selection's box drags it; anywhere else starts a new loop.
-        const box = selection.current.size > 0 ? boardBounds(board(), selection.current) : null;
-        const pad = SELECTION_PAD / camera.current.z;
-        if (box && at.x >= box.minX - pad && at.x <= box.maxX + pad && at.y >= box.minY - pad && at.y <= box.maxY + pad) {
+        if (inSelection(at)) {
           // Paced like a finger gesture on a BOOX: the panel can't keep up with every move.
           gesture(true);
           moving.current = { pointer: event.pointerId, fromX: at.x, fromY: at.y, dx: 0, dy: 0 };
@@ -896,6 +922,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   return (
     <div ref={container} className="absolute inset-0 overflow-hidden" data-ink-board="true" data-strokes="0" data-images="0" data-selected="0">
       <canvas ref={inkCanvas} className="absolute inset-0" aria-hidden="true" />
+      <div ref={selectionArea} data-pen-skip className="absolute pointer-events-none" aria-hidden="true" />
       <canvas
         ref={liveCanvas}
         className={`absolute inset-0 touch-none ${tool === 'eraser' ? 'cursor-cell' : tool === 'lasso' ? 'cursor-default' : 'cursor-crosshair'}`}

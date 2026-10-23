@@ -13,7 +13,8 @@ const SETTLE_MS = 180;
 // at 60 a second each was drawn over the last unfinished one, and the ink showed many times over.
 const GESTURE_FRAME_MS = 150;
 // The board's own controls over the canvas, which the pen must still be able to tap.
-const CONTROLS = '[role="toolbar"] > *, [data-testid="show-tools"]';
+// `data-pen-skip` marks other areas the page's own pen handles there (the lasso's selection, to drag it).
+const CONTROLS = '[role="toolbar"] > *, [data-testid="show-tools"], [data-pen-skip]';
 // Anything that, while open, sits over the board and takes the pen: menus, dialogs, popovers.
 const OVERLAYS = '[role="menu"], [role="dialog"], [role="listbox"]';
 
