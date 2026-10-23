@@ -111,6 +111,16 @@ try {
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await inkShown(`count > ${penInk * 2}`);
 
+  // A refresh the native side drops when the region moves is asked for again, so a stroke's ink
+  // doesn't wait for the next stroke to show.
+  await page.setViewportSize({ width: 1000, height: 768 });
+  await page.waitForFunction(() => {
+    const methods = window.__boox.calls.map((call) => call.method);
+    const moved = methods.lastIndexOf('setRegion');
+    return moved >= 0 && methods.indexOf('refresh', moved) > moved;
+  });
+  await page.setViewportSize({ width: 1024, height: 768 });
+
   // The Eraser tool is the page's, in fast mode; no tool lets the pen and screen go.
   await page.getByRole('button', { name: 'Eraser', exact: true }).click();
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'stop'));

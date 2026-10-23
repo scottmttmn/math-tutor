@@ -109,6 +109,15 @@ export function useBooxInk({ container, enabled = true, exclude: excluded, sdk, 
     };
   }, [available, setFast]);
 
+  // The board was redrawn: the screen is let through once the pen rests (the native side waits for it).
+  const painted = useCallback(() => {
+    if (!available) return;
+    clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => {
+      if (state.current.started && !state.current.paused && penOwner === state.current) void BooxPen.refresh().catch(() => undefined);
+    }, REFRESH_DELAY_MS);
+  }, [available]);
+
   // The SDK owns the pen while the Pen or Highlight tool is chosen and nothing covers the board.
   useEffect(() => {
     const element = container.current;
@@ -161,8 +170,11 @@ export function useBooxInk({ container, enabled = true, exclude: excluded, sdk, 
       if (key !== lastRegion) {
         lastRegion = key;
         void BooxPen.setRegion(area).catch(() => undefined);
+        // A region change drops a refresh still waiting natively: a stroke's ink, drawn just
+        // before the page shifted, stayed hidden until the next stroke (Go 10.3, 2026-10-23).
+        painted();
       }
-      if (status.paused) { status.paused = false; void BooxPen.resume().catch(() => undefined); }
+      if (status.paused) { status.paused = false; void BooxPen.resume().catch(() => undefined); painted(); }
     };
 
     let frame = 0;
@@ -205,7 +217,7 @@ export function useBooxInk({ container, enabled = true, exclude: excluded, sdk, 
         void BooxPen.stop().catch(() => undefined);
       }
     };
-  }, [available, sdk, container, excluded]);
+  }, [available, sdk, container, excluded, painted]);
 
   // The preview follows the tool, size, color and zoom without restarting the pen.
   const { width, color, marker } = preview;
@@ -220,14 +232,6 @@ export function useBooxInk({ container, enabled = true, exclude: excluded, sdk, 
   useEffect(() => () => clearTimeout(refreshTimer.current), []);
 
   const owns = useCallback(() => state.current.running && !state.current.paused && penOwner === state.current, []);
-
-  const painted = useCallback(() => {
-    if (!available) return;
-    clearTimeout(refreshTimer.current);
-    refreshTimer.current = setTimeout(() => {
-      if (state.current.started && !state.current.paused && penOwner === state.current) void BooxPen.refresh().catch(() => undefined);
-    }, REFRESH_DELAY_MS);
-  }, [available]);
 
   const gesture = useCallback((active: boolean) => {
     if (!available) return;
