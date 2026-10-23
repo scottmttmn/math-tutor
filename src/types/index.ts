@@ -671,3 +671,8 @@ export interface ChatGPTSignInPlugin {
 export interface AppUpdatePlugin {
   install(options: { url: string }): Promise<{ permission: boolean }>;
 }
+
+/** A touch as Chromium reports it: a pen's touch events carry `touchType: 'stylus'` (not in TypeScript's DOM types). */
+export interface StylusTouch extends Touch {
+  touchType?: 'direct' | 'stylus';
+}

@@ -76,6 +76,26 @@ try {
   await page.waitForTimeout(300);
   assert.equal(await inkPixels(), penInk, 'the page does not draw the pen itself');
 
+  // The pen never scrolls the page while a tool is on (it did on the Go 10.3 as the SDK drew):
+  // its touch events are cancelled, a finger's are not.
+  // A pen's pointer comes before the touch events Chromium also sends for it.
+  const touchCancelled = (pen) => overlay.evaluate((element, isPen) => {
+    const { left, top } = element.getBoundingClientRect();
+    const at = { clientX: left + 150, clientY: top + 300 };
+    const pointer = { ...at, pointerId: 9, pointerType: 'pen', bubbles: true, cancelable: true, button: 0, buttons: 1 };
+    if (isPen) element.dispatchEvent(new PointerEvent('pointerdown', pointer));
+    const touch = new Touch({ identifier: 7, target: element, ...at });
+    const start = new TouchEvent('touchstart', { cancelable: true, bubbles: true, touches: [touch], changedTouches: [touch] });
+    element.dispatchEvent(start);
+    const move = new TouchEvent('touchmove', { cancelable: true, bubbles: true, touches: [touch], changedTouches: [touch] });
+    element.dispatchEvent(move);
+    element.dispatchEvent(new TouchEvent('touchend', { cancelable: true, bubbles: true, touches: [], changedTouches: [touch] }));
+    if (isPen) element.dispatchEvent(new PointerEvent('pointerup', { ...pointer, buttons: 0 }));
+    return start.defaultPrevented && move.defaultPrevented;
+  }, pen);
+  assert.equal(await touchCancelled(true), true, 'a pen does not scroll the page');
+  assert.equal(await touchCancelled(false), false, 'a finger still scrolls it');
+
   // Highlight: a marker tip in the highlight's look, and a wide stroke.
   await page.getByRole('button', { name: 'Highlight', exact: true }).click();
   await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'setWidth').at(-1)?.options.marker === true);
@@ -97,6 +117,7 @@ try {
   await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === true);
   await page.getByRole('button', { name: 'Eraser', exact: true }).click();
   await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === false);
+  assert.equal(await touchCancelled(true), false, 'reading, the pen scrolls the page');
   console.log('PASS BOOX pen on a page: SDK strokes and highlights become page ink, the eraser end rubs out, the Eraser tool uses fast mode, reading leaves the pen alone');
 
   // An upright tablet: the exercise's board has the pen; swapped for the page, the page takes it,
