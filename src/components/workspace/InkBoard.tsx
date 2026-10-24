@@ -47,7 +47,7 @@ const PINCH_START = 0.15;
 // The selection's box sits this far outside its ink, in screen px; a duplicate lands this far off, in board units.
 const SELECTION_PAD = 8;
 // The lasso's loop as Onyx's pen draws it on a BOOX: thin and gray.
-const LASSO_PREVIEW = { width: 1.5, color: '#6b7280', marker: false };
+const LASSO_PREVIEW = { width: 1.5, color: '#6b7280', marker: false, dash: true };
 const DUPLICATE_OFFSET = 24;
 // Room above the first work when a board opens, in screen px.
 const OPEN_TOP = 80;
@@ -137,7 +137,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   const fromBoox = useRef({ stroke: (flat: number[]) => void flat, erase: (flat: number[]) => void flat });
   const onBooxStroke = useCallback((flat: number[]) => fromBoox.current.stroke(flat), []);
   const onBooxErase = useCallback((flat: number[]) => fromBoox.current.erase(flat), []);
-  const { owns: booxOwns, painted, gesture, frameGap } = useBooxInk({
+  const { owns: booxOwns, painted, gesture, frameGap, hold: holdPen } = useBooxInk({
     container,
     // The lasso's loop is the SDK's too, drawn at once as the pen's is; its selection is the page's.
     sdk: tool === 'pen' || tool === 'highlighter' || tool === 'lasso',
@@ -300,10 +300,11 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     if (ids.size === 0 && selection.current.size === 0) return;
     selection.current = ids;
     moving.current = null;
+    holdPen(false);
     setSelected(ids.size);
     container.current?.setAttribute('data-selected', String(ids.size));
     repaint();
-  }, [repaint]);
+  }, [repaint, holdPen]);
 
   /** A tool chosen; leaving the lasso lets go of its selection. */
   const chooseTool = useCallback((next: Tool) => {
@@ -389,6 +390,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     lassoing.current = null;
     selection.current = new Set();
     moving.current = null;
+    holdPen(false);
     setSelected(0);
     container.current?.setAttribute('data-selected', '0');
     setTool('pen');
@@ -403,7 +405,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     container.current?.setAttribute('data-strokes', String(next.strokes.length));
     container.current?.setAttribute('data-images', String(next.images.length));
     showSteps();
-  }, [fitTo, loadPictures]);
+  }, [fitTo, loadPictures, holdPen]);
 
   useEffect(() => {
     loadPending.current = Boolean(pendingLoad);
@@ -605,7 +607,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     };
 
     const booxPen = (event: PointerEvent) => {
-      if (event.pointerType !== 'pen' || !booxOwns()) return false;
+      if (event.pointerType !== 'pen' || !booxOwns() || moving.current) return false;
       // Onyx's pen leaves the lasso's selection to the page, which drags it.
       if (style.current.tool === 'lasso' && inSelection(toBoard(camera.current, local(event).x, local(event).y))) return false;
       event.preventDefault();
@@ -669,6 +671,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         if (inSelection(at)) {
           // Paced like a finger gesture on a BOOX: the panel can't keep up with every move.
           gesture(true);
+          // The SDK lets go of the pen until it lifts, or it takes the drag once it leaves the box.
+          holdPen(true);
           moving.current = { pointer: event.pointerId, fromX: at.x, fromY: at.y, dx: 0, dy: 0 };
           repaint();
           paintLive();
@@ -772,6 +776,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       const drag = moving.current;
       if (drag && drag.pointer === event.pointerId) {
         moving.current = null;
+        holdPen(false);
         gesture(false);
         // The selection keeps its ids, so it stays selected where it landed.
         if (event.type !== 'pointercancel' && (drag.dx !== 0 || drag.dy !== 0)) apply(moveItems(board(), selection.current, drag.dx, drag.dy));
@@ -835,7 +840,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       canvas.removeEventListener('pointercancel', up);
       canvas.removeEventListener('wheel', wheel);
     };
-  }, [apply, paintLive, repaint, repaintLive, setCamera, booxOwns, gesture, select]);
+  }, [apply, paintLive, repaint, repaintLive, setCamera, booxOwns, gesture, select, holdPen]);
 
   /** The lasso's selection still on the board, or null for the whole board. */
   const selectedIds = (current: BoardInk) => {
