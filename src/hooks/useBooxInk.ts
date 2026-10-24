@@ -27,8 +27,8 @@ export interface BooxInkOptions {
   exclude?: string;
   /** Whether the SDK takes the pen (the Pen or Highlight tool). The eraser is the page's, with fast screen updates. */
   sdk: boolean;
-  /** The live preview's width (CSS px at the current zoom), color, and a marker's flat tip for the highlighter. */
-  preview: { width: number; color: string; marker: boolean };
+  /** The live preview's width (CSS px at the current zoom), color, a marker's flat tip for the highlighter, and a dashed line for the lasso. */
+  preview: { width: number; color: string; marker: boolean; dash?: boolean };
   /** A finished stroke from the SDK, flat [x, y, pressure, ms, …] in CSS px of the window. */
   onStroke: (flat: number[]) => void;
   /** The pen's eraser end passed along this path (same form). */
@@ -44,6 +44,8 @@ export interface BooxInk {
   gesture: (active: boolean) => void;
   /** How long the board waits between frames now: while a finger or wheel moves it on a BOOX, the panel's pace. */
   frameGap: () => number;
+  /** The page needs the pen for a moment (true until false): the SDK pauses at once, so a drag the page started keeps its pen. */
+  hold: (active: boolean) => void;
 }
 
 // The SDK has one session for the whole app: the board or the page that started it last. Another
@@ -72,6 +74,8 @@ function clipped(element: HTMLElement): BooxPenBox | null {
 export function useBooxInk({ container, enabled = true, exclude: excluded, sdk, preview, onStroke, onErase }: BooxInkOptions): BooxInk {
   const available = useBooxPenAvailable() && enabled;
   const state = useRef({ started: false, running: false, paused: false, failed: false });
+  const held = useRef(false);
+  const syncNow = useRef<() => void>(() => undefined);
   const handlers = useRef({ onStroke, onErase });
   useEffect(() => { handlers.current = { onStroke, onErase }; }, [onStroke, onErase]);
   const previewRef = useRef(preview);
@@ -148,7 +152,7 @@ export function useBooxInk({ container, enabled = true, exclude: excluded, sdk, 
         const box = boxOf(overlay.getBoundingClientRect());
         return box && area && overlaps(box, area.region);
       });
-      if (!area || covered) {
+      if (!area || covered || held.current) {
         if (status.started && !status.paused) { status.paused = true; void BooxPen.pause().catch(() => undefined); }
         return;
       }
@@ -183,6 +187,7 @@ export function useBooxInk({ container, enabled = true, exclude: excluded, sdk, 
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(sync);
     };
+    syncNow.current = sync;
     sync();
     const resize = new ResizeObserver(schedule);
     resize.observe(element);
@@ -211,6 +216,7 @@ export function useBooxInk({ container, enabled = true, exclude: excluded, sdk, 
 
     return () => {
       stopped = true;
+      syncNow.current = () => undefined;
       status.running = false;
       removers.forEach((remove) => remove());
       if (status.started && penOwner === status) {
@@ -221,14 +227,14 @@ export function useBooxInk({ container, enabled = true, exclude: excluded, sdk, 
   }, [available, sdk, container, excluded, painted]);
 
   // The preview follows the tool, size, color and zoom without restarting the pen.
-  const { width, color, marker } = preview;
+  const { width, color, marker, dash = false } = preview;
   useEffect(() => {
     const { current } = previewRef;
-    const changed = current.width !== width || current.color !== color || current.marker !== marker;
-    previewRef.current = { width, color, marker };
+    const changed = current.width !== width || current.color !== color || current.marker !== marker || Boolean(current.dash) !== dash;
+    previewRef.current = { width, color, marker, dash };
     if (!changed || !state.current.running || penOwner !== state.current) return;
-    void BooxPen.setWidth({ width, color, marker }).catch(() => undefined);
-  }, [width, color, marker]);
+    void BooxPen.setWidth({ width, color, marker, dash }).catch(() => undefined);
+  }, [width, color, marker, dash]);
 
   useEffect(() => () => clearTimeout(refreshTimer.current), []);
 
@@ -247,5 +253,13 @@ export function useBooxInk({ container, enabled = true, exclude: excluded, sdk, 
 
   const frameGap = useCallback(() => (available && fast.current.gesture ? GESTURE_FRAME_MS : 0), [available]);
 
-  return { owns, painted, gesture, frameGap };
+  // Paused at once rather than on the next frame: the pen leaving the selection's box mid-drag
+  // was taken by the SDK, which drew it as a loop instead (Go 10.3, 2026-10-24).
+  const hold = useCallback((active: boolean) => {
+    if (held.current === active) return;
+    held.current = active;
+    syncNow.current();
+  }, []);
+
+  return { owns, painted, gesture, frameGap, hold };
 }

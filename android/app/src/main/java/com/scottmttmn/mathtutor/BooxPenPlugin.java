@@ -119,7 +119,7 @@ public class BooxPenPlugin extends Plugin {
         }
     }
 
-    /** { region, exclude?, width, color?, marker? }: region and exclude are { x, y, w, h }; width is the pen's in CSS px; color #rrggbb; marker a highlighter's tip. */
+    /** { region, exclude?, width, color?, marker? }: region and exclude are { x, y, w, h }; width is the pen's in CSS px; color #rrggbb; marker a highlighter's tip; dash the lasso's dashed loop. */
     @PluginMethod
     public void start(PluginCall call) {
         if (!onyx(call)) return;
@@ -370,9 +370,18 @@ public class BooxPenPlugin extends Plugin {
         return false;
     }
 
-    /** A pencil, or a marker's flat tip for the ink board's highlighter. */
+    /** A pencil, a marker's flat tip for the ink board's highlighter, or a dashed line for the lasso's loop. */
     private int style(PluginCall call) {
-        return call.getBoolean("marker", false) ? TouchHelper.STROKE_STYLE_MARKER : TouchHelper.STROKE_STYLE_PENCIL;
+        if (call.getBoolean("marker", false)) return TouchHelper.STROKE_STYLE_MARKER;
+        if (call.getBoolean("dash", false)) {
+            // Not every SDK version has a dashed style: look it up, else draw a pencil line.
+            try {
+                return TouchHelper.class.getField("STROKE_STYLE_DASH").getInt(null);
+            } catch (ReflectiveOperationException missing) {
+                return TouchHelper.STROKE_STYLE_PENCIL;
+            }
+        }
+        return TouchHelper.STROKE_STYLE_PENCIL;
     }
 
     /** A #rrggbb color from the page, or null when there is none (or it can't be read). */
