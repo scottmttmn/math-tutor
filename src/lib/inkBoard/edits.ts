@@ -45,6 +45,24 @@ export function moveItems(board: BoardInk, ids: ReadonlySet<string>, dx: number,
   return { ...moved, page: pageAround(board.page, boardBounds(moved, ids)) };
 }
 
+/** The board with copies of these items, moved by (dx, dy), on top; and the copies' ids. */
+export function copyItems(board: BoardInk, ids: ReadonlySet<string>, dx: number, dy: number, newId: () => string): { board: BoardInk; ids: Set<string> } {
+  const copied = new Set<string>();
+  const strokes = board.strokes.filter((stroke) => ids.has(stroke.id)).map((stroke) => {
+    const id = newId();
+    copied.add(id);
+    return { ...stroke, id };
+  });
+  const images = board.images.filter((image) => ids.has(image.id) && !image.problem).map((image) => {
+    const id = newId();
+    copied.add(id);
+    return { ...image, id };
+  });
+  if (copied.size === 0) return { board, ids: copied };
+  const added = addItems(board, strokes, images);
+  return { board: moveItems(added, copied, dx, dy), ids: copied };
+}
+
 /** Where two versions of a board differ (items added, removed or changed); null when they draw the same. */
 export function changedBounds(before: BoardInk, after: BoardInk): Bounds | null {
   if (before === after) return null;

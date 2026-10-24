@@ -254,3 +254,18 @@ test('the camera fits the page\'s width, zooms from there up to four times, and 
   assert.equal(camera.clampCamera({ ...zoomed, y: 1e6 }, page, view).y, 1e6);
   near(camera.clampCamera({ x: 5000, y: 0, z: zoomed.z }, page, view).x, 960 + 16 / zoomed.z - 1000 / zoomed.z);
 });
+
+test('a copy is new items beside the originals, never the problem picture, and one undo step', () => {
+  const problem = { id: 'p', x: 0, y: 0, w: 10, h: 10, src: 'data:', problem: true };
+  const picture = { id: 'q', x: 50, y: 50, w: 10, h: 10, src: 'data:' };
+  const before = board([line('a', 10, 10, 20, 30), line('b', 100, 100, 110, 110)], [problem, picture]);
+  let n = 0;
+  const { board: after, ids } = edits.copyItems(before, new Set(['a', 'p', 'q']), 24, 24, () => `copy${(n += 1)}`);
+  assert.deepEqual([...ids], ['copy1', 'copy2']);
+  assert.equal(after.strokes.length, 3);
+  assert.deepEqual(after.strokes[2].points, [34, 34, 0.5, 44, 54, 0.5]);
+  assert.equal(after.strokes[0], before.strokes[0]);
+  assert.deepEqual(after.images.map((image) => [image.id, image.x, image.problem]), [['p', 0, true], ['q', 50, undefined], ['copy2', 74, undefined]]);
+  assert.equal(edits.copyItems(before, new Set(['gone']), 24, 24, () => 'x').board, before);
+  assert.equal(edits.copyItems(before, new Set(['p']), 24, 24, () => 'x').board, before);
+});

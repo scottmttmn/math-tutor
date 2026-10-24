@@ -234,6 +234,46 @@ try {
   await pen.detach();
   await touch.detach();
 
+  // The lasso on a BOOX: its loop and a dragged selection come at the panel's pace, and the board
+  // under a drag is painted only as it starts and ends.
+  await page.getByRole('button', { name: 'Fit width', exact: true }).click();
+  await page.waitForTimeout(400);
+  const lineY = box.y + 260;
+  const line = [];
+  for (let i = 0; i <= 20; i += 1) line.push(box.x + 120 + i * 12, lineY, 0.5, i * 8);
+  const strokesBefore = await strokes();
+  await page.evaluate((points) => window.__boox.emit('stroke', points), line);
+  await waitStrokes(strokesBefore + 1);
+  // The loop is Onyx's pen's too (drawn at once, thin and gray); the selection box is left to the
+  // page, so the pen drags it there.
+  await page.getByRole('button', { name: 'Lasso', exact: true }).click();
+  await waitLast('setWidth', "options.color === '#6b7280' && options.dash === true");
+  const loopPoints = [[box.x + 100, lineY - 30], [box.x + 400, lineY - 30], [box.x + 400, lineY + 30], [box.x + 100, lineY + 30], [box.x + 100, lineY - 30]];
+  await page.evaluate((points) => window.__boox.emit('stroke', points.flatMap(([x, y], i) => [x, y, 0.5, i * 20])), loopPoints);
+  await page.waitForFunction(() => document.querySelector('[data-ink-board]')?.getAttribute('data-selected') === '1');
+  await page.waitForFunction(([x, y]) => {
+    const exclude = window.__boox.calls.filter((call) => call.method === 'setRegion' || call.method === 'start').at(-1)?.options.exclude ?? [];
+    return exclude.some((rect) => x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h);
+  }, [box.x + 250, lineY]);
+  await page.evaluate(() => { window.__paints = 0; });
+  const lastHold = () => page.evaluate(() => window.__boox.calls.filter((call) => call.method === 'pause' || call.method === 'resume').at(-1)?.method);
+  await page.mouse.move(box.x + 250, lineY);
+  await page.mouse.down();
+  // The SDK lets go of the pen at once for the drag, or it would take it outside the box.
+  assert.equal(await lastHold(), 'pause', 'the SDK pauses as a drag starts');
+  for (let step = 1; step <= 30; step += 1) {
+    await page.mouse.move(box.x + 250, lineY + step * 4);
+    await page.waitForTimeout(10);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  const lassoPaints = await page.evaluate(() => window.__paints);
+  assert.equal(await lastHold(), 'resume', 'the SDK takes the pen back as the drag ends');
+  assert.ok(lassoPaints >= 2 && lassoPaints <= 3, `the board under a drag painted ${lassoPaints} times`);
+  assert.equal(await board.getAttribute('data-selected'), '1', 'the moved ink stays selected');
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await page.getByRole('button', { name: 'Pen', exact: true }).click();
+
   // Leaving for Home stops the pen and releases fast mode.
   await page.getByRole('link', { name: 'Home' }).click();
   await page.waitForURL(`${origin}/`);
