@@ -372,6 +372,7 @@ ESLint uses the Next.js core web vitals config. Run `npm run lint` before commit
 - Design direction (agreed 2026-10-14, revised 2026-10-16): boards, books you work from, and a tutor you call, in one library on Home. Building in steps: per-board backup files (done), Home and the Shelf as one page (done), nested folders with a book in its own (done), several exercises on one board (done). Later, a new name for the app.
 
 ### Visual language
+- BOOX Android app: `DeviceAppearance` detects Onyx through the existing native status call and sets `data-boox-ui` on the root. The `boox:` Tailwind variant raises the root font to 20px (25% larger rem-based text, spacing and controls: standard controls are 55px); shared icons use rem too. Canvas coordinates and saved ink are unchanged. Portrait problem panels fit their content, capped at 35% of the frame; menus scroll within the viewport. Other devices keep the default scale.
 - Ink on paper: grays, black and white. Meaning is carried by icon, shape and word, so every screen still reads in greyscale on an e-ink tablet.
 - **Only the tutor has a color**, Tailwind `indigo-700` (`indigo-50` for its replies and tints): **Ask tutor**, the drawer’s outlined choices, the drawer's edge and heading, Send/Ask in a chat, "Tutor reads". Nothing else uses indigo, and the tutor uses nothing else. Focus rings and links are ink.
 - **Solved** is a filled ink check (`SolvedCheck` in `common/Icons.tsx`) plus the word, everywhere (boards, Home, Shelf lists; the Shelf page's mark gets a filled label). No green.

@@ -340,7 +340,7 @@ export default function TldrawCanvas({ handleRef, toolsHidden, paper }: { handle
   return (
     <PaperContext.Provider value={paper}>
       <NotebookContext.Provider value={notebookPage}>
-        <Tldraw assetUrls={assetUrls} components={components} options={{ maxPages: 1 }} onMount={handleMount} hideUi={toolsHidden} />
+        <Tldraw className="boox:[&_.tlui-button]:min-h-11! boox:[&_.tlui-button]:min-w-11! boox:[&_.tlui-button]:text-sm!" assetUrls={assetUrls} components={components} options={{ maxPages: 1 }} onMount={handleMount} hideUi={toolsHidden} />
       </NotebookContext.Provider>
     </PaperContext.Provider>
   );

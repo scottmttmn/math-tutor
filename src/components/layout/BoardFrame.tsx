@@ -70,7 +70,7 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
           // Keep lg:flex-1's zero basis for a wide PDF; its rendered width must not crowd out the board.
           className={`${showTutor ? 'hidden 2xl:flex' : 'flex'} flex-col min-w-0 min-h-0 ${flipped ? 'flex-1' : 'basis-[40%] shrink-0'} ${
             source.wide ? 'lg:flex-1' : 'lg:w-[22rem] lg:flex-none'
-          } border-b lg:border-b-0 lg:border-r border-gray-200 bg-gray-50`}
+          } ${!flipped ? 'boox:max-lg:basis-auto boox:max-lg:max-h-[35%]' : ''} border-b lg:border-b-0 lg:border-r border-gray-200 bg-gray-50`}
         >
           {(source.toolbar || flipped) && (
             <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-white border-b border-gray-200">
