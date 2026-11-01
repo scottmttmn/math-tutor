@@ -11,7 +11,8 @@ const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 
 try {
-  const page = await browser.newPage({ viewport: { width: 1024, height: 768 } });
+  // Leave room for the 25% larger BOOX controls and all pen/gesture sample paths below.
+  const page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.addInitScript(fakeBooxBridge);
@@ -31,6 +32,7 @@ try {
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'start'));
   const [{ options: start }] = await calls('start');
   const box = await board.boundingBox();
+  assert.ok(box.width > 650 && box.height > 550, 'all input paths stay inside the visible board');
   assert.ok(Math.abs(start.region.w - box.width) < 2 && Math.abs(start.region.h - box.height) < 2, 'the pen draws over the board');
   const penButton = await page.getByRole('button', { name: 'Pen', exact: true }).boundingBox();
   const inside = (rect, x, y) => x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
