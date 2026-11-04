@@ -679,10 +679,10 @@ export interface BooxPenPlugin {
   status(): Promise<{ onyx: boolean; active: boolean; fast?: boolean }>;
   /** Fast screen updates for editing tools or finger gestures; leaving does not force a repaint. */
   interaction(options: { active: boolean }): Promise<{ active: boolean }>;
-  /** `color` is the preview's ink as #rrggbb (black when left out); `marker` draws it with a flat marker tip (a highlighter). */
-  start(options: { region: BooxPenBox; exclude?: BooxPenBox[]; width: number; color?: string; marker?: boolean }): Promise<void>;
+  /** `color` is the preview's ink as #rrggbb (black when left out); `marker` draws it with a flat marker tip (a highlighter); `dash` dashed, where the SDK has it (the lasso's loop). */
+  start(options: { region: BooxPenBox; exclude?: BooxPenBox[]; width: number; color?: string; marker?: boolean; dash?: boolean }): Promise<void>;
   /** Update the preview width in CSS pixels (and its color and tip) without restarting pen input. */
-  setWidth(options: { width: number; color?: string; marker?: boolean }): Promise<void>;
+  setWidth(options: { width: number; color?: string; marker?: boolean; dash?: boolean }): Promise<void>;
   setRegion(options: { region: BooxPenBox; exclude?: BooxPenBox[] }): Promise<void>;
   pause(): Promise<void>;
   resume(): Promise<void>;

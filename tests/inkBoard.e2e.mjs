@@ -134,6 +134,53 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Undo', exact: true }).isDisabled(), true, 'undo starts fresh on a reopened board');
   console.log('PASS the board saves as ink with a thumbnail and reopens as an ink board');
 
+  // The lasso: circle a line, drag it, duplicate and delete; the tutor reads only the selection.
+  const lasso = async (points) => {
+    const area = await page.getByTestId('ink-board').boundingBox();
+    await page.mouse.move(area.x + points[0][0], area.y + points[0][1]);
+    await page.mouse.down();
+    for (const [x, y] of points.slice(1)) await page.mouse.move(area.x + x, area.y + y, { steps: 8 });
+    await page.mouse.up();
+  };
+  // Each stroke's top, to see which one moved.
+  const tops = (board) => board.strokes.map((s) => Math.min(...s.points.filter((_, i) => i % 3 === 1)));
+  const startTops = tops((await saved('session.ink?.strokes?.length === 3')).ink);
+  await page.getByRole('button', { name: 'Lasso', exact: true }).click();
+  await lasso([[70, 170], [430, 170], [430, 260], [70, 260], [70, 170]]);
+  await waitCount('selected', 1);
+  await openTutor(page);
+  const asked = requests.length;
+  await chooseTutor(page);
+  while (requests.length === asked) await new Promise((resolve) => setTimeout(resolve, 50));
+  await page.getByText('Ink hint.', { exact: true }).last().waitFor();
+  const selectedPng = Buffer.from(requests.at(-1).messages.at(-1).content.find((part) => part.type === 'image_url').image_url.url.split(',')[1], 'base64');
+  assert.ok(selectedPng.readUInt32BE(20) < 260, `the tutor reads the selected line alone (${selectedPng.readUInt32BE(16)} × ${selectedPng.readUInt32BE(20)})`);
+  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  await stroke(250, 215, 250, 275);
+  const moved = await saved(`session.ink?.strokes?.length === 3 && session.ink.strokes.some((s, n) => Math.min(...s.points.filter((_, i) => i % 3 === 1)) > ${JSON.stringify(startTops)}[n] + 40)`);
+  const shifts = tops(moved.ink).map((top, n) => top - startTops[n]);
+  assert.equal(shifts.filter((shift) => shift > 40 && shift < 80).length, 1, `one line moved by the drag (${shifts})`);
+  assert.equal(shifts.filter((shift) => shift === 0).length, 2, 'the others stayed');
+  assert.equal(await count('selected'), 1, 'the moved ink stays selected');
+  await page.getByRole('button', { name: 'Duplicate', exact: true }).click();
+  await waitCount('strokes', 4);
+  assert.equal(await count('selected'), 1, 'the copy is selected');
+  await page.keyboard.press('Delete');
+  await waitCount('strokes', 3);
+  await waitCount('selected', 0);
+  await page.keyboard.press('ControlOrMeta+z');
+  await waitCount('strokes', 4);
+  await page.keyboard.press('ControlOrMeta+z');
+  await page.keyboard.press('ControlOrMeta+z');
+  await waitCount('strokes', 3);
+  await saved(`session.ink?.strokes?.length === 3 && session.ink.strokes.every((s, n) => Math.min(...s.points.filter((_, i) => i % 3 === 1)) === ${JSON.stringify(startTops)}[n])`);
+  await lasso([[70, 170], [430, 170], [430, 260], [70, 260], [70, 170]]);
+  await waitCount('selected', 1);
+  await page.keyboard.press('Escape');
+  await waitCount('selected', 0);
+  await page.getByRole('button', { name: 'Pen', exact: true }).click();
+  console.log('PASS the lasso selects, moves, duplicates and deletes, one undo step each; the tutor reads the selection');
+
   // Paper, zoom and Fit width.
   await page.getByRole('button', { name: 'Paper: Blank' }).click();
   await page.getByRole('menuitemradio', { name: 'Lined' }).click();
@@ -163,6 +210,7 @@ try {
   assert.ok(width > 560 && width < 720 && height > 420 && height < 560, `tutor picture ${width} × ${height}`);
   await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
   console.log('PASS the tutor gets the writing, trimmed and at 2x');
+
 
   // Save as PNG.
   const [download] = await Promise.all([page.waitForEvent('download'), boardMenu('Save as PNG')]);
