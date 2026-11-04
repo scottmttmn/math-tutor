@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
 import { GRID_SPACING, LINE_SPACING } from '@/lib/paper';
@@ -13,6 +14,8 @@ import { VIEW_MARGIN, clampCamera, fitCamera, fitZoom, toBoard, zoomAbout, type 
 import { TUTOR_IMAGE_PADDING, TUTOR_IMAGE_SIDE } from '@/lib/tutorBoardImages';
 import { strokePoints, sweep } from '@/lib/booxPen';
 import { useBooxInk } from '@/hooks/useBooxInk';
+import { useBoardRail } from '@/components/layout/BoardRail';
+import { EraserIcon, HighlightIcon, LassoIcon, PenIcon, RedoIcon, UndoIcon } from '@/components/common/Icons';
 import type { BoardImage, BoardInk, BoardStroke, InkColor, Paper } from '@/types';
 import type { DrawingCanvasHandle } from './DrawingCanvas';
 
@@ -90,6 +93,9 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   const [tool, setTool] = useState<Tool>('pen');
   const [size, setSize] = useState<PenSize>('s');
   const [color, setColor] = useState<InkColor>('black');
+  // The pen's or highlighter's sizes and inks, opened from its button in the rail; writing closes them.
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const rail = useBoardRail();
   // How many items the lasso holds, for its toolbar (the ids live in `selection`).
   const [selected, setSelected] = useState(0);
   // The zoom, for the BOOX pen's preview width (the camera itself lives in a ref).
@@ -135,7 +141,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
 
   // Strokes and eraser passes the BOOX pen hands over (set below, once the edits exist).
   const fromBoox = useRef({ stroke: (flat: number[]) => void flat, erase: (flat: number[]) => void flat });
-  const onBooxStroke = useCallback((flat: number[]) => fromBoox.current.stroke(flat), []);
+  const onBooxStroke = useCallback((flat: number[]) => { setOptionsOpen(false); fromBoox.current.stroke(flat); }, []);
   const onBooxErase = useCallback((flat: number[]) => fromBoox.current.erase(flat), []);
   const { owns: booxOwns, painted, gesture, frameGap, hold: holdPen } = useBooxInk({
     container,
@@ -684,6 +690,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         paintLive();
         return;
       }
+      setOptionsOpen(false);
       const { tool: chosen, size: penSize, color: ink } = style.current;
       const highlighter = chosen === 'highlighter';
       const points: number[] = [];
@@ -923,6 +930,12 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
 
   const button = 'flex items-center justify-center min-h-11 min-w-11 px-2 text-sm rounded-lg border bg-white hover:bg-gray-50 disabled:opacity-40';
   const pressed = (on: boolean) => `${button} ${on ? 'border-2 border-gray-900 font-semibold text-gray-900' : 'border-gray-300 text-gray-800'}`;
+  const railButton = (on: boolean) => `flex items-center justify-center w-11 min-h-11 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40 ${on ? 'border-2 border-gray-900 text-gray-900' : 'border border-transparent text-gray-800'}`;
+  // Choosing the pen or highlighter shows its sizes and inks; tapping it again hides them.
+  const pickTool = (next: Tool) => {
+    setOptionsOpen((open) => (next === 'pen' || next === 'highlighter') && (next !== tool || !open));
+    chooseTool(next);
+  };
 
   return (
     <div ref={container} className="absolute inset-0 overflow-hidden" data-ink-board="true" data-strokes="0" data-images="0" data-selected="0">
@@ -935,14 +948,20 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         aria-label="Ink board"
         data-testid="ink-board"
       />
-      {!toolsHidden && (
-        <div role="toolbar" aria-label="Ink tools" className="absolute top-2 left-2 right-2 flex flex-wrap items-center gap-1.5 pointer-events-none [&>*]:pointer-events-auto">
-          <div className="flex gap-1 p-1 bg-white/95 border border-gray-200 rounded-xl shadow-sm">
-            <button className={pressed(tool === 'pen')} aria-pressed={tool === 'pen'} onClick={() => chooseTool('pen')}>Pen</button>
-            <button className={pressed(tool === 'highlighter')} aria-pressed={tool === 'highlighter'} onClick={() => chooseTool('highlighter')}>Highlight</button>
-            <button className={pressed(tool === 'eraser')} aria-pressed={tool === 'eraser'} onClick={() => chooseTool('eraser')}>Eraser</button>
-            <button className={pressed(tool === 'lasso')} aria-pressed={tool === 'lasso'} title="Circle ink to select it" onClick={() => chooseTool('lasso')}>Lasso</button>
-          </div>
+      {/* The tools are in the board's rail (BoardRail); what a tool offers opens over the page's top left. */}
+      {!toolsHidden && rail?.tools && createPortal(
+        <div role="toolbar" aria-label="Ink tools" aria-orientation="vertical" className="contents">
+          <button className={railButton(tool === 'pen')} aria-pressed={tool === 'pen'} aria-expanded={tool === 'pen' && optionsOpen} aria-label="Pen" title="Pen (tap again for size and ink)" onClick={() => pickTool('pen')}><PenIcon /></button>
+          <button className={railButton(tool === 'highlighter')} aria-pressed={tool === 'highlighter'} aria-expanded={tool === 'highlighter' && optionsOpen} aria-label="Highlight" title="Highlight (tap again for ink)" onClick={() => pickTool('highlighter')}><HighlightIcon /></button>
+          <button className={railButton(tool === 'eraser')} aria-pressed={tool === 'eraser'} aria-label="Eraser" title="Eraser" onClick={() => pickTool('eraser')}><EraserIcon /></button>
+          <button className={railButton(tool === 'lasso')} aria-pressed={tool === 'lasso'} aria-label="Lasso" title="Lasso: circle ink to select it" onClick={() => pickTool('lasso')}><LassoIcon /></button>
+          <button className={railButton(false)} disabled={!steps.undo} aria-label="Undo" title="Undo (Ctrl+Z)" onClick={doUndo}><UndoIcon /></button>
+          <button className={railButton(false)} disabled={!steps.redo} aria-label="Redo" title="Redo (Ctrl+Shift+Z)" onClick={doRedo}><RedoIcon /></button>
+        </div>,
+        rail.tools,
+      )}
+      {!toolsHidden && (tool === 'lasso' || ((tool === 'pen' || tool === 'highlighter') && optionsOpen)) && (
+        <div role="toolbar" aria-label={tool === 'lasso' ? 'Selection' : 'Pen options'} className="absolute top-2 left-2 right-2 flex flex-wrap items-center gap-1.5 pointer-events-none [&>*]:pointer-events-auto">
           {tool === 'lasso' && (
             <div className="flex items-center gap-1 p-1 bg-white/95 border border-gray-200 rounded-xl shadow-sm" role="group" aria-label="Selection">
               {selected === 0 && <span className="px-2 text-sm text-gray-600">Circle ink to select it</span>}
@@ -973,10 +992,6 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
               ))}
             </div>
           )}
-          <div className="flex gap-1 p-1 bg-white/95 border border-gray-200 rounded-xl shadow-sm">
-            <button className={pressed(false)} disabled={!steps.undo} onClick={doUndo}>Undo</button>
-            <button className={pressed(false)} disabled={!steps.redo} onClick={doRedo}>Redo</button>
-          </div>
         </div>
       )}
     </div>

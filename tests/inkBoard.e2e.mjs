@@ -243,6 +243,30 @@ try {
   assert.equal(await count('images'), 1);
   console.log('PASS Put on board places the picture once, above the work; Clear leaves it');
 
+  // The controls are in a rail down the board's left, the tutor at its top; nothing sits below the board.
+  {
+    const controls = page.getByRole('group', { name: 'Board controls' });
+    const railBox = await controls.boundingBox();
+    const boardBox = await ink().boundingBox();
+    assert.ok(railBox.x + railBox.width <= boardBox.x + 1 && railBox.height > railBox.width, 'a rail left of the board');
+    const tutorBox = await controls.getByRole('button', { name: 'Ask tutor', exact: true }).boundingBox();
+    const penBox = await controls.getByRole('button', { name: 'Pen', exact: true }).boundingBox();
+    assert.ok(tutorBox.y < penBox.y, 'Ask tutor tops the rail');
+    const viewport = page.viewportSize();
+    assert.ok(boardBox.y + boardBox.height > viewport.height - 4, 'the board runs to the foot of the screen');
+    // Full screen takes the header too; the rail's own button brings it back.
+    await page.getByRole('button', { name: 'Full screen', exact: true }).click();
+    await page.getByRole('button', { name: 'Mark solved', exact: true }).waitFor({ state: 'hidden' });
+    await controls.getByRole('button', { name: 'Exit full screen' }).click();
+    await page.getByRole('button', { name: 'Mark solved', exact: true }).waitFor();
+    // The rail folds away; a tab at the edge brings it back.
+    await boardMenu('Hide tool rail');
+    await controls.waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: 'Show tools', exact: true }).click();
+    await page.getByRole('button', { name: 'Pen', exact: true }).waitFor();
+  }
+  console.log('PASS the ink board keeps its controls in a left rail that folds away; full screen hides the header');
+
   // Turned off, a new board is tldraw again; the ink board stays an ink board.
   await boardMenu('Ink board for new boards (experiment)');
   await ink().waitFor();

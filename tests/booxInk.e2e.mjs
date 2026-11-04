@@ -36,7 +36,9 @@ try {
   assert.ok(Math.abs(start.region.w - box.width) < 2 && Math.abs(start.region.h - box.height) < 2, 'the pen draws over the board');
   const penButton = await page.getByRole('button', { name: 'Pen', exact: true }).boundingBox();
   const inside = (rect, x, y) => x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
-  assert.ok(start.exclude.some((rect) => inside(rect, penButton.x + penButton.width / 2, penButton.y + penButton.height / 2)), 'the ink tools stay tappable');
+  // The ink tools are in the rail beside the board, outside the pen's region.
+  assert.ok(penButton.x + penButton.width <= start.region.x + 1, 'the ink tools stay tappable');
+  assert.ok(!inside(start.region, penButton.x + penButton.width / 2, penButton.y + penButton.height / 2), 'the rail is not the pen\'s');
   assert.ok(!start.exclude.some((rect) => inside(rect, box.x + box.width / 2, box.y + box.height / 2)), 'the page stays writable');
   // Size S at the page's writing scale (set again once the SDK is up), black.
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'setWidth'));
@@ -77,6 +79,8 @@ try {
   // Size and ink change the preview without restarting the pen.
   const starts = (await calls('start')).length;
   const small = (await calls('setWidth')).at(-1).options.width;
+  // The pen's sizes and inks open from its button (it is already chosen) and sit outside the pen's region.
+  await page.getByRole('button', { name: 'Pen', exact: true }).click();
   await page.getByRole('button', { name: 'Size M' }).click();
   await waitLast('setWidth', `Math.abs(options.width - ${small * 1.5}) < 0.01`);
   await page.getByRole('button', { name: 'Gray' }).click();

@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { TutorIcon } from '@/components/common/Icons';
+import { useOnInkBoard } from '@/hooks/useInkBoardMode';
+import { BoardRailContext } from './BoardRail';
 
 // Tailwind's 2xl: wide enough for the source, the board and the tutor side by side.
 const WIDE_QUERY = '(min-width: 96rem)';
@@ -41,7 +43,7 @@ interface Props {
   actions?: ReactNode;
   /** The DrawingCanvas; its wrapper here is positioned and sized. */
   canvas: ReactNode;
-  /** The BottomToolbar. */
+  /** The BottomToolbar: along the foot of a tldraw board, a rail down the left of an ink board. */
   toolbar: ReactNode;
   /** The tutor, closed until asked: a column on the right, in the source's place unless the screen is very wide. */
   tutor: { open: boolean; onClose: () => void; content: ReactNode };
@@ -62,6 +64,11 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
   const showSource = Boolean(source) && !fullScreen && (swapping ? flipped : !sourceHidden);
   // Below 2xl the open tutor takes the source's place, whether or not the source was hidden.
   const sourceCovered = Boolean(source) && showTutor && !wide && !swapping;
+  // An ink board has its controls in a rail on the left (BoardRail), and full screen hides its header too.
+  const rail = useOnInkBoard();
+  const [railTools, setRailTools] = useState<HTMLElement | null>(null);
+  const [railHeader, setRailHeader] = useState<HTMLElement | null>(null);
+  const railSlots = useMemo(() => ({ tools: railTools, header: railHeader, setTools: setRailTools, setHeader: setRailHeader }), [railTools, railHeader]);
 
   return (
     <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
@@ -89,9 +96,11 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
 
       {/* Flipped to the source, the board stays mounted (hidden), so its drawing and undo stay. */}
       <section className={`${flipped ? 'hidden' : 'flex'} flex-1 min-w-0 min-h-0 flex-col bg-white ${source?.wide && showSource && !showTutor ? 'lg:flex-none lg:w-1/2' : ''}`}>
-        <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200">
+        <BoardRailContext.Provider value={railSlots}>
+        <div className={`${rail && fullScreen ? 'hidden' : 'flex'} flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200`}>
           <div className="min-w-0 flex-1">{title}</div>
           {actions}
+          {rail && <div ref={setRailHeader} className="contents" />}
           {source?.swap && swapping ? (
             <button onClick={() => { tutor.onClose(); setFlippedFor(source.swap?.key ?? null); }}
               title={`Show the ${source.label.toLowerCase()} in the board's place`}
@@ -110,8 +119,18 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
             </button>
           )}
         </div>
-        <div className="relative flex-1 min-h-0">{canvas}</div>
-        {toolbar}
+        {rail ? (
+          <div className="flex-1 min-h-0 flex">
+            {toolbar}
+            <div className="relative flex-1 min-w-0">{canvas}</div>
+          </div>
+        ) : (
+          <>
+            <div className="relative flex-1 min-h-0">{canvas}</div>
+            {toolbar}
+          </>
+        )}
+        </BoardRailContext.Provider>
       </section>
 
       {/* Keep the conversation mounted when closed, so drafts and an active reply survive toggling. */}
