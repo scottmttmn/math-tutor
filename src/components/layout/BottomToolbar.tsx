@@ -187,8 +187,9 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
     const divider = <div aria-hidden="true" className="w-7 my-0.5 border-t border-gray-200" />;
     return (
       <>
+        {/* A short board (a panel above it, a landscape phone) scrolls the rail; its menus are placed on the screen. */}
         {!tools?.hidden && (
-          <div role="group" aria-label="Board controls" className="flex flex-col items-center gap-1 w-12 shrink-0 py-1.5 border-r border-gray-200 bg-white">
+          <div role="group" aria-label="Board controls" className="flex flex-col items-center gap-1 w-12 shrink-0 py-1.5 overflow-y-auto overscroll-contain border-r border-gray-200 bg-white">
             {tutorButton}{checkInButton}
             {divider}
             <div ref={setRailTools} className="contents" />

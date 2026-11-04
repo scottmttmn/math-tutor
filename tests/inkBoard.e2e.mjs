@@ -264,6 +264,18 @@ try {
     await controls.waitFor({ state: 'detached' });
     await page.getByRole('button', { name: 'Show tools', exact: true }).click();
     await page.getByRole('button', { name: 'Pen', exact: true }).waitFor();
+    // On a short screen the rail scrolls within the board, and its menus still open on screen.
+    await page.setViewportSize({ width: 1000, height: 520 });
+    const short = await controls.boundingBox();
+    const shortBoard = await ink().boundingBox();
+    assert.ok(Math.abs(short.y + short.height - (shortBoard.y + shortBoard.height)) < 2, 'the rail ends with the board');
+    const menuButton = controls.getByRole('button', { name: 'Board menu' });
+    await menuButton.scrollIntoViewIfNeeded();
+    await menuButton.click();
+    const menu = await page.getByRole('menu', { name: 'Board menu' }).boundingBox();
+    assert.ok(menu.x >= short.x + short.width - 1 && menu.y >= 0 && menu.y + menu.height <= 520 + 1, 'the menu opens beside the rail, on screen');
+    await page.keyboard.press('Escape');
+    await page.setViewportSize(viewport);
   }
   console.log('PASS the ink board keeps its controls in a left rail that folds away; full screen hides the header');
 
