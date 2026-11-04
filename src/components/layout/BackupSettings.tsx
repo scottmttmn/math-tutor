@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { useBackupStatus } from '@/hooks/useBackupStatus';
 import { BACKUP_FOLDER_NAME, backUpNow, chooseBackupFolder, recordDownload, resumeBackup, stopBackup } from '@/lib/autoBackup';
+import { pickAndroidBackupFiles } from '@/lib/backupFolder';
 import { backupDays, backupFileName, backupZip, downloadBlob, restoreFromFiles } from '@/lib/backup';
 import type { RestoreResult } from '@/types';
 
@@ -87,7 +88,7 @@ export default function BackupSettings({ onClose, saveOpenBoard, restoredMessage
   // A backup folder with dated copies can go back to an earlier day: ask which before restoring.
   const [folderPicked, setFolderPicked] = useState<{ files: File[]; days: string[] } | null>(null);
   const [day, setDay] = useState('');
-  const pickFolder = (files: FileList | null) => {
+  const pickFolder = (files: FileList | File[] | null) => {
     if (!files?.length) return;
     const picked = [...files];
     const days = backupDays(picked);
@@ -96,6 +97,14 @@ export default function BackupSettings({ onClose, saveOpenBoard, restoredMessage
     setDay('');
     setFolderPicked({ files: picked, days });
   };
+
+  // The app's WebView can't pick a folder: Android's folder picker reads it instead.
+  const restoreAndroidFolder = () => run('restore', async () => {
+    const files = await pickAndroidBackupFiles(BACKUP_FOLDER_NAME);
+    if (files && !files.length) throw new Error(`Pick the "${BACKUP_FOLDER_NAME}" folder.`);
+    pickFolder(files);
+    return null;
+  });
 
   const restore = (picked: File[], fromDay?: string) => {
     if (!picked.length) return;
@@ -120,7 +129,11 @@ export default function BackupSettings({ onClose, saveOpenBoard, restoredMessage
           <p>This browser can&apos;t keep a backup in a folder by itself. Download a backup now and then and keep it somewhere safe, like Google Drive.</p>
         ) : status.state === 'off' ? (
           <>
-            <p className="mb-2">Pick a folder, for example one in Dropbox or iCloud Drive, and a copy of all your work is kept there, updated shortly after each change.</p>
+            <p className="mb-2">
+              {status.androidFolder
+                ? 'Pick a folder on this tablet, for example Documents, and a copy of all your work is kept there, updated shortly after each change.'
+                : 'Pick a folder, for example one in Dropbox or iCloud Drive, and a copy of all your work is kept there, updated shortly after each change.'}
+            </p>
             <button onClick={() => void run('backup', async () => { await chooseBackupFolder(); return null; })} disabled={busy !== null} className={plain}>Choose folder…</button>
           </>
         ) : (
@@ -129,11 +142,11 @@ export default function BackupSettings({ onClose, saveOpenBoard, restoredMessage
               Backing up to <span className="font-medium text-gray-900">{status.folderName === BACKUP_FOLDER_NAME ? status.folderName : `${status.folderName}/${BACKUP_FOLDER_NAME}`}</span>.{' '}
               {status.state === 'writing' ? 'Writing the backup…' : status.lastBackupAt ? `Last backup ${timeAgo(status.lastBackupAt)}.` : ''}
             </p>
-            {status.state === 'paused' && <p className="mb-2 text-gray-900">Paused: the browser needs your permission again to write to that folder.</p>}
+            {status.state === 'paused' && <p className="mb-2 text-gray-900">{status.androidFolder ? 'Paused: Android no longer lets the app write to that folder. Pick it again.' : 'Paused: the browser needs your permission again to write to that folder.'}</p>}
             {status.state === 'error' && <p className="mb-2 text-red-700">The last backup failed: {status.error}</p>}
             <div className="flex flex-wrap gap-2">
               {status.state === 'paused'
-                ? <button onClick={() => void run('backup', async () => { await resumeBackup(); return null; })} disabled={busy !== null} className={plain}>Allow and back up</button>
+                ? <button onClick={() => void run('backup', async () => { await resumeBackup(); return null; })} disabled={busy !== null} className={plain}>{status.androidFolder ? 'Pick folder and back up' : 'Allow and back up'}</button>
                 : <button onClick={() => void run('backup', async () => { await saveBoard(); await backUpNow(true); return null; })} disabled={busy !== null || status.state === 'writing'} className={plain}>Back up now</button>}
               <button onClick={() => void run('backup', async () => { await chooseBackupFolder(); return null; })} disabled={busy !== null} className={plain}>Change folder…</button>
               <button onClick={() => void stopBackup()} disabled={busy !== null} className={plain}>Stop</button>
@@ -151,7 +164,7 @@ export default function BackupSettings({ onClose, saveOpenBoard, restoredMessage
         <div className="flex flex-wrap gap-2">
           <button onClick={() => void download()} disabled={busy !== null} className={plain}>{busy === 'download' ? 'Preparing…' : 'Download backup'}</button>
           <button onClick={() => fileInput.current?.click()} disabled={busy !== null} className={plain}>{busy === 'restore' ? 'Restoring…' : 'Restore from file…'}</button>
-          <button onClick={() => folderInput.current?.click()} disabled={busy !== null} className={plain} title={`Pick the "${BACKUP_FOLDER_NAME}" folder`}>Restore from folder…</button>
+          <button onClick={() => (status.androidFolder ? restoreAndroidFolder() : folderInput.current?.click())} disabled={busy !== null} className={plain} title={`Pick the "${BACKUP_FOLDER_NAME}" folder`}>Restore from folder…</button>
         </div>
         <p className="mt-2 text-xs text-gray-500">Restoring adds what this device doesn&apos;t have and updates older copies; newer work here is kept.</p>
         <input ref={fileInput} type="file" accept=".zip,.json,application/zip,application/json" className="hidden" data-testid="restore-file"

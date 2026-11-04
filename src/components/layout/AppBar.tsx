@@ -10,6 +10,7 @@ import { RESTORE_RESULT_KEY } from './BackupSettings';
 import { useBackupStatus } from '@/hooks/useBackupStatus';
 import { backupDue, resumeBackup } from '@/lib/autoBackup';
 import { useAddPdfs } from '@/hooks/useAddPdfs';
+import { useAppUpdate } from '@/hooks/useAppUpdate';
 import { FolderIcon, GearIcon, HomeIcon, NotesIcon, ProblemIcon, ShelfIcon, TutorIcon } from '@/components/common/Icons';
 import { folderHref } from '@/lib/folders';
 import { readerHref } from '@/components/shelf/BookCard';
@@ -55,6 +56,8 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, fold
   // The Settings dialog: which tab, and a restore's result to show on Backup.
   const [settings, setSettings] = useState<{ tab: SettingsTab; restored?: string } | null>(null);
   const backup = useBackupStatus();
+  // The Android app: a newer build from CI, installed from Settings.
+  const update = useAppUpdate();
 
   // A restore reloads the page; show what it did in the Backup settings it was started from
   // (after hydration, since sessionStorage is the browser's).
@@ -128,6 +131,16 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, fold
       <div className="flex-1" />
       {children}
 
+      {update.newer !== null && (
+        <button
+          onClick={() => setSettings({ tab: 'tutor' })}
+          title={`Build ${update.newer} of the app is ready to install`}
+          className="min-h-11 px-3 text-sm text-gray-800 border border-gray-300 rounded-lg bg-white hover:bg-gray-50"
+        >
+          Update
+        </button>
+      )}
+
       {/* Folder backup needs the browser's permission again after a restart, and it only asks from a click. */}
       {backup.state === 'paused' ? (
         <button
@@ -157,21 +170,22 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, fold
           <span aria-hidden="true">+</span> New
         </button>
         {newOpen && (
-          <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
-            <button onClick={() => startNew('problem')} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
+          // A menu (role): on BOOX the pen SDK pauses while one covers the board, so the pen can tap it.
+          <div role="menu" aria-label="New" className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1">
+            <button role="menuitem" onClick={() => startNew('problem')} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
               <ProblemIcon />New Problem
             </button>
-            <button onClick={() => { setNewOpen(false); setAskingTutor(true); }} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-indigo-700 hover:bg-indigo-50">
+            <button role="menuitem" onClick={() => { setNewOpen(false); setAskingTutor(true); }} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-indigo-700 hover:bg-indigo-50">
               <TutorIcon />Problem from tutor…
             </button>
-            <button onClick={() => startNew('note')} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
+            <button role="menuitem" onClick={() => startNew('note')} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
               <NotesIcon />New Notes
             </button>
-            <button onClick={() => { setNewOpen(false); pdfInput.current?.click(); }} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 border-t border-gray-100 hover:bg-gray-100">
+            <button role="menuitem" onClick={() => { setNewOpen(false); pdfInput.current?.click(); }} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 border-t border-gray-100 hover:bg-gray-100">
               <ShelfIcon />Add a PDF…
             </button>
             {onNewFolder && (
-              <button onClick={() => { setNewOpen(false); onNewFolder(); }} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
+              <button role="menuitem" onClick={() => { setNewOpen(false); onNewFolder(); }} className="w-full min-h-11 flex items-center gap-2 text-left px-3 text-sm text-gray-900 hover:bg-gray-100">
                 <FolderIcon />New folder
               </button>
             )}

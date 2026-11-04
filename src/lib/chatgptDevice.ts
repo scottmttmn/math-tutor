@@ -13,15 +13,34 @@ const DeviceKeys = registerPlugin<DeviceKeysPlugin>('DeviceKeys');
 // The same port as on the Mac: the callback is registered with ChatGPT on first sign-in.
 const REDIRECT_PORT = 8791;
 const AUTH_ORIGIN = 'https://auth.openai.com';
+const API_ORIGIN = 'https://api.openai.com';
+
+// Whether the WebView reached api.openai.com; on the Go 10.3 it couldn't ("Could not reach ChatGPT"
+// right after signing in), so from the first failure on those requests go natively too.
+let apiFromWebView = true;
 
 /**
  * Sign-in requests (discovery, keys, tokens, revocation) go through Android's own HTTP client,
- * since a web page can't count on auth.openai.com accepting it; requests to api.openai.com stay in
- * the WebView, which streams replies.
+ * since a web page can't count on auth.openai.com accepting it. Requests to api.openai.com try the
+ * WebView first, which streams replies; if it can't reach it they go natively, and a reply then
+ * arrives whole.
  */
 const deviceFetch: typeof fetch = async (input, init = {}) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-  if (new URL(url).origin !== AUTH_ORIGIN) return fetch(input, init);
+  const origin = new URL(url).origin;
+  if (origin === API_ORIGIN && apiFromWebView) {
+    try {
+      return await fetch(input, init);
+    } catch (error) {
+      if (init.signal?.aborted) throw error;
+      apiFromWebView = false;
+    }
+  }
+  if (origin !== AUTH_ORIGIN && origin !== API_ORIGIN) return fetch(input, init);
+  return nativeFetch(url, init);
+};
+
+async function nativeFetch(url: string, init: RequestInit): Promise<Response> {
   const signal = init.signal ?? undefined;
   signal?.throwIfAborted();
   const headers: Record<string, string> = {};
@@ -34,15 +53,19 @@ const deviceFetch: typeof fetch = async (input, init = {}) => {
     responseType: 'text',
     disableRedirects: true,
     connectTimeout: 15_000,
-    readTimeout: 30_000,
+    // A tutor reply can think for a while before its first word.
+    readTimeout: 180_000,
   });
   const aborted = new Promise<never>((_, reject) => {
     signal?.addEventListener('abort', () => reject(signal.reason ?? new DOMException('Aborted', 'AbortError')), { once: true });
   });
   const response = await Promise.race([request, aborted]);
   const body = typeof response.data === 'string' ? response.data : JSON.stringify(response.data ?? null);
-  return new Response(response.status === 204 || response.status === 304 ? null : body, { status: response.status, headers: response.headers });
-};
+  // Bytes, not a string: a string body would add Content-Type text/plain where OpenAI sent none,
+  // and the SDK only takes a reply stream that is text/event-stream or unlabelled.
+  const bytes = response.status === 204 || response.status === 304 ? null : new TextEncoder().encode(body);
+  return new Response(bytes, { status: response.status, headers: response.headers });
+}
 
 interface SavedConnection {
   hostId: string;

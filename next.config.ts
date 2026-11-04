@@ -13,7 +13,8 @@ const nextConfig: NextConfig = {
     root: __dirname,
   },
   // With no server, the Android app calls the tutor's providers itself (src/lib/tutorRequest.ts).
-  env: { NEXT_PUBLIC_TUTOR_DIRECT: android ? '1' : '' },
+  // APP_BUILD numbers the build (CI's run number; also the APK's versionCode), so the app can offer a newer one.
+  env: { NEXT_PUBLIC_TUTOR_DIRECT: android ? '1' : '', NEXT_PUBLIC_APP_BUILD: process.env.APP_BUILD ?? '' },
   ...(android ? { output: 'export', pageExtensions: ['tsx', 'mdx'], images: { unoptimized: true } } : {}),
 };
 

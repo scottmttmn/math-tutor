@@ -1,10 +1,12 @@
 import { getSetting, hasSavedWork, listFolders, listSessions, listInk, listShelf, loadProfile, onDataChange, setSetting } from '@/lib/db';
 import { BOARD_FOLDER, MANIFEST_NAME, PDF_FOLDER, backupFingerprint, backupIndex, boardFile, boardPath, boardStamp } from '@/lib/backup';
-import type { BackupStatus } from '@/types';
+import { androidDirectory, androidFolderAllowed, androidFolders, browserDirectory, pickAndroidFolder, releaseAndroidFolder } from '@/lib/backupFolder';
+import type { BackupDirectory, BackupStatus } from '@/types';
 
 // Automatic backup to a folder the student picks (say, in Dropbox): the backup's files are written
-// into a "Math Tutor backup" folder there shortly after each change. Chromium only; elsewhere the
-// Backup settings offer a download instead. State lives here, outside React, so every page's top
+// into a "Math Tutor backup" folder there shortly after each change. In Chromium, and in the Android
+// app through Android's folder picker (src/lib/backupFolder.ts); elsewhere the Backup settings
+// offer a download instead. State lives here, outside React, so every page's top
 // bar and the settings share one copy (read it with useBackupStatus).
 
 const FOLDER_KEY = 'backupFolder';
@@ -36,14 +38,18 @@ const dayName = (at: number) => {
 };
 const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1);
 
+/** What is kept of the chosen folder: the browser's handle, or the Android app's picked tree. */
+type ChosenFolder = FileSystemDirectoryHandle | { android: string; name: string };
+
 let status: BackupStatus = {
-  folderSupported: false, folderName: null, state: 'off', lastBackupAt: null, lastDownloadAt: null,
+  folderSupported: false, androidFolder: false, folderName: null, state: 'off', lastBackupAt: null, lastDownloadAt: null,
   error: null, persisted: null, hasWork: false,
 };
 const SERVER_STATUS = status;
 const listeners = new Set<() => void>();
 let saved: SavedState = { lastBackupAt: null, lastDownloadAt: null, fingerprint: null };
-let folder: FileSystemDirectoryHandle | null = null;
+let chosen: ChosenFolder | null = null;
+let folder: BackupDirectory | null = null;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let running: Promise<void> = Promise.resolve();
 let started = false;
@@ -69,7 +75,8 @@ async function saveState(patch: Partial<SavedState>) {
 export function startAutoBackup() {
   if (started || typeof window === 'undefined') return;
   started = true;
-  update({ folderSupported: typeof window.showDirectoryPicker === 'function' });
+  const android = androidFolders();
+  update({ folderSupported: android || typeof window.showDirectoryPicker === 'function', androidFolder: android });
   void init();
 }
 
@@ -77,17 +84,29 @@ async function init() {
   void requestPersistentStorage();
   try {
     saved = { ...saved, ...(await getSetting<SavedState>(STATE_KEY)) };
-    folder = (await getSetting<FileSystemDirectoryHandle>(FOLDER_KEY)) ?? null;
+    setFolder((await getSetting<ChosenFolder>(FOLDER_KEY)) ?? null);
     update({ lastBackupAt: saved.lastBackupAt, lastDownloadAt: saved.lastDownloadAt, folderName: folder?.name ?? null, hasWork: await hasSavedWork() });
   } catch { return; /* No IndexedDB: nothing saved to back up. */ }
   onDataChange(() => { update({ hasWork: true }); schedule(BACKUP_DELAY_MS); });
   // Leaving the page: write what is pending now rather than wait for a next visit.
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && timer) schedule(0); });
-  if (!folder) return;
-  if (status.folderSupported && (await folder.queryPermission({ mode: 'readwrite' }).catch(() => 'denied')) === 'granted') {
+  if (!chosen) return;
+  if (status.folderSupported && await allowed(chosen)) {
     update({ state: 'ok' });
     schedule(0);
   } else update({ state: 'paused' });
+}
+
+const isAndroid = (kept: ChosenFolder): kept is { android: string; name: string } => typeof (kept as { android?: unknown }).android === 'string';
+
+function setFolder(kept: ChosenFolder | null) {
+  chosen = kept;
+  folder = !kept ? null : isAndroid(kept) ? androidDirectory(kept.android, kept.name) : browserDirectory(kept);
+}
+
+async function allowed(kept: ChosenFolder) {
+  if (isAndroid(kept)) return status.androidFolder && androidFolderAllowed(kept.android);
+  return (await kept.queryPermission({ mode: 'readwrite' }).catch(() => 'denied')) === 'granted';
 }
 
 async function requestPersistentStorage() {
@@ -112,13 +131,6 @@ export function backUpNow(force = false): Promise<void> {
   return running;
 }
 
-async function writeFile(directory: FileSystemDirectoryHandle, name: string, contents: Blob) {
-  const file = await directory.getFileHandle(name, { create: true });
-  const writable = await file.createWritable();
-  try { await writable.write(contents); } catch (error) { await writable.abort().catch(() => undefined); throw error; }
-  await writable.close();
-}
-
 async function writeBackup(force: boolean) {
   if (!folder || status.state === 'paused' || status.state === 'off') return;
   try {
@@ -126,16 +138,15 @@ async function writeBackup(force: boolean) {
     const fingerprint = backupFingerprint(sessions, shelf, profile, ink, folders);
     if (!force && fingerprint === saved.fingerprint) { if (status.state !== 'ok') update({ state: 'ok', error: null }); return; }
     update({ state: 'writing' });
-    const target = folder.name === BACKUP_FOLDER_NAME ? folder : await folder.getDirectoryHandle(BACKUP_FOLDER_NAME, { create: true });
+    const target = folder.name === BACKUP_FOLDER_NAME ? folder : await folder.directory(BACKUP_FOLDER_NAME);
     const now = Date.now();
     const day = dayName(now);
 
     // Boards first, then PDFs, so backup.json never lists a file that isn't there yet. Only boards
     // that changed since the last backup (or whose file is gone) are written.
-    const boardFolder = await target.getDirectoryHandle(BOARD_FOLDER, { create: true });
-    const present = new Set<string>();
-    for await (const name of boardFolder.keys()) present.add(name);
-    let dayFolder: FileSystemDirectoryHandle | undefined;
+    const boardFolder = await target.directory(BOARD_FOLDER);
+    const present = new Set(await boardFolder.names());
+    let dayFolder: BackupDirectory | undefined;
     const stamps: Record<string, string> = {};
     for (const session of sessions) {
       const name = fileName(boardPath(session.id));
@@ -143,32 +154,29 @@ async function writeBackup(force: boolean) {
       stamps[session.id] = stamp;
       if (saved.boards?.[session.id] === stamp && present.has(name)) continue;
       const file = await boardFile(session);
-      await writeFile(boardFolder, name, file);
-      dayFolder ??= await (await target.getDirectoryHandle(HISTORY_FOLDER, { create: true })).getDirectoryHandle(day, { create: true });
-      await writeFile(dayFolder, name, file);
+      await boardFolder.write(name, file);
+      dayFolder ??= await (await target.directory(HISTORY_FOLDER)).directory(day);
+      await dayFolder.write(name, file);
     }
     // PDFs never change, so only new ones are written.
-    const pdfFolder = await target.getDirectoryHandle(PDF_FOLDER, { create: true });
+    const pdfFolder = await target.directory(PDF_FOLDER);
     for (const document of shelf) {
       const name = `${document.id}.pdf`;
-      const existing = await pdfFolder.getFileHandle(name).then((handle) => handle.getFile()).catch(() => null);
-      if (existing?.size !== document.file.size) await writeFile(pdfFolder, name, document.file);
+      if (await pdfFolder.size(name) !== document.file.size) await pdfFolder.write(name, document.file);
     }
     const manifest = await backupIndex(sessions, shelf, profile, ink, folders, now);
     const json = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-    await writeFile(target, MANIFEST_NAME, json);
-    await writeFile(target, `backup-${day}.json`, json);
-    const copies: string[] = [];
-    for await (const name of target.keys()) if (DAILY_COPY.test(name)) copies.push(name);
-    for (const old of copies.sort().reverse().slice(DAILY_COPIES)) await target.removeEntry(old).catch(() => undefined);
+    await target.write(MANIFEST_NAME, json);
+    await target.write(`backup-${day}.json`, json);
+    const copies = (await target.names()).filter((name) => DAILY_COPY.test(name));
+    for (const old of copies.sort().reverse().slice(DAILY_COPIES)) await target.remove(old).catch(() => undefined);
     // A board deleted here leaves the backup too (its earlier days stay in history/). Only now that
     // backup.json no longer lists it: if a write above failed, the last backup is still whole.
     const kept = new Set(sessions.map((session) => fileName(boardPath(session.id))));
-    for (const name of present) if (!kept.has(name)) await boardFolder.removeEntry(name).catch(() => undefined);
-    const history = await target.getDirectoryHandle(HISTORY_FOLDER, { create: true });
-    const days: string[] = [];
-    for await (const name of history.keys()) if (HISTORY_DAY.test(name)) days.push(name);
-    for (const old of days.sort().reverse().slice(DAILY_COPIES)) await history.removeEntry(old, { recursive: true }).catch(() => undefined);
+    for (const name of present) if (!kept.has(name)) await boardFolder.remove(name).catch(() => undefined);
+    const history = await target.directory(HISTORY_FOLDER);
+    const days = (await history.names()).filter((name) => HISTORY_DAY.test(name));
+    for (const old of days.sort().reverse().slice(DAILY_COPIES)) await history.remove(old).catch(() => undefined);
 
     await saveState({ lastBackupAt: manifest.createdAt, fingerprint, boards: stamps });
     update({ state: 'ok', error: null, lastBackupAt: manifest.createdAt });
@@ -181,10 +189,17 @@ async function writeBackup(force: boolean) {
 
 /** Asks for a folder (from a click) and backs up to it right away. False if the student cancelled. */
 export async function chooseBackupFolder(): Promise<boolean> {
-  if (!window.showDirectoryPicker) return false;
-  let picked: FileSystemDirectoryHandle;
-  try { picked = await window.showDirectoryPicker({ id: 'math-tutor-backup', mode: 'readwrite', startIn: 'documents' }); } catch { return false; }
-  folder = picked;
+  let picked: ChosenFolder;
+  if (status.androidFolder) {
+    const tree = await pickAndroidFolder();
+    if (!tree) return false;
+    if (chosen && isAndroid(chosen) && chosen.android !== tree.tree) void releaseAndroidFolder(chosen.android);
+    picked = { android: tree.tree, name: tree.name };
+  } else {
+    if (!window.showDirectoryPicker) return false;
+    try { picked = await window.showDirectoryPicker({ id: 'math-tutor-backup', mode: 'readwrite', startIn: 'documents' }); } catch { return false; }
+  }
+  setFolder(picked);
   await setSetting(FOLDER_KEY, picked);
   // A new folder gets every board, even one that holds an older backup's files.
   await saveState({ boards: {} });
@@ -195,8 +210,10 @@ export async function chooseBackupFolder(): Promise<boolean> {
 
 /** Asks the browser again for the folder (from a click), after it paused the backup. */
 export async function resumeBackup() {
-  if (!folder) return;
-  const permission = await folder.requestPermission({ mode: 'readwrite' }).catch(() => 'denied' as PermissionState);
+  if (!chosen) return;
+  // Android doesn't ask again: the folder is picked again.
+  if (isAndroid(chosen)) { await chooseBackupFolder(); return; }
+  const permission = await chosen.requestPermission({ mode: 'readwrite' }).catch(() => 'denied' as PermissionState);
   if (permission !== 'granted') return;
   update({ state: 'ok', error: null });
   await backUpNow();
@@ -205,7 +222,8 @@ export async function resumeBackup() {
 /** Stops backing up to the folder; what was written there stays. */
 export async function stopBackup() {
   clearTimeout(timer);
-  folder = null;
+  if (chosen && isAndroid(chosen)) void releaseAndroidFolder(chosen.android);
+  setFolder(null);
   await setSetting(FOLDER_KEY, undefined);
   await saveState({ fingerprint: null, boards: {} });
   update({ folderName: null, state: 'off', error: null });

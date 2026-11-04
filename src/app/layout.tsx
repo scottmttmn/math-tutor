@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { GeistSans } from 'geist/font/sans';
+import DeviceAppearance from '@/components/layout/DeviceAppearance';
 import './globals.css';
 import 'katex/dist/katex.min.css';
 
@@ -23,13 +24,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="boox:text-[20px]">
       {process.env.BUILD_TARGET === 'android' && (
         <head>
           <script dangerouslySetInnerHTML={{ __html: ANDROID_PAGE_LOAD }} />
         </head>
       )}
       <body className={`${GeistSans.variable} font-sans antialiased`}>
+        <DeviceAppearance />
         {children}
       </body>
     </html>

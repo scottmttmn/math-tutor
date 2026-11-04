@@ -12,6 +12,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(DeviceKeysPlugin.class);
         registerPlugin(ChatGPTSignInPlugin.class);
         registerPlugin(BooxPenPlugin.class);
+        registerPlugin(AppUpdatePlugin.class);
+        registerPlugin(BackupFolderPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

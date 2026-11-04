@@ -32,7 +32,7 @@ const dialog = () => page.getByRole('dialog', { name: 'Problem from tutor' });
 const shown = () => page.getByTestId('tutor-problem');
 const askTutorForProblem = async (ask) => {
   await page.getByRole('button', { name: 'New', exact: true }).click();
-  await page.getByRole('button', { name: 'Problem from tutor…' }).click();
+  await page.getByRole('menuitem', { name: 'Problem from tutor…' }).click();
   await dialog().getByRole('button', { name: "Tutor's choice" }).waitFor();
   if (ask) await dialog().getByLabel(/Anything else/).fill(ask);
   await dialog().getByRole('button', { name: 'Make problem' }).click();

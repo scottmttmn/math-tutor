@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { TutorIcon } from '@/components/common/Icons';
 
 // Tailwind's 2xl: wide enough for the source, the board and the tutor side by side.
@@ -33,7 +33,7 @@ interface Props {
      * `label` (e.g. "Page 47") flips to the source, which has a way back. `key` names the open
      * board, so another one opens on its board.
      */
-    swap?: { label: string; key: string };
+    swap?: { label: string; key: string; onFlip?: (flipped: boolean) => void };
   };
   /** The board's name and details, at the top of the board column. */
   title: ReactNode;
@@ -56,6 +56,8 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
   const swapping = Boolean(source?.swap) && narrow && !fullScreen;
   const [flippedFor, setFlippedFor] = useState<string | null>(null);
   const flipped = swapping && flippedFor === source?.swap?.key;
+  const onFlip = source?.swap?.onFlip;
+  useEffect(() => { onFlip?.(flipped); }, [onFlip, flipped]);
   const showTutor = tutor.open && !fullScreen && !flipped;
   const showSource = Boolean(source) && !fullScreen && (swapping ? flipped : !sourceHidden);
   // Below 2xl the open tutor takes the source's place, whether or not the source was hidden.
@@ -70,7 +72,7 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
           // Keep lg:flex-1's zero basis for a wide PDF; its rendered width must not crowd out the board.
           className={`${showTutor ? 'hidden 2xl:flex' : 'flex'} flex-col min-w-0 min-h-0 ${flipped ? 'flex-1' : 'basis-[40%] shrink-0'} ${
             source.wide ? 'lg:flex-1' : 'lg:w-[22rem] lg:flex-none'
-          } border-b lg:border-b-0 lg:border-r border-gray-200 bg-gray-50`}
+          } ${!flipped ? 'boox:max-lg:basis-auto boox:max-lg:max-h-[35%]' : ''} border-b lg:border-b-0 lg:border-r border-gray-200 bg-gray-50`}
         >
           {(source.toolbar || flipped) && (
             <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-white border-b border-gray-200">

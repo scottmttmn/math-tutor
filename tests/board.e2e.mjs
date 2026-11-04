@@ -122,7 +122,7 @@ async function newBoard(type) {
   const before = await showing();
   assert.ok(before.text || before.drawn, 'newBoard is called with something on the open board');
   await page.getByRole('button', { name: 'New', exact: true }).click();
-  await page.getByRole('button', { name: type === 'note' ? /New Notes/ : 'New Problem' }).click();
+  await page.getByRole('menuitem', { name: type === 'note' ? /New Notes/ : 'New Problem' }).click();
   await page.waitForFunction(([placeholder]) => {
     const box = document.querySelector(`[placeholder="${placeholder}"]`);
     const clear = [...document.querySelectorAll('button')].find((button) => button.getAttribute('aria-label') === 'Clear board');

@@ -88,6 +88,9 @@ try {
   const { privateKey, publicKey } = await generateKeyPair('RS256');
   const jwk = { ...(await exportJWK(publicKey)), kid: 'k1', alg: 'RS256', use: 'sig' };
   const auth = { requests: [], nonce: undefined };
+  let openaiCalls = [];
+  let catalogUnavailable = false;
+  let openaiReply = () => ({ contentType: 'text/plain', body: '' });
   await app.exposeFunction('openedForSignIn', (url) => { auth.authorization = new URL(url); auth.nonce = auth.authorization.searchParams.get('nonce'); });
   await app.exposeFunction('authServer', async ({ url, method, headers, data }) => {
     auth.requests.push({ url, method, headers, data });
@@ -96,6 +99,13 @@ try {
       return json({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/oauth/token`, revocation_endpoint: `${issuer}/oauth/revoke`, jwks_uri: `${issuer}/jwks` });
     }
     if (url === `${issuer}/jwks`) return json({ keys: [jwk] });
+    // api.openai.com goes natively too once the WebView couldn't reach it (chatgptDevice.ts).
+    if (url.startsWith('https://api.openai.com/')) {
+      openaiCalls.push({ url, headers, body: data ? JSON.parse(data) : undefined });
+      if (catalogUnavailable) throw new Error('internet disconnected');
+      const { contentType, body } = openaiReply(url);
+      return { status: 200, headers: { 'Content-Type': contentType }, data: body };
+    }
     if (url === `${issuer}/oauth/token`) {
       const idToken = await new SignJWT({ email: 'learner@example.com', nonce: auth.nonce }).setProtectedHeader({ alg: 'RS256', kid: 'k1' })
         .setIssuer(issuer).setAudience('client-123').setSubject('user-1').setIssuedAt().setExpirationTime('1h').sign(privateKey);
@@ -110,17 +120,63 @@ try {
     window.deviceKeys = {};
     // The student picked the ChatGPT plan but hasn't signed in on the tablet yet.
     if (!localStorage.getItem('mathTutor_modelConfig')) localStorage.setItem('mathTutor_modelConfig', JSON.stringify({ provider: 'chatgpt', model: 'gpt-6.1-sol', baseUrl: '' }));
+    // The folder the student picks with Android's folder picker: folders hold folders and files
+    // (base64). A file is only there once closed, as the provider shows it. Kept over reloads.
+    const kept = JSON.parse(sessionStorage.getItem('fakeFolder') ?? 'null');
+    window.folderTree = kept?.tree ?? { folders: {}, files: {} };
+    window.folderAllowed = kept?.allowed ?? true;
+    window.folderPicks = kept?.picks ?? [];
+    addEventListener('pagehide', () => sessionStorage.setItem('fakeFolder', JSON.stringify({ tree: window.folderTree, allowed: window.folderAllowed, picks: window.folderPicks })));
+    const writing = {};
+    const at = (path, create) => {
+      let folder = window.folderTree;
+      for (const name of path) {
+        if (!folder.folders[name]) { if (!create) return null; folder.folders[name] = { folders: {}, files: {} }; }
+        folder = folder.folders[name];
+      }
+      return folder;
+    };
+    window.backupFolder = (method, options) => {
+      if (method === 'pick') { window.folderPicks.push(options); window.folderAllowed = true; return { tree: 'content://tree/primary%3ADocuments', name: 'Documents' }; }
+      if (method === 'check') return { granted: window.folderAllowed };
+      if (method === 'release') return {};
+      if (!window.folderAllowed && ['list', 'openWrite', 'read', 'remove'].includes(method)) throw Object.assign(new Error('Not allowed'), { code: 'NOT_ALLOWED' });
+      if (method === 'list') {
+        const folder = at(options.path, options.create);
+        return { entries: folder ? [
+          ...Object.keys(folder.folders).map((name) => ({ name, directory: true, size: 0 })),
+          ...Object.entries(folder.files).map(([name, data]) => ({ name, directory: false, size: atob(data).length })),
+        ] : [] };
+      }
+      if (method === 'openWrite') {
+        const id = String(Object.keys(writing).length + 1);
+        writing[id] = { folder: at(options.path, true), name: options.name, data: '' };
+        return { id };
+      }
+      if (method === 'write') { writing[options.id].data += options.data; return {}; }
+      if (method === 'close') { const file = writing[options.id]; file.folder.files[file.name] = file.data; return {}; }
+      if (method === 'abort') return {};
+      if (method === 'read') return { data: btoa(atob(at(options.path, false).files[options.name]).slice(options.offset, options.offset + options.length)) };
+      if (method === 'remove') { const folder = at(options.path, false); if (folder) { delete folder.files[options.name]; delete folder.folders[options.name]; } return {}; }
+      throw new Error(`BackupFolder.${method} is not stood in for`);
+    };
     let callback;
     window.androidBridge = { postMessage() {} };
     window.Capacitor = {
       PluginHeaders: [
-        { name: 'SaveFile', methods: [{ name: 'save', rtype: 'promise' }] },
+        { name: 'SaveFile', methods: ['open', 'write', 'close', 'abort'].map((name) => ({ name, rtype: 'promise' })) },
+        { name: 'BackupFolder', methods: ['pick', 'check', 'release', 'list', 'openWrite', 'write', 'close', 'abort', 'read', 'remove'].map((name) => ({ name, rtype: 'promise' })) },
         { name: 'DeviceKeys', methods: ['get', 'set', 'remove'].map((name) => ({ name, rtype: 'promise' })) },
         { name: 'ChatGPTSignIn', methods: ['listen', 'waitForCallback', 'close', 'openBrowser'].map((name) => ({ name, rtype: 'promise' })) },
         { name: 'CapacitorHttp', methods: [{ name: 'request', rtype: 'promise' }] },
+        { name: 'AppUpdate', methods: [{ name: 'install', rtype: 'promise' }] },
       ],
       nativePromise: async (plugin, method, options) => {
         if (plugin === 'CapacitorHttp') return window.authServer(options);
+        if (plugin === 'AppUpdate') {
+          window.updates = [...(window.updates ?? []), options.url];
+          return { permission: window.updates.length > 1 };
+        }
         if (plugin === 'ChatGPTSignIn') {
           if (method === 'listen') {
             callback = { state: options.state };
@@ -140,8 +196,16 @@ try {
           if (method === 'remove') delete window.deviceKeys[options.name];
           return method === 'get' && window.deviceKeys[options.name] ? { value: window.deviceKeys[options.name] } : {};
         }
-        window.saves.push({ plugin, method, ...options });
-        return { saved: window.saveAnswers.shift() ?? true };
+        if (plugin === 'BackupFolder') return window.backupFolder(method, options);
+        // SaveFile: the Save dialog, then the file in pieces.
+        if (method === 'open') {
+          window.saves.push({ plugin, ...options, data: '', pieces: 0 });
+          return window.saveAnswers.shift() === false ? {} : { id: String(window.saves.length - 1) };
+        }
+        const save = window.saves[Number(options.id)];
+        if (method === 'write') { save.data += options.data; save.pieces += 1; }
+        if (method === 'close') save.closed = true;
+        return {};
       },
     };
   });
@@ -188,20 +252,22 @@ try {
     await app.waitForTimeout(5100); // The five-second spacing between tutor requests.
     await chooseTutor(app);
   };
-  const openaiCalls = [];
-  let catalogUnavailable = true;
+  // The catalog is out of reach at first, from the WebView and natively alike.
+  openaiCalls = [];
+  catalogUnavailable = true;
+  openaiReply = (url) => url.endsWith('/v1/models')
+    ? { contentType: 'application/json', body: JSON.stringify({ models: [{ slug: 'gpt-6.1-sol', display_name: 'Sol', visibility: 'list' }] }) }
+    : { contentType: 'text/event-stream', body: sseFrames([
+      ['', { type: 'response.output_text.delta', delta: 'What is 2x on its own?' }],
+      ['', { type: 'response.completed', response: { usage: { input_tokens: 120, output_tokens: 9, input_tokens_details: { cached_tokens: 80 } } } }],
+    ]) };
   await app.route('https://api.openai.com/**', async (route) => {
     const request = route.request();
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { ...cors, 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' } });
     openaiCalls.push({ url: request.url(), headers: request.headers(), body: request.postDataJSON() });
-    if (request.url().endsWith('/v1/models')) {
-      if (catalogUnavailable) return route.abort('internetdisconnected');
-      return route.fulfill({ status: 200, headers: { ...cors, 'Content-Type': 'application/json' }, body: JSON.stringify({ models: [{ slug: 'gpt-6.1-sol', display_name: 'Sol', visibility: 'list' }] }) });
-    }
-    await route.fulfill({ status: 200, headers: { ...cors, 'Content-Type': 'text/event-stream' }, body: sseFrames([
-      ['', { type: 'response.output_text.delta', delta: 'What is 2x on its own?' }],
-      ['', { type: 'response.completed', response: { usage: { input_tokens: 120, output_tokens: 9, input_tokens_details: { cached_tokens: 80 } } } }],
-    ]) });
+    if (catalogUnavailable) return route.abort('internetdisconnected');
+    const { contentType, body } = openaiReply(request.url());
+    await route.fulfill({ status: 200, headers: { ...cors, 'Content-Type': contentType }, body });
   });
   await askTutor();
   await app.getByText('Sign in with ChatGPT to continue.').waitFor();
@@ -307,13 +373,79 @@ try {
   await app.getByRole('button', { name: 'Download backup' }).click();
   await app.waitForFunction(() => window.saves.length === 2);
   assert.match((await app.evaluate(() => window.saves[1])).name, /^math-tutor-backup-\d{4}-\d{2}-\d{2}\.zip$/);
+  assert.equal((await app.evaluate(() => window.saves[1])).pieces, 0);
   await app.waitForTimeout(300);
   assert.equal(await app.getByText(/Last downloaded/).count(), 0);
   await app.getByRole('button', { name: 'Download backup' }).click();
   await app.getByText(/Last downloaded just now/).waitFor();
+  const zip = Buffer.from((await app.evaluate(() => window.saves[2])).data, 'base64');
+  assert.equal(zip.subarray(0, 4).toString('latin1'), 'PK\x03\x04');
+  assert.ok(zip.includes('backup.json') && zip.includes('"app":"math-tutor"'));
+  assert.ok(await app.evaluate(() => window.saves[2].closed));
   await app.getByRole('button', { name: 'Done' }).click();
   assert.equal(await app.getByRole('button', { name: 'Back up', exact: true }).count(), 0);
   console.log('PASS in the app, Save as and the backup go through the Save dialog; a cancelled one keeps the reminder');
+
+  // Folder backup in the app: the folder comes from Android's folder picker and is kept; the
+  // backup is written into it as into a browser's folder.
+  await app.getByRole('button', { name: 'Settings' }).click();
+  await app.getByRole('tab', { name: 'Backup' }).click();
+  await app.getByText(/Pick a folder on this tablet/).waitFor();
+  await app.getByRole('button', { name: 'Choose folder…' }).click();
+  await app.getByText('Documents/Math Tutor backup', { exact: true }).waitFor();
+  await app.getByText(/Last backup just now/).waitFor();
+  const written = await app.evaluate(() => {
+    const backup = window.folderTree.folders['Math Tutor backup'];
+    return { top: Object.keys(backup.files).sort(), boards: Object.keys(backup.folders.boards.files), days: Object.keys(backup.folders.history.folders), manifest: JSON.parse(atob(backup.files['backup.json'])) };
+  });
+  assert.equal(written.top.length, 2);
+  assert.ok(written.top.includes('backup.json'));
+  assert.equal(written.boards.length, 1);
+  assert.equal(written.days.length, 1);
+  assert.equal(written.manifest.boards.length, 1);
+  assert.deepEqual(await app.evaluate(() => window.folderPicks), [{ keep: true }]);
+  await app.getByRole('button', { name: 'Done' }).click();
+
+  // Android took the folder back: the backup pauses until it is picked again.
+  await app.evaluate(() => { window.folderAllowed = false; });
+  await app.reload();
+  await app.getByRole('button', { name: 'Settings' }).click();
+  await app.getByRole('tab', { name: 'Backup' }).click();
+  await app.getByText(/Paused: Android no longer lets the app write to that folder/).waitFor();
+  await app.getByRole('button', { name: 'Pick folder and back up' }).click();
+  await app.getByRole('button', { name: 'Back up now' }).waitFor();
+
+  // Restore from folder reads the picked folder through Android (just this once) and offers its
+  // days; the folder holding the backup works too, whatever else is in it.
+  await app.evaluate(() => { window.folderTree.files['settings.json'] = btoa('{}'); });
+  await app.getByRole('button', { name: 'Restore from folder…' }).click();
+  await app.getByText('Restore this folder as it was').waitFor();
+  assert.deepEqual((await app.evaluate(() => window.folderPicks)).at(-1), { keep: false });
+  await app.getByRole('button', { name: 'Restore', exact: true }).click();
+  await app.getByText('Nothing to restore: this device already has everything in the backup.').waitFor();
+  await app.getByRole('button', { name: 'Done' }).click();
+  console.log('PASS in the app, folder backup writes to a folder picked through Android, pauses when it is taken back, and restores from it');
+
+  // A build from CI offers a newer published one: Update opens Settings, the first tap opens
+  // Android's install permission, the next downloads and opens the installer.
+  const build = Number(process.env.APP_BUILD);
+  if (build) {
+    await app.route('https://api.github.com/repos/scottmttmn/math-tutor/releases/tags/tablet', (route) => route.fulfill({
+      status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' },
+      body: JSON.stringify({ body: `Build: ${build + 1}\r\nFrom: main at 1a2b3c4` }),
+    }));
+    await app.goto(`${origin}/`);
+    await app.getByRole('button', { name: 'Update', exact: true }).click();
+    await app.getByText(`Build ${build}. Build ${build + 1} is ready.`).waitFor();
+    await app.getByRole('dialog').getByRole('button', { name: 'Update', exact: true }).click();
+    await app.getByText(/Allow from this source/).waitFor();
+    await app.getByRole('dialog').getByRole('button', { name: 'Update', exact: true }).click();
+    await app.getByText(/Tap Update in Android/).waitFor();
+    assert.deepEqual(await app.evaluate(() => window.updates), Array(2).fill('https://github.com/scottmttmn/math-tutor/releases/download/tablet/math-tutor.apk'));
+    console.log('PASS a newer published build is offered and installed through the app');
+  } else {
+    console.log('SKIP updates: this bundle has no build number (APP_BUILD)');
+  }
 
   assert.deepEqual(errors, []);
   console.log('PASS no browser exceptions');

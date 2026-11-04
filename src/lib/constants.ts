@@ -17,3 +17,10 @@ export const RATE_LIMIT_MS = 5 * 1000;
 
 /** Shown when /api/tutor answers with something other than a reply stream (e.g. a page from a proxy). */
 export const TUTOR_UNAVAILABLE = "The tutor didn't answer. Please try again.";
+
+/** The newest Android app CI built (main or a pull request), always at this one link (ci.yml). */
+export const TABLET_BUILD_URL = 'https://github.com/scottmttmn/math-tutor/releases/download/tablet/math-tutor.apk';
+/** That release, read for its build number ("Build: 123" in its notes). */
+export const TABLET_RELEASE_API = 'https://api.github.com/repos/scottmttmn/math-tutor/releases/tags/tablet';
+/** This build's number (CI's run number; empty in local builds). */
+export const APP_BUILD = process.env.NEXT_PUBLIC_APP_BUILD ?? '';
