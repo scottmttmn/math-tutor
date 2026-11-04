@@ -10,6 +10,7 @@ const DISCONNECTED: ChatGPTStatus = { status: 'disconnected', sharing: false };
 export function useChatGPTConnection(enabled: boolean) {
   const [status, setStatus] = useState<ChatGPTStatus>(DISCONNECTED);
   const [isLoading, setIsLoading] = useState(false);
+  const [refreshCount, setRefreshCount] = useState(0);
 
   useEffect(() => {
     if (!enabled) return;
@@ -20,7 +21,11 @@ export function useChatGPTConnection(enabled: boolean) {
       .catch((err: unknown) => { if (!cancelled) setStatus({ ...DISCONNECTED, error: String(err) }); })
       .finally(() => { if (!cancelled) setIsLoading(false); });
     return () => { cancelled = true; };
-  }, [enabled]);
+  }, [enabled, refreshCount]);
+
+  const refresh = useCallback(() => {
+    setRefreshCount((count) => count + 1);
+  }, []);
 
   const signIn = useCallback(async () => {
     setStatus((prev) => ({ ...prev, status: 'connecting', error: undefined }));
@@ -43,5 +48,5 @@ export function useChatGPTConnection(enabled: boolean) {
     }
   }, []);
 
-  return { status, isLoading, signIn, cancelSignIn, disconnect };
+  return { status, isLoading, signIn, cancelSignIn, disconnect, refresh };
 }

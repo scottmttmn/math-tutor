@@ -88,6 +88,9 @@ try {
   const { privateKey, publicKey } = await generateKeyPair('RS256');
   const jwk = { ...(await exportJWK(publicKey)), kid: 'k1', alg: 'RS256', use: 'sig' };
   const auth = { requests: [], nonce: undefined };
+  let openaiCalls = [];
+  let catalogUnavailable = false;
+  let openaiReply = () => ({ contentType: 'text/plain', body: '' });
   await app.exposeFunction('openedForSignIn', (url) => { auth.authorization = new URL(url); auth.nonce = auth.authorization.searchParams.get('nonce'); });
   await app.exposeFunction('authServer', async ({ url, method, headers, data }) => {
     auth.requests.push({ url, method, headers, data });
@@ -96,6 +99,13 @@ try {
       return json({ issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/oauth/token`, revocation_endpoint: `${issuer}/oauth/revoke`, jwks_uri: `${issuer}/jwks` });
     }
     if (url === `${issuer}/jwks`) return json({ keys: [jwk] });
+    // api.openai.com goes natively too once the WebView couldn't reach it (chatgptDevice.ts).
+    if (url.startsWith('https://api.openai.com/')) {
+      openaiCalls.push({ url, headers, body: data ? JSON.parse(data) : undefined });
+      if (catalogUnavailable) throw new Error('internet disconnected');
+      const { contentType, body } = openaiReply(url);
+      return { status: 200, headers: { 'Content-Type': contentType }, data: body };
+    }
     if (url === `${issuer}/oauth/token`) {
       const idToken = await new SignJWT({ email: 'learner@example.com', nonce: auth.nonce }).setProtectedHeader({ alg: 'RS256', kid: 'k1' })
         .setIssuer(issuer).setAudience('client-123').setSubject('user-1').setIssuedAt().setExpirationTime('1h').sign(privateKey);
@@ -242,18 +252,22 @@ try {
     await app.waitForTimeout(5100); // The five-second spacing between tutor requests.
     await chooseTutor(app);
   };
-  const openaiCalls = [];
+  // The catalog is out of reach at first, from the WebView and natively alike.
+  openaiCalls = [];
+  catalogUnavailable = true;
+  openaiReply = (url) => url.endsWith('/v1/models')
+    ? { contentType: 'application/json', body: JSON.stringify({ models: [{ slug: 'gpt-6.1-sol', display_name: 'Sol', visibility: 'list' }] }) }
+    : { contentType: 'text/event-stream', body: sseFrames([
+      ['', { type: 'response.output_text.delta', delta: 'What is 2x on its own?' }],
+      ['', { type: 'response.completed', response: { usage: { input_tokens: 120, output_tokens: 9, input_tokens_details: { cached_tokens: 80 } } } }],
+    ]) };
   await app.route('https://api.openai.com/**', async (route) => {
     const request = route.request();
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { ...cors, 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' } });
     openaiCalls.push({ url: request.url(), headers: request.headers(), body: request.postDataJSON() });
-    if (request.url().endsWith('/v1/models')) {
-      return route.fulfill({ status: 200, headers: { ...cors, 'Content-Type': 'application/json' }, body: JSON.stringify({ models: [{ slug: 'gpt-6.1-sol', display_name: 'Sol', visibility: 'list' }] }) });
-    }
-    await route.fulfill({ status: 200, headers: { ...cors, 'Content-Type': 'text/event-stream' }, body: sseFrames([
-      ['', { type: 'response.output_text.delta', delta: 'What is 2x on its own?' }],
-      ['', { type: 'response.completed', response: { usage: { input_tokens: 120, output_tokens: 9, input_tokens_details: { cached_tokens: 80 } } } }],
-    ]) });
+    if (catalogUnavailable) return route.abort('internetdisconnected');
+    const { contentType, body } = openaiReply(request.url());
+    await route.fulfill({ status: 200, headers: { ...cors, 'Content-Type': contentType }, body });
   });
   await askTutor();
   await app.getByText('Sign in with ChatGPT to continue.').waitFor();
@@ -263,8 +277,23 @@ try {
   };
   const settings = app.getByRole('dialog', { name: 'Settings' });
   await openTutorSettings();
+  // A failed catalog must not offer the previous provider's model or save it as ChatGPT.
+  await settings.getByLabel('Provider', { exact: true }).selectOption({ label: 'Anthropic (Claude)' });
+  assert.equal(await settings.getByLabel('Model', { exact: true }).inputValue(), 'claude-sonnet-5-5');
+  await settings.getByLabel('Provider', { exact: true }).selectOption({ label: 'ChatGPT plan (Sign in with ChatGPT)' });
+  assert.equal(await settings.getByRole('button', { name: 'Save', exact: true }).isDisabled(), true);
   await settings.getByRole('button', { name: 'Sign in with ChatGPT' }).click();
   await settings.getByText('Signed in as learner@example.com.').waitFor();
+  await settings.getByText('Could not reach ChatGPT. Check your connection and try again.').waitFor();
+  assert.equal(await settings.getByLabel('Model', { exact: true }).inputValue(), '');
+  assert.equal(await settings.getByLabel('Model', { exact: true }).isDisabled(), true);
+  assert.equal(await settings.getByRole('button', { name: 'Save', exact: true }).isDisabled(), true);
+  catalogUnavailable = false;
+  await settings.getByRole('button', { name: 'Try again', exact: true }).click();
+  await app.waitForFunction(() => document.querySelector('#tutor-model')?.value === 'gpt-6.1-sol');
+  assert.equal(await settings.getByRole('button', { name: 'Save', exact: true }).isEnabled(), true);
+  assert.equal(await settings.getByText('Could not reach ChatGPT. Check your connection and try again.').count(), 0);
+  assert.equal(auth.requests.filter((request) => request.url.endsWith('/oauth/token')).length, 1, 'retrying the catalog keeps the existing sign-in');
   const authorization = auth.authorization.searchParams;
   assert.equal(authorization.get('redirect_uri'), 'http://127.0.0.1:8791/auth/callback');
   assert.equal(authorization.get('code_challenge_method'), 'S256');
