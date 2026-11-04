@@ -13,6 +13,8 @@ export const PAPERS: { paper: Paper; label: string }[] = [
  */
 export const LINE_SPACING = 80;
 export const GRID_SPACING = 32;
+/** The ruling's color: dark enough to read on an e-ink screen (#c4c8ce was too faint on the Go 10.3, 2026-11-04). */
+export const PAPER_LINE = '#8b9099';
 
 /** The paper a board shows: the one chosen for it, else lined for notes and blank for problems. */
 export function paperFor(chosen: Paper | null | undefined, type: SessionType): Paper {

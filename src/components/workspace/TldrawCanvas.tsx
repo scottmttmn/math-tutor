@@ -6,7 +6,7 @@ import 'tldraw/tldraw.css';
 import { getAssetUrls } from '@tldraw/assets/selfHosted';
 import { useCanvasDispatch, useCanvasState, type CanvasLoad } from '@/context/CanvasContext';
 import { legacyStrokesToShapes } from '@/lib/legacyStrokes';
-import { GRID_SPACING, LINE_SPACING, paperLines } from '@/lib/paper';
+import { GRID_SPACING, LINE_SPACING, PAPER_LINE, paperLines } from '@/lib/paper';
 import { TUTOR_IMAGE_SIDE, TUTOR_IMAGE_PADDING, tutorDetailBounds } from '@/lib/tutorBoardImages';
 import type { Paper } from '@/types';
 import type { DrawingCanvasHandle } from './DrawingCanvas';
@@ -41,7 +41,7 @@ function PaperBackground() {
             <>
               <defs>
                 <pattern id={patternId} patternUnits="userSpaceOnUse" x={lines.x} y={lines.y} width={lines.gap} height={lines.gap}>
-                  <path d={paper === 'grid' ? `M0 0.5H${lines.gap}M0.5 0V${lines.gap}` : `M0 0.5H${lines.gap}`} stroke="#c4c8ce" strokeWidth="1" fill="none" />
+                  <path d={paper === 'grid' ? `M0 0.5H${lines.gap}M0.5 0V${lines.gap}` : `M0 0.5H${lines.gap}`} stroke={PAPER_LINE} strokeWidth="1" fill="none" />
                 </pattern>
               </defs>
               <rect x={left} y={top} width={width} height="100%" fill={`url(#${patternId})`} />
