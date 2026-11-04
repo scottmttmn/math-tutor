@@ -4,7 +4,7 @@ import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref
 import { createPortal } from 'react-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
-import { GRID_SPACING, LINE_SPACING } from '@/lib/paper';
+import { GRID_SPACING, LINE_SPACING, PAPER_LINE } from '@/lib/paper';
 import { HIGHLIGHTER_WIDTH, HIGHLIGHT_ALPHA, INK_COLORS, PEN_WIDTHS, boardBounds, emptyBoard, pushPoint, type PenSize } from '@/lib/inkBoard/model';
 import { addItems, commit, copyItems, moveItems, redo, removeItems, startHistory, undo, type BoardHistory } from '@/lib/inkBoard/edits';
 import { GridIndex, itemsInLasso, strokesHitByPath } from '@/lib/inkBoard/hitTest';
@@ -56,7 +56,6 @@ const DUPLICATE_OFFSET = 24;
 const OPEN_TOP = 80;
 const COLORS: InkColor[] = ['black', 'gray', 'blue', 'red', 'green'];
 const DESK = '#e5e7eb';
-const PAPER_LINE = '#c4c8ce';
 
 function loadPicture(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
