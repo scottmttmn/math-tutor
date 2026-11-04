@@ -15,12 +15,12 @@ import { TUTOR_IMAGE_PADDING, TUTOR_IMAGE_SIDE } from '@/lib/tutorBoardImages';
 import { strokePoints, sweep } from '@/lib/booxPen';
 import { useBooxInk } from '@/hooks/useBooxInk';
 import { useBoardRail } from '@/components/layout/BoardRail';
-import { EraserIcon, HighlightIcon, LassoIcon, PenIcon, RedoIcon, UndoIcon } from '@/components/common/Icons';
+import { EraserIcon, FitWidthIcon, HighlightIcon, LassoIcon, PenIcon, RedoIcon, UndoIcon } from '@/components/common/Icons';
 import type { BoardImage, BoardInk, BoardStroke, InkColor, Paper } from '@/types';
 import type { DrawingCanvasHandle } from './DrawingCanvas';
 
 // The ink board: our own Notes-like canvas (replacing tldraw). One long page of fixed width; the
-// pen or mouse writes, fingers scroll and pinch, the wheel scrolls (with Ctrl, zooms). The drawing
+// pen or mouse writes, two fingers scroll and pinch (one does nothing), the wheel scrolls (with Ctrl, zooms). The drawing
 // is plain 2D canvas: finished ink on one canvas, the stroke being written on another above it.
 // On a BOOX tablet Onyx's pen SDK draws the pen tool's strokes and hands them over (useBooxInk).
 // The lasso circles ink to select it: drag it to move it, or delete or duplicate it; the tutor
@@ -99,6 +99,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   const [selected, setSelected] = useState(0);
   // The zoom, for the BOOX pen's preview width (the camera itself lives in a ref).
   const [zoom, setZoom] = useState(1);
+  // Zoomed in or out from writing scale: the rail then offers Fit width.
+  const [zoomedAway, setZoomedAway] = useState(false);
   const style = useRef({ tool, size, color });
   useEffect(() => { style.current = { tool, size, color }; }, [tool, size, color]);
 
@@ -241,7 +243,9 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       const live = liveCanvas.current;
       live?.getContext('2d')?.clearRect(0, 0, live.width, live.height);
     }
-    container.current?.setAttribute('data-zoom', String(Math.round((z / fitZoom(page, view.current)) * 100) / 100));
+    const scale = z / fitZoom(page, view.current);
+    container.current?.setAttribute('data-zoom', String(Math.round(scale * 100) / 100));
+    setZoomedAway(Math.abs(scale - 1) > 0.01);
     container.current?.setAttribute('data-view-y', String(Math.round(y)));
     setZoom(z);
     painted();
@@ -575,7 +579,6 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     const canvas = liveCanvas.current;
     if (!canvas) return;
     let pinch: { distance: number; mid: { x: number; y: number }; start: number; zooming: boolean } | null = null;
-    let lastTouch: { x: number; y: number } | null = null;
     // Contacts taken for a hand (and every contact while one is down) move nothing until they lift.
     const blocked = new Set<number>();
     let firstTouch = 0;
@@ -596,10 +599,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         const [a, b] = points;
         const distance = Math.hypot(a.x - b.x, a.y - b.y);
         pinch = { distance, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, start: distance, zooming: false };
-        lastTouch = null;
       } else {
         pinch = null;
-        lastTouch = points[0] ?? null;
       }
     };
 
@@ -652,7 +653,9 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         touches.current.set(event.pointerId, local(event));
         canvas.setPointerCapture(event.pointerId);
         touchState();
-        gesture(true);
+        // One finger does nothing (a graze from the writing hand scrolled the page on the Go 10.3,
+        // 2026-11-04); two scroll and pinch, as in BOOX Notes.
+        if (touches.current.size >= 2) gesture(true);
         return;
       }
       if (booxPen(event)) return;
@@ -712,19 +715,16 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
           const [a, b] = points;
           const distance = Math.hypot(a.x - b.x, a.y - b.y);
           const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-          if (!pinch.zooming) {
-            // Nothing moves until the fingers clearly spread or close; then the zoom starts from here.
-            if (Math.abs(distance / pinch.start - 1) < PINCH_START) return;
-            pinch = { ...pinch, distance, mid, zooming: true };
+          // Two fingers scroll together; they zoom only once their spread clearly changes.
+          if (!pinch.zooming && Math.abs(distance / pinch.start - 1) >= PINCH_START) pinch = { ...pinch, distance, zooming: true };
+          if (pinch.zooming) {
+            fitted.current = false;
+            const zoomed = zoomAbout(camera.current, distance / pinch.distance, mid, board().page, view.current);
+            setCamera({ ...zoomed, x: zoomed.x - (mid.x - pinch.mid.x) / zoomed.z, y: zoomed.y - (mid.y - pinch.mid.y) / zoomed.z });
+          } else {
+            setCamera({ ...camera.current, x: camera.current.x - (mid.x - pinch.mid.x) / camera.current.z, y: camera.current.y - (mid.y - pinch.mid.y) / camera.current.z });
           }
-          fitted.current = false;
-          const zoomed = zoomAbout(camera.current, distance / pinch.distance, mid, board().page, view.current);
-          setCamera({ ...zoomed, x: zoomed.x - (mid.x - pinch.mid.x) / zoomed.z, y: zoomed.y - (mid.y - pinch.mid.y) / zoomed.z });
           pinch = { ...pinch, distance, mid };
-        } else if (lastTouch) {
-          const at = local(event);
-          setCamera({ ...camera.current, x: camera.current.x - (at.x - lastTouch.x) / camera.current.z, y: camera.current.y - (at.y - lastTouch.y) / camera.current.z });
-          lastTouch = at;
         }
         return;
       }
@@ -956,6 +956,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
           <button className={railButton(tool === 'lasso')} aria-pressed={tool === 'lasso'} aria-label="Lasso" title="Lasso: circle ink to select it" onClick={() => pickTool('lasso')}><LassoIcon /></button>
           <button className={railButton(false)} disabled={!steps.undo} aria-label="Undo" title="Undo (Ctrl+Z)" onClick={doUndo}><UndoIcon /></button>
           <button className={railButton(false)} disabled={!steps.redo} aria-label="Redo" title="Redo (Ctrl+Shift+Z)" onClick={doRedo}><RedoIcon /></button>
+          {zoomedAway && <button className={railButton(false)} aria-label="Fit width" title="Back to writing size: the page fills the width" onClick={() => fitTo(camera.current.y)}><FitWidthIcon /></button>}
         </div>,
         rail.tools,
       )}

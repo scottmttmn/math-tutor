@@ -100,10 +100,9 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
     </button>
   );
 
-  const fitWidthButton = (notebook || onInkBoard) && onFitWidth && (
-    rail
-      ? <button onClick={onFitWidth} className={square} aria-label="Fit width" title="Return to notebook writing width"><span aria-hidden="true" className="text-lg leading-none">↔</span></button>
-      : <button onClick={onFitWidth} className={plain} title="Return to notebook writing width">Fit width</button>
+  // The ink board's rail shows its own Fit width, only while zoomed away from writing scale.
+  const fitWidthButton = (notebook || onInkBoard) && onFitWidth && !rail && (
+    <button onClick={onFitWidth} className={plain} title="Return to notebook writing width">Fit width</button>
   );
 
   const boardMenu = (tools || onWriteUp || onSaveAs) && (
