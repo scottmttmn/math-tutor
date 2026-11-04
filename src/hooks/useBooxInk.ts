@@ -19,8 +19,12 @@ const CONTROLS = '[role="toolbar"] > *, [data-testid="show-tools"], [data-pen-sk
 const OVERLAYS = '[role="menu"], [role="dialog"], [role="listbox"]';
 
 export interface BooxInkOptions {
-  /** The board's element: the region is its box less the controls over it. */
+  /** The board's element: the region is its box (the part its scrolling ancestors show) less the controls over it. */
   container: RefObject<HTMLElement | null>;
+  /** Whether the BOOX handles the board at all (default true): off, the pen and screen are left alone. */
+  enabled?: boolean;
+  /** Other elements, anywhere on the page, that sit over the board and must stay tappable. */
+  exclude?: string;
   /** Whether the SDK takes the pen (the Pen or Highlight tool). The eraser is the page's, with fast screen updates. */
   sdk: boolean;
   /** The live preview's width (CSS px at the current zoom), color, a marker's flat tip for the highlighter, and a dashed line for the lasso. */
@@ -44,14 +48,31 @@ export interface BooxInk {
   hold: (active: boolean) => void;
 }
 
+// The SDK has one session for the whole app: the board or the page that started it last. Another
+// one's stale calls must not stop or move it, and its strokes go to that one alone.
+let penOwner: object | null = null;
+
+/** The part of an element its scrolling ancestors show (a page scrolled partly out of view), or null when none is. */
+function clipped(element: HTMLElement): BooxPenBox | null {
+  const rect = element.getBoundingClientRect();
+  let [left, top, right, bottom] = [rect.left, rect.top, rect.right, rect.bottom];
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    const style = getComputedStyle(parent);
+    if (style.overflowX === 'visible' && style.overflowY === 'visible') continue;
+    const view = parent.getBoundingClientRect();
+    [left, top, right, bottom] = [Math.max(left, view.left), Math.max(top, view.top), Math.min(right, view.right), Math.min(bottom, view.bottom)];
+  }
+  return boxOf({ left, top, width: right - left, height: bottom - top });
+}
+
 /**
  * The ink board on a BOOX tablet (the Android app): Onyx's pen SDK draws the pen on the e-ink
  * controller and hands each finished stroke (or eraser pass) to the board, finger gestures and
  * the other tools use the panel's fast mode, and the screen is refreshed after the board changes.
  * Everywhere else it does nothing. If the SDK never starts the pen stays the page's.
  */
-export function useBooxInk({ container, sdk, preview, onStroke, onErase }: BooxInkOptions): BooxInk {
-  const available = useBooxPenAvailable();
+export function useBooxInk({ container, enabled = true, exclude: excluded, sdk, preview, onStroke, onErase }: BooxInkOptions): BooxInk {
+  const available = useBooxPenAvailable() && enabled;
   const state = useRef({ started: false, running: false, paused: false, failed: false });
   const held = useRef(false);
   const syncNow = useRef<() => void>(() => undefined);
@@ -93,6 +114,15 @@ export function useBooxInk({ container, sdk, preview, onStroke, onErase }: BooxI
     };
   }, [available, setFast]);
 
+  // The board was redrawn: the screen is let through once the pen rests (the native side waits for it).
+  const painted = useCallback(() => {
+    if (!available) return;
+    clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => {
+      if (state.current.started && !state.current.paused && penOwner === state.current) void BooxPen.refresh().catch(() => undefined);
+    }, REFRESH_DELAY_MS);
+  }, [available]);
+
   // The SDK owns the pen while the Pen or Highlight tool is chosen and nothing covers the board.
   useEffect(() => {
     const element = container.current;
@@ -104,9 +134,10 @@ export function useBooxInk({ container, sdk, preview, onStroke, onErase }: BooxI
     const removers: (() => void)[] = [];
 
     const measure = (): { region: BooxPenBox; exclude: BooxPenBox[] } | null => {
-      const region = boxOf(element.getBoundingClientRect());
+      const region = clipped(element);
       if (!region) return null;
-      const exclude = [...element.querySelectorAll(CONTROLS), ...document.querySelectorAll('[data-testid="show-tools"]')]
+      const others = [...document.querySelectorAll('[data-testid="show-tools"]'), ...(excluded ? document.querySelectorAll(excluded) : [])];
+      const exclude = [...element.querySelectorAll(CONTROLS), ...others]
         .map((control) => boxOf(control.getBoundingClientRect()))
         .filter((box): box is BooxPenBox => Boolean(box && overlaps(box, region)));
       return { region, exclude };
@@ -114,6 +145,8 @@ export function useBooxInk({ container, sdk, preview, onStroke, onErase }: BooxI
 
     const sync = () => {
       if (stopped || status.failed) return;
+      // Another board or page took the pen meanwhile: start again once this one is shown.
+      if (status.started && penOwner !== status) Object.assign(status, { started: false, running: false, paused: false });
       const area = measure();
       const covered = Boolean(area) && [...document.querySelectorAll(OVERLAYS)].some((overlay) => {
         const box = boxOf(overlay.getBoundingClientRect());
@@ -126,6 +159,7 @@ export function useBooxInk({ container, sdk, preview, onStroke, onErase }: BooxI
       const key = JSON.stringify(area);
       if (!status.started) {
         status.started = true;
+        penOwner = status;
         lastRegion = key;
         void BooxPen.start({ ...area, ...previewRef.current }).then(
           () => {
@@ -141,8 +175,11 @@ export function useBooxInk({ container, sdk, preview, onStroke, onErase }: BooxI
       if (key !== lastRegion) {
         lastRegion = key;
         void BooxPen.setRegion(area).catch(() => undefined);
+        // A region change drops a refresh still waiting natively: a stroke's ink, drawn just
+        // before the page shifted, stayed hidden until the next stroke (Go 10.3, 2026-10-23).
+        painted();
       }
-      if (status.paused) { status.paused = false; void BooxPen.resume().catch(() => undefined); }
+      if (status.paused) { status.paused = false; void BooxPen.resume().catch(() => undefined); painted(); }
     };
 
     let frame = 0;
@@ -168,7 +205,7 @@ export function useBooxInk({ container, sdk, preview, onStroke, onErase }: BooxI
 
     const listen = (event: 'stroke' | 'erase') => {
       const added = BooxPen.addListener(event, ({ points }) => {
-        if (stopped) return;
+        if (stopped || penOwner !== status) return;
         if (event === 'stroke') handlers.current.onStroke(points);
         else handlers.current.onErase(points);
       });
@@ -182,9 +219,12 @@ export function useBooxInk({ container, sdk, preview, onStroke, onErase }: BooxI
       syncNow.current = () => undefined;
       status.running = false;
       removers.forEach((remove) => remove());
-      if (status.started) void BooxPen.stop().catch(() => undefined);
+      if (status.started && penOwner === status) {
+        penOwner = null;
+        void BooxPen.stop().catch(() => undefined);
+      }
     };
-  }, [available, sdk, container]);
+  }, [available, sdk, container, excluded, painted]);
 
   // The preview follows the tool, size, color and zoom without restarting the pen.
   const { width, color, marker, dash = false } = preview;
@@ -192,21 +232,13 @@ export function useBooxInk({ container, sdk, preview, onStroke, onErase }: BooxI
     const { current } = previewRef;
     const changed = current.width !== width || current.color !== color || current.marker !== marker || Boolean(current.dash) !== dash;
     previewRef.current = { width, color, marker, dash };
-    if (!changed || !state.current.running) return;
+    if (!changed || !state.current.running || penOwner !== state.current) return;
     void BooxPen.setWidth({ width, color, marker, dash }).catch(() => undefined);
   }, [width, color, marker, dash]);
 
   useEffect(() => () => clearTimeout(refreshTimer.current), []);
 
-  const owns = useCallback(() => state.current.running && !state.current.paused, []);
-
-  const painted = useCallback(() => {
-    if (!available) return;
-    clearTimeout(refreshTimer.current);
-    refreshTimer.current = setTimeout(() => {
-      if (state.current.started && !state.current.paused) void BooxPen.refresh().catch(() => undefined);
-    }, REFRESH_DELAY_MS);
-  }, [available]);
+  const owns = useCallback(() => state.current.running && !state.current.paused && penOwner === state.current, []);
 
   const gesture = useCallback((active: boolean) => {
     if (!available) return;
