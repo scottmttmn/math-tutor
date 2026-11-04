@@ -1,0 +1,28 @@
+name: Keep the tablet signing key
+
+# GitHub drops a cache nobody has read for 7 days. The tablet app's signing key
+# lives in one (android-app-keystore-v1, made by ci.yml), and when it went
+# unread from 2026-10-23 to 2026-11-04 CI made a new key, so the tablet refused
+# the next build as a conflicting app. Reading it twice a week keeps it.
+on:
+  schedule:
+    - cron: '17 6 * * 1,4'
+  workflow_dispatch:
+
+jobs:
+  touch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Read the signing key
+        id: key
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/app-signing/app.keystore
+          key: android-app-keystore-v1
+
+      - name: Say so if it is gone
+        if: steps.key.outputs.cache-hit != 'true'
+        run: |
+          echo "::error::The signing key cache is gone; the next main build makes a new key and the tablet will need one reinstall."
+          exit 1
