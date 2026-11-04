@@ -4,7 +4,7 @@ import type { Paper, SessionType } from '@/types';
 // Line icons drawn in the current text color, so they read the same on an e-ink screen.
 function Icon({ size = 16, children }: { size?: number; children: ReactNode }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
+    <svg width={`${size / 16}rem`} height={`${size / 16}rem`} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
       {children}
     </svg>
   );

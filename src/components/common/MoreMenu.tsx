@@ -92,7 +92,7 @@ export default function MoreMenu({ label, items, disabled = false, button, above
             const index = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (current + (event.key === 'ArrowUp' ? -1 : 1) + buttons.length) % buttons.length;
             buttons[index]?.focus();
           }}
-          className={`absolute translate-x-[var(--menu-shift)] max-w-[calc(100vw-1rem)] ${align === 'left' ? 'left-0' : 'right-0'} ${above ? 'bottom-full mb-1' : 'top-full mt-1'} ${menuClassName ?? 'w-52 py-1'} bg-white border border-gray-300 rounded-lg shadow-lg z-50`}>
+          className={`absolute translate-x-[var(--menu-shift)] max-w-[calc(100vw-1rem)] max-h-[70dvh] overflow-y-auto ${align === 'left' ? 'left-0' : 'right-0'} ${above ? 'bottom-full mb-1' : 'top-full mt-1'} ${menuClassName ?? 'w-52 py-1'} bg-white border border-gray-300 rounded-lg shadow-lg z-50`}>
           {items.map((item) => (
             <Fragment key={item.label}>
             {item.separatorBefore && <div role="separator" className="my-1 border-t border-gray-200" />}

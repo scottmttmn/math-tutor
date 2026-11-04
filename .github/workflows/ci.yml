@@ -11,7 +11,8 @@ concurrency:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Playwright 1.58's Chromium dependencies support Ubuntu 24.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -45,7 +46,7 @@ jobs:
   # the way the app serves it, then built into an install file (APK) attached to the run and
   # published at one link the app updates itself from (Settings → Update).
   android:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
       contents: write

@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant boox (&:where([data-boox-ui="true"], [data-boox-ui="true"] *));
+
 @theme inline {
   --font-sans: var(--font-geist-sans);
 }
