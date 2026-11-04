@@ -117,6 +117,8 @@ export default function ShelfReader() {
   // Ink on the pages, by page number; the tool writing (null: reading); earlier ink for Undo.
   const [ink, setInk] = useState<Record<number, InkStroke[]>>({});
   const [inkTool, setInkTool] = useState<InkTool | null>(null);
+  // On a narrow screen the open board can swap out for the page, which then has the BOOX pen.
+  const [pageSwapped, setPageSwapped] = useState(false);
   const [inkUndo, setInkUndo] = useState<Record<number, InkStroke[][]>>({});
   const inkWrites = useRef<Promise<unknown>>(Promise.resolve());
   const switching = useRef(false);
@@ -684,6 +686,7 @@ export default function ShelfReader() {
         tool={inkTool}
         onInk={(strokes) => changeInk(page, strokes)}
         lit={litOnPage}
+        boox={!exercise || pageSwapped}
       />
     </div>
   );
@@ -764,7 +767,7 @@ export default function ShelfReader() {
       {exercise ? (
         <BoardFrame
           fullScreen={fullScreen}
-          source={{ label: 'Page', wide: true, toolbar: pageToolbar, content: pageView, swap: { label: `Page ${name}`, key: `${exercise.id}:${openings}` } }}
+          source={{ label: 'Page', wide: true, toolbar: pageToolbar, content: pageView, swap: { label: `Page ${name}`, key: `${exercise.id}:${openings}`, onFlip: setPageSwapped } }}
           title={(
             <>
               <h2 className="font-semibold text-gray-900 truncate">{exercise.label}</h2>
@@ -852,9 +855,9 @@ export default function ShelfReader() {
           )}
           <div className="flex-1 min-h-0 relative">
             <div className="absolute inset-0 overflow-y-auto">{pageView}</div>
-            {askPanel && <div className="absolute inset-x-0 bottom-0 z-30 h-[55%] flex flex-col shadow-lg">{askPanel}</div>}
+            {askPanel && <div data-pen-control className="absolute inset-x-0 bottom-0 z-30 h-[55%] flex flex-col shadow-lg">{askPanel}</div>}
             {barsShown && panelOpen && !askPanel && (
-              <section aria-label="Lists" className="absolute inset-y-0 left-0 z-20 w-[min(22rem,85%)] flex flex-col bg-white border-r border-gray-900 shadow-lg">
+              <section aria-label="Lists" data-pen-control className="absolute inset-y-0 left-0 z-20 w-[min(22rem,85%)] flex flex-col bg-white border-r border-gray-900 shadow-lg">
                 {listPanel}
               </section>
             )}
