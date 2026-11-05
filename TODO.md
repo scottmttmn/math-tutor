@@ -46,6 +46,18 @@ Every change goes through a branch and a PR (see CLAUDE.md, "Workflow and CI"). 
 - [ ] Test backup/restore on the device and choose its long-term backup location or sync workflow.
 - [ ] Decide whether the pen panel should have fewer colors and no opacity for the monochrome screen.
 
+## From the Go 10.3 notes (2026-11-04)
+
+- [x] Wider lines on lined paper (80 units, about BOOX Notes' ruling).
+- [x] Ink board controls in a left rail, header and rail collapsible, nothing at the foot of the board where the writing hand rests.
+- [ ] The same for the PDF reader's page toolbar (no board open).
+- [ ] Opening a board from a PDF and naming its problem feels cumbersome; look for fewer steps.
+- [ ] Diagnostics on the tablet for the random-seeming crashes and the board scrolling while writing: errors, WebView crashes, and finger gestures that moved the page, viewable in Settings.
+- [ ] An optional no-zoom mode (fingers only scroll).
+- [ ] Scratch out to erase on the ink board.
+- [ ] **Print-book notebook** (design, after pages): a notes board with pages tied to a print book (one per book or per section). Lasso work or tap beside a number to **Label as problem** ("4.2 #55"): solved, favorite, the book's list and a jump back to the spot. The tutor gets the region plus book, section and number; it never sees the printed problem, so it asks for a line or a photo when it can't tell, and never recalls problems by number.
+- [ ] **Tutor reads finished work** (design, discussed 2026-11-04): Mark solved becomes **Done** (the learner's call), separate from the tutor's read (looks right / take another look / can't tell). Once per problem, when it is marked Done or the board is left, never while writing, one quiet request reads it; a switch in Tutor memory turns it on. A flag says where, not the fix, on the board and its card plus a "worth a second look" list; each read becomes a tutor note on the topic. Open: flags right away or batched per session (leaning right away, quietly). States on a card: Done, Done · tutor agrees, Done · take another look; solved counts are Done + agrees (or Done alone with reading off), and "It was fine" overrides a flag. Score it: each flag gets "It was a mistake" / "It was fine", and a card can say "Was actually wrong" for a miss, giving each model's hits, false alarms and misses on the learner's own work.
+
 ## Later ideas
 
 - [ ] Multi-page notebooks. tldraw supports pages, but each board currently has one.

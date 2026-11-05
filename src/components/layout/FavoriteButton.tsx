@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { FavoriteStar } from '@/components/common/Icons';
 import { MAX_FAVORITE_REASON } from '@/lib/learnerProfile';
+import { InBoardHeader } from './BoardRail';
 import type { FavoriteProblem } from '@/types';
 
 interface Props {
@@ -20,6 +21,8 @@ interface Props {
  */
 export default function FavoriteButton({ favorite, disabled = false, failed = false, onStar, onUnstar }: Props) {
   const [open, setOpen] = useState(false);
+  // In an ink board's header the box opens downward; at the foot of the board, upward.
+  const inHeader = useContext(InBoardHeader);
   const [reason, setReason] = useState('');
   const ref = useRef<HTMLDivElement>(null);
   // Read by the close handlers, which outlive a render.
@@ -74,7 +77,7 @@ export default function FavoriteButton({ favorite, disabled = false, failed = fa
         <span className="hidden lg:inline">Favorite</span>
       </button>
       {open && (
-        <div role="dialog" aria-label="Favorite" className="absolute right-0 bottom-full mb-1 w-72 p-3 flex flex-col gap-2 bg-white border border-gray-300 rounded-lg shadow-lg z-50">
+        <div role="dialog" aria-label="Favorite" className={`absolute right-0 ${inHeader ? 'top-full mt-1' : 'bottom-full mb-1'} w-72 p-3 flex flex-col gap-2 bg-white border border-gray-300 rounded-lg shadow-lg z-50`}>
           <label htmlFor="favorite-reason" className="text-sm font-medium text-gray-900">What made it good? <span className="font-normal text-gray-500">(optional)</span></label>
           <textarea
             id="favorite-reason"

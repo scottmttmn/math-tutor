@@ -36,7 +36,9 @@ try {
   assert.ok(Math.abs(start.region.w - box.width) < 2 && Math.abs(start.region.h - box.height) < 2, 'the pen draws over the board');
   const penButton = await page.getByRole('button', { name: 'Pen', exact: true }).boundingBox();
   const inside = (rect, x, y) => x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
-  assert.ok(start.exclude.some((rect) => inside(rect, penButton.x + penButton.width / 2, penButton.y + penButton.height / 2)), 'the ink tools stay tappable');
+  // The ink tools are in the rail beside the board, outside the pen's region.
+  assert.ok(penButton.x + penButton.width <= start.region.x + 1, 'the ink tools stay tappable');
+  assert.ok(!inside(start.region, penButton.x + penButton.width / 2, penButton.y + penButton.height / 2), 'the rail is not the pen\'s');
   assert.ok(!start.exclude.some((rect) => inside(rect, box.x + box.width / 2, box.y + box.height / 2)), 'the page stays writable');
   // Size S at the page's writing scale (set again once the SDK is up), black.
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'setWidth'));
@@ -77,6 +79,8 @@ try {
   // Size and ink change the preview without restarting the pen.
   const starts = (await calls('start')).length;
   const small = (await calls('setWidth')).at(-1).options.width;
+  // The pen's sizes and inks open from its button (it is already chosen) and sit outside the pen's region.
+  await page.getByRole('button', { name: 'Pen', exact: true }).click();
   await page.getByRole('button', { name: 'Size M' }).click();
   await waitLast('setWidth', `Math.abs(options.width - ${small * 1.5}) < 0.01`);
   await page.getByRole('button', { name: 'Gray' }).click();
@@ -155,13 +159,14 @@ try {
   await page.waitForFunction((count) => window.__boox.calls.filter((call) => call.method === 'start').length > count, starts);
   await waitLast('setWidth', 'options.marker === false');
 
-  // Fingers pan in fast mode, released after the last one lifts.
+  // Two fingers pan in fast mode, released after the last one lifts.
   const touch = await page.context().newCDPSession(page);
   await touch.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
   const before = (await calls('interaction')).length;
   const finger = { id: 1, x: box.x + 400, y: box.y + 500 };
-  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [finger] });
-  await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...finger, y: finger.y - 120 }] });
+  const pair = (dy) => [{ ...finger, y: finger.y - dy }, { ...finger, id: 2, x: finger.x + 100, y: finger.y - dy }];
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pair(0) });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pair(120) });
   await waitLast('interaction', 'options.active === true');
   await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await waitLast('interaction', 'options.active === false');
@@ -173,9 +178,9 @@ try {
     new MutationObserver(() => { window.__paints += 1; }).observe(document.querySelector('[data-ink-board]'), { attributeFilter: ['data-view-y'] });
   });
   const startY = Number(await board.getAttribute('data-view-y'));
-  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [finger] });
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pair(0) });
   for (let step = 1; step <= 30; step += 1) {
-    await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...finger, y: finger.y - step * 4 }] });
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pair(step * 4) });
     await page.waitForTimeout(10);
   }
   await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
@@ -187,13 +192,13 @@ try {
   assert.ok(endY - startY > 80, `the view followed the finger (${startY} to ${endY})`);
 
   // Palm rejection: a hand resting as the pen hovers, just after a stroke, or as wide as a palm
-  // doesn't scroll; a finger a moment later still does.
+  // doesn't scroll; two fingers a moment later still do, and one finger never does.
   const viewY = async () => Number(await board.getAttribute('data-view-y'));
-  const drag = async (radius = 5) => {
+  const drag = async (radius = 5, count = 2) => {
     const start = await viewY();
-    const at = { id: 3, x: box.x + 600, y: box.y + 500, radiusX: radius, radiusY: radius };
-    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at] });
-    for (let step = 1; step <= 4; step++) await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...at, y: at.y - step * 40 }] });
+    const at = (dy) => [{ id: 3, x: box.x + 600, y: box.y + 500 - dy, radiusX: radius, radiusY: radius }, { id: 6, x: box.x + 700, y: box.y + 500 - dy, radiusX: radius, radiusY: radius }].slice(0, count);
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(0) });
+    for (let step = 1; step <= 4; step++) await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(step * 40) });
     await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     await page.waitForTimeout(100);
     return (await viewY()) - start;
@@ -207,7 +212,8 @@ try {
   assert.equal(await drag(), 0, 'a palm just after a stroke');
   await page.waitForTimeout(900);
   assert.equal(await drag(40), 0, 'a contact as wide as a palm');
-  assert.ok(await drag() > 0, 'a finger still scrolls');
+  assert.ok((await drag()) > 0, 'two fingers a moment later scroll');
+  assert.equal(await drag(5, 1), 0, 'one finger never scrolls; it takes two, as in BOOX Notes');
 
   // A hand settling contact by contact, or two fingers resting and drifting, neither zooms nor
   // scrolls; a deliberate pinch still zooms.
@@ -232,6 +238,23 @@ try {
   assert.equal(settling.zoom, 1, 'a hand settling contact by contact does not zoom');
   assert.equal(settling.moved, 0, 'a hand settling contact by contact does not scroll');
   assert.equal((await twoFingers({ gap: 20, spread: 4 })).zoom, 1, 'two resting fingers drifting do not zoom');
+  const scroll = await twoFingers({ gap: 20, spread: 0 });
+  assert.ok(scroll.moved > 0 && scroll.zoom === 1, 'two fingers scroll without zooming');
+  // A long scroll whose fingers drift apart once it is under way stays a scroll.
+  {
+    const before = { zoom: await zoomNow(), y: await viewY() };
+    const a = { id: 7, x: box.x + 450, y: box.y + 600, radiusX: 5, radiusY: 5 };
+    const b = { id: 8, x: box.x + 550, y: box.y + 600, radiusX: 5, radiusY: 5 };
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [a, b] });
+    for (let step = 1; step <= 10; step++) {
+      const out = step > 4 ? (step - 4) * 8 : 0;
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...a, x: a.x - out, y: a.y - step * 15 }, { ...b, x: b.x + out, y: b.y - step * 15 }] });
+    }
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(400);
+    assert.equal((await zoomNow()) / before.zoom, 1, 'fingers spreading during a scroll do not zoom');
+    assert.ok((await viewY()) - before.y > 0, 'the drifting scroll still scrolls');
+  }
   assert.ok((await twoFingers({ gap: 20, spread: 60 })).zoom > 1.2, 'a pinch zooms');
   await pen.detach();
   await touch.detach();

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
 import { GRID_SPACING, LINE_SPACING, PAPER_LINE } from '@/lib/paper';
@@ -13,11 +14,13 @@ import { VIEW_MARGIN, clampCamera, fitCamera, fitZoom, toBoard, zoomAbout, type 
 import { TUTOR_IMAGE_PADDING, TUTOR_IMAGE_SIDE } from '@/lib/tutorBoardImages';
 import { strokePoints, sweep } from '@/lib/booxPen';
 import { useBooxInk } from '@/hooks/useBooxInk';
+import { useBoardRail } from '@/components/layout/BoardRail';
+import { EraserIcon, FitWidthIcon, HighlightIcon, LassoIcon, PenIcon, RedoIcon, UndoIcon } from '@/components/common/Icons';
 import type { BoardImage, BoardInk, BoardStroke, InkColor, Paper } from '@/types';
 import type { DrawingCanvasHandle } from './DrawingCanvas';
 
 // The ink board: our own Notes-like canvas (replacing tldraw). One long page of fixed width; the
-// pen or mouse writes, fingers scroll and pinch, the wheel scrolls (with Ctrl, zooms). The drawing
+// pen or mouse writes, two fingers scroll and pinch (one does nothing), the wheel scrolls (with Ctrl, zooms). The drawing
 // is plain 2D canvas: finished ink on one canvas, the stroke being written on another above it.
 // On a BOOX tablet Onyx's pen SDK draws the pen tool's strokes and hands them over (useBooxInk).
 // The lasso circles ink to select it: drag it to move it, or delete or duplicate it; the tutor
@@ -42,8 +45,11 @@ const PALM_GRACE_MS = 800;
 const PALM_SIZE = 48;
 // Two fingers pinch only when the second lands this soon after the first (a palm settles contact by
 // contact), and zoom only once their spread has changed by this fraction (a resting hand drifts).
+// Once they have moved together this far (CSS px) more than they spread, the gesture is a scroll
+// and stays one: fingers drifting apart over a long scroll zoomed it (Go 10.3, 2026-11-05).
 const PINCH_WINDOW_MS = 250;
 const PINCH_START = 0.15;
+const SCROLL_LOCK = 24;
 // The selection's box sits this far outside its ink, in screen px; a duplicate lands this far off, in board units.
 const SELECTION_PAD = 8;
 // The lasso's loop as Onyx's pen draws it on a BOOX: thin and gray.
@@ -89,10 +95,15 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   const [tool, setTool] = useState<Tool>('pen');
   const [size, setSize] = useState<PenSize>('s');
   const [color, setColor] = useState<InkColor>('black');
+  // The pen's or highlighter's sizes and inks, opened from its button in the rail; writing closes them.
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const rail = useBoardRail();
   // How many items the lasso holds, for its toolbar (the ids live in `selection`).
   const [selected, setSelected] = useState(0);
   // The zoom, for the BOOX pen's preview width (the camera itself lives in a ref).
   const [zoom, setZoom] = useState(1);
+  // Zoomed in or out from writing scale: the rail then offers Fit width.
+  const [zoomedAway, setZoomedAway] = useState(false);
   const style = useRef({ tool, size, color });
   useEffect(() => { style.current = { tool, size, color }; }, [tool, size, color]);
 
@@ -134,7 +145,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
 
   // Strokes and eraser passes the BOOX pen hands over (set below, once the edits exist).
   const fromBoox = useRef({ stroke: (flat: number[]) => void flat, erase: (flat: number[]) => void flat });
-  const onBooxStroke = useCallback((flat: number[]) => fromBoox.current.stroke(flat), []);
+  const onBooxStroke = useCallback((flat: number[]) => { setOptionsOpen(false); fromBoox.current.stroke(flat); }, []);
   const onBooxErase = useCallback((flat: number[]) => fromBoox.current.erase(flat), []);
   const { owns: booxOwns, painted, gesture, frameGap, hold: holdPen } = useBooxInk({
     container,
@@ -235,7 +246,9 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       const live = liveCanvas.current;
       live?.getContext('2d')?.clearRect(0, 0, live.width, live.height);
     }
-    container.current?.setAttribute('data-zoom', String(Math.round((z / fitZoom(page, view.current)) * 100) / 100));
+    const scale = z / fitZoom(page, view.current);
+    container.current?.setAttribute('data-zoom', String(Math.round(scale * 100) / 100));
+    setZoomedAway(Math.abs(scale - 1) > 0.01);
     container.current?.setAttribute('data-view-y', String(Math.round(y)));
     setZoom(z);
     painted();
@@ -568,8 +581,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   useEffect(() => {
     const canvas = liveCanvas.current;
     if (!canvas) return;
-    let pinch: { distance: number; mid: { x: number; y: number }; start: number; zooming: boolean } | null = null;
-    let lastTouch: { x: number; y: number } | null = null;
+    let pinch: { distance: number; mid: { x: number; y: number }; start: number; startMid: { x: number; y: number }; mode: 'undecided' | 'scroll' | 'zoom' } | null = null;
     // Contacts taken for a hand (and every contact while one is down) move nothing until they lift.
     const blocked = new Set<number>();
     let firstTouch = 0;
@@ -589,11 +601,10 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       if (points.length >= 2) {
         const [a, b] = points;
         const distance = Math.hypot(a.x - b.x, a.y - b.y);
-        pinch = { distance, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, start: distance, zooming: false };
-        lastTouch = null;
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        pinch = { distance, mid, start: distance, startMid: mid, mode: 'undecided' };
       } else {
         pinch = null;
-        lastTouch = points[0] ?? null;
       }
     };
 
@@ -646,7 +657,9 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         touches.current.set(event.pointerId, local(event));
         canvas.setPointerCapture(event.pointerId);
         touchState();
-        gesture(true);
+        // One finger does nothing (a graze from the writing hand scrolled the page on the Go 10.3,
+        // 2026-11-04); two scroll and pinch, as in BOOX Notes.
+        if (touches.current.size >= 2) gesture(true);
         return;
       }
       if (booxPen(event)) return;
@@ -683,6 +696,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         paintLive();
         return;
       }
+      setOptionsOpen(false);
       const { tool: chosen, size: penSize, color: ink } = style.current;
       const highlighter = chosen === 'highlighter';
       const points: number[] = [];
@@ -705,19 +719,22 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
           const [a, b] = points;
           const distance = Math.hypot(a.x - b.x, a.y - b.y);
           const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-          if (!pinch.zooming) {
-            // Nothing moves until the fingers clearly spread or close; then the zoom starts from here.
-            if (Math.abs(distance / pinch.start - 1) < PINCH_START) return;
-            pinch = { ...pinch, distance, mid, zooming: true };
+          // Two fingers scroll together; they zoom only if their spread clearly changes before they
+          // have scrolled, and the gesture keeps whichever it became.
+          if (pinch.mode === 'undecided') {
+            const spread = Math.abs(distance - pinch.start);
+            const travel = Math.hypot(mid.x - pinch.startMid.x, mid.y - pinch.startMid.y);
+            if (Math.abs(distance / pinch.start - 1) >= PINCH_START && spread > travel) pinch = { ...pinch, distance, mode: 'zoom' };
+            else if (travel >= SCROLL_LOCK && travel > spread) pinch = { ...pinch, mode: 'scroll' };
           }
-          fitted.current = false;
-          const zoomed = zoomAbout(camera.current, distance / pinch.distance, mid, board().page, view.current);
-          setCamera({ ...zoomed, x: zoomed.x - (mid.x - pinch.mid.x) / zoomed.z, y: zoomed.y - (mid.y - pinch.mid.y) / zoomed.z });
+          if (pinch.mode === 'zoom') {
+            fitted.current = false;
+            const zoomed = zoomAbout(camera.current, distance / pinch.distance, mid, board().page, view.current);
+            setCamera({ ...zoomed, x: zoomed.x - (mid.x - pinch.mid.x) / zoomed.z, y: zoomed.y - (mid.y - pinch.mid.y) / zoomed.z });
+          } else {
+            setCamera({ ...camera.current, x: camera.current.x - (mid.x - pinch.mid.x) / camera.current.z, y: camera.current.y - (mid.y - pinch.mid.y) / camera.current.z });
+          }
           pinch = { ...pinch, distance, mid };
-        } else if (lastTouch) {
-          const at = local(event);
-          setCamera({ ...camera.current, x: camera.current.x - (at.x - lastTouch.x) / camera.current.z, y: camera.current.y - (at.y - lastTouch.y) / camera.current.z });
-          lastTouch = at;
         }
         return;
       }
@@ -922,6 +939,12 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
 
   const button = 'flex items-center justify-center min-h-11 min-w-11 px-2 text-sm rounded-lg border bg-white hover:bg-gray-50 disabled:opacity-40';
   const pressed = (on: boolean) => `${button} ${on ? 'border-2 border-gray-900 font-semibold text-gray-900' : 'border-gray-300 text-gray-800'}`;
+  const railButton = (on: boolean) => `flex items-center justify-center w-11 min-h-11 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40 ${on ? 'border-2 border-gray-900 text-gray-900' : 'border border-transparent text-gray-800'}`;
+  // Choosing the pen or highlighter shows its sizes and inks; tapping it again hides them.
+  const pickTool = (next: Tool) => {
+    setOptionsOpen((open) => (next === 'pen' || next === 'highlighter') && (next !== tool || !open));
+    chooseTool(next);
+  };
 
   return (
     <div ref={container} className="absolute inset-0 overflow-hidden" data-ink-board="true" data-strokes="0" data-images="0" data-selected="0">
@@ -934,14 +957,21 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         aria-label="Ink board"
         data-testid="ink-board"
       />
-      {!toolsHidden && (
-        <div role="toolbar" aria-label="Ink tools" className="absolute top-2 left-2 right-2 flex flex-wrap items-center gap-1.5 pointer-events-none [&>*]:pointer-events-auto">
-          <div className="flex gap-1 p-1 bg-white/95 border border-gray-200 rounded-xl shadow-sm">
-            <button className={pressed(tool === 'pen')} aria-pressed={tool === 'pen'} onClick={() => chooseTool('pen')}>Pen</button>
-            <button className={pressed(tool === 'highlighter')} aria-pressed={tool === 'highlighter'} onClick={() => chooseTool('highlighter')}>Highlight</button>
-            <button className={pressed(tool === 'eraser')} aria-pressed={tool === 'eraser'} onClick={() => chooseTool('eraser')}>Eraser</button>
-            <button className={pressed(tool === 'lasso')} aria-pressed={tool === 'lasso'} title="Circle ink to select it" onClick={() => chooseTool('lasso')}>Lasso</button>
-          </div>
+      {/* The tools are in the board's rail (BoardRail); what a tool offers opens over the page's top left. */}
+      {!toolsHidden && rail?.tools && createPortal(
+        <div role="toolbar" aria-label="Ink tools" aria-orientation="vertical" className="contents">
+          <button className={railButton(tool === 'pen')} aria-pressed={tool === 'pen'} aria-expanded={tool === 'pen' && optionsOpen} aria-label="Pen" title="Pen (tap again for size and ink)" onClick={() => pickTool('pen')}><PenIcon /></button>
+          <button className={railButton(tool === 'highlighter')} aria-pressed={tool === 'highlighter'} aria-expanded={tool === 'highlighter' && optionsOpen} aria-label="Highlight" title="Highlight (tap again for ink)" onClick={() => pickTool('highlighter')}><HighlightIcon /></button>
+          <button className={railButton(tool === 'eraser')} aria-pressed={tool === 'eraser'} aria-label="Eraser" title="Eraser" onClick={() => pickTool('eraser')}><EraserIcon /></button>
+          <button className={railButton(tool === 'lasso')} aria-pressed={tool === 'lasso'} aria-label="Lasso" title="Lasso: circle ink to select it" onClick={() => pickTool('lasso')}><LassoIcon /></button>
+          <button className={railButton(false)} disabled={!steps.undo} aria-label="Undo" title="Undo (Ctrl+Z)" onClick={doUndo}><UndoIcon /></button>
+          <button className={railButton(false)} disabled={!steps.redo} aria-label="Redo" title="Redo (Ctrl+Shift+Z)" onClick={doRedo}><RedoIcon /></button>
+          {zoomedAway && <button className={railButton(false)} aria-label="Fit width" title="Back to writing size: the page fills the width" onClick={() => fitTo(camera.current.y)}><FitWidthIcon /></button>}
+        </div>,
+        rail.tools,
+      )}
+      {!toolsHidden && (tool === 'lasso' || ((tool === 'pen' || tool === 'highlighter') && optionsOpen)) && (
+        <div role="toolbar" aria-label={tool === 'lasso' ? 'Selection' : 'Pen options'} className="absolute top-2 left-2 right-2 flex flex-wrap items-center gap-1.5 pointer-events-none [&>*]:pointer-events-auto">
           {tool === 'lasso' && (
             <div className="flex items-center gap-1 p-1 bg-white/95 border border-gray-200 rounded-xl shadow-sm" role="group" aria-label="Selection">
               {selected === 0 && <span className="px-2 text-sm text-gray-600">Circle ink to select it</span>}
@@ -972,10 +1002,6 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
               ))}
             </div>
           )}
-          <div className="flex gap-1 p-1 bg-white/95 border border-gray-200 rounded-xl shadow-sm">
-            <button className={pressed(false)} disabled={!steps.undo} onClick={doUndo}>Undo</button>
-            <button className={pressed(false)} disabled={!steps.redo} onClick={doRedo}>Redo</button>
-          </div>
         </div>
       )}
     </div>

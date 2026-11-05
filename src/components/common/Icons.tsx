@@ -70,6 +70,20 @@ export function UndoIcon() {
   return <Icon size={20}><path d="M2 7h7a4 4 0 0 1 0 8M2 7l4-4M2 7l4 4" /></Icon>;
 }
 
+export function RedoIcon() {
+  return <Icon size={20}><path d="M14 7H7a4 4 0 0 0 0 8M14 7l-4-4M14 7l-4 4" /></Icon>;
+}
+
+/** The page's edges with arrows out to them: back to the width the page is written at. */
+export function FitWidthIcon() {
+  return <Icon size={20}><path d="M2 3v10M14 3v10M4.5 8h7M6.5 6l-2 2 2 2M9.5 6l2 2-2 2" /></Icon>;
+}
+
+/** A dashed loop, for the lasso. */
+export function LassoIcon() {
+  return <Icon size={20}><path d="M8 2c3.3 0 6 2 6 4.5S11.3 11 8 11 2 9 2 6.5 4.7 2 8 2z" strokeDasharray="2 2" /><path d="M5 10.5c-1 1.5 0 3 1.5 3.5" /></Icon>;
+}
+
 export function ListIcon() {
   return <Icon size={20}><path d="M6 4h8M6 8h8M6 12h8M2 4h.5M2 8h.5M2 12h.5" /></Icon>;
 }
