@@ -45,8 +45,11 @@ const PALM_GRACE_MS = 800;
 const PALM_SIZE = 48;
 // Two fingers pinch only when the second lands this soon after the first (a palm settles contact by
 // contact), and zoom only once their spread has changed by this fraction (a resting hand drifts).
+// Once they have moved together this far (CSS px) more than they spread, the gesture is a scroll
+// and stays one: fingers drifting apart over a long scroll zoomed it (Go 10.3, 2026-11-05).
 const PINCH_WINDOW_MS = 250;
 const PINCH_START = 0.15;
+const SCROLL_LOCK = 24;
 // The selection's box sits this far outside its ink, in screen px; a duplicate lands this far off, in board units.
 const SELECTION_PAD = 8;
 // The lasso's loop as Onyx's pen draws it on a BOOX: thin and gray.
@@ -578,7 +581,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   useEffect(() => {
     const canvas = liveCanvas.current;
     if (!canvas) return;
-    let pinch: { distance: number; mid: { x: number; y: number }; start: number; zooming: boolean } | null = null;
+    let pinch: { distance: number; mid: { x: number; y: number }; start: number; startMid: { x: number; y: number }; mode: 'undecided' | 'scroll' | 'zoom' } | null = null;
     // Contacts taken for a hand (and every contact while one is down) move nothing until they lift.
     const blocked = new Set<number>();
     let firstTouch = 0;
@@ -598,7 +601,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       if (points.length >= 2) {
         const [a, b] = points;
         const distance = Math.hypot(a.x - b.x, a.y - b.y);
-        pinch = { distance, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, start: distance, zooming: false };
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        pinch = { distance, mid, start: distance, startMid: mid, mode: 'undecided' };
       } else {
         pinch = null;
       }
@@ -715,9 +719,15 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
           const [a, b] = points;
           const distance = Math.hypot(a.x - b.x, a.y - b.y);
           const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-          // Two fingers scroll together; they zoom only once their spread clearly changes.
-          if (!pinch.zooming && Math.abs(distance / pinch.start - 1) >= PINCH_START) pinch = { ...pinch, distance, zooming: true };
-          if (pinch.zooming) {
+          // Two fingers scroll together; they zoom only if their spread clearly changes before they
+          // have scrolled, and the gesture keeps whichever it became.
+          if (pinch.mode === 'undecided') {
+            const spread = Math.abs(distance - pinch.start);
+            const travel = Math.hypot(mid.x - pinch.startMid.x, mid.y - pinch.startMid.y);
+            if (Math.abs(distance / pinch.start - 1) >= PINCH_START && spread > travel) pinch = { ...pinch, distance, mode: 'zoom' };
+            else if (travel >= SCROLL_LOCK && travel > spread) pinch = { ...pinch, mode: 'scroll' };
+          }
+          if (pinch.mode === 'zoom') {
             fitted.current = false;
             const zoomed = zoomAbout(camera.current, distance / pinch.distance, mid, board().page, view.current);
             setCamera({ ...zoomed, x: zoomed.x - (mid.x - pinch.mid.x) / zoomed.z, y: zoomed.y - (mid.y - pinch.mid.y) / zoomed.z });
