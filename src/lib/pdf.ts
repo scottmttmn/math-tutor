@@ -92,8 +92,11 @@ export async function cropPage(pdf: PDFDocumentProxy, pageNumber: number, rect: 
 }
 
 /** A whole page as a PNG (base64), for a problem figure taken from a PDF. */
-export async function pageImage(pdf: PDFDocumentProxy, pageNumber = 1): Promise<string> {
-  return toBase64(await drawPage(await pdf.getPage(pageNumber), CROP_PAGE_WIDTH));
+export async function pageImage(pdf: PDFDocumentProxy, pageNumber = 1, maxSide = Infinity): Promise<string> {
+  const page = await pdf.getPage(pageNumber);
+  const { width, height } = page.getViewport({ scale: 1 });
+  // Never more than `maxSide` pixels on either side: a tall page is drawn narrower.
+  return toBase64(await drawPage(page, Math.min(CROP_PAGE_WIDTH, maxSide, (maxSide * width) / height)));
 }
 
 /** Any image the browser can show, as a PNG (base64), since the tutor is sent PNGs; at most `maxSide` pixels a side. */

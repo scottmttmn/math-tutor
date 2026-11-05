@@ -37,7 +37,7 @@ export const MAX_BOARD_PICTURE = 1920;
 export async function problemImageFromFile(file: File, maxSide = Infinity): Promise<string> {
   if (!isPdf(file)) return imageFileToPng(file, maxSide);
   const pdf = await openPdf(file);
-  try { return await pageImage(pdf); } finally { void pdf.loadingTask.destroy(); }
+  try { return await pageImage(pdf, 1, maxSide); } finally { void pdf.loadingTask.destroy(); }
 }
 
 /** Whether a mark is a note page (a Notes board) rather than an exercise. */

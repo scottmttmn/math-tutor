@@ -944,10 +944,12 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       chooseTool('pen');
       return true;
     },
-    addPicture: async (base64) => {
-      if (loadPending.current) return false;
+    addPicture: async (made) => {
+      // The board it was asked for: another may open while the file is still being read.
       const load = loads.current;
-      const src = `data:image/png;base64,${base64}`;
+      if (loadPending.current) return false;
+      const src = `data:image/png;base64,${await made}`;
+      if (loads.current !== load || loadPending.current) return false;
       const picture = await loadPicture(src);
       if (loads.current !== load || loadPending.current) return false;
       const current = board();
