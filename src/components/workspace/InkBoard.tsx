@@ -8,6 +8,8 @@ import { GRID_SPACING, LINE_SPACING, PAPER_LINE } from '@/lib/paper';
 import { HIGHLIGHTER_WIDTH, HIGHLIGHT_ALPHA, INK_COLORS, PEN_WIDTHS, boardBounds, emptyBoard, pushPoint, type PenSize } from '@/lib/inkBoard/model';
 import { addItems, commit, copyItems, moveItems, redo, removeItems, startHistory, undo, type BoardHistory } from '@/lib/inkBoard/edits';
 import { GridIndex, itemsInLasso, strokesHitByPath } from '@/lib/inkBoard/hitTest';
+import { scratchedOut } from '@/lib/inkBoard/scratchOut';
+import { useScratchOutOff } from '@/hooks/useInkBoardMode';
 import { drawBoard, drawBoardStroke } from '@/lib/inkBoard/render';
 import { EXPORT_PADDING, MAX_EXPORT_SIDE, THUMBNAIL_SIDE, problemImage, renderItems, tutorImages } from '@/lib/inkBoard/capture';
 import { VIEW_MARGIN, clampCamera, fitCamera, fitZoom, toBoard, zoomAbout, type Camera, type ViewSize } from '@/lib/inkBoard/camera';
@@ -303,6 +305,18 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     if (history.current !== before) changed();
   }, [changed]);
 
+  // A finished pen stroke is ink, unless it scribbles out ink under it (scratch out to erase).
+  const [scratchOff] = useScratchOutOff();
+  const scratchOn = useRef(true);
+  useEffect(() => { scratchOn.current = !scratchOff; }, [scratchOff]);
+  const addStroke = useCallback((stroke: BoardStroke) => {
+    if (scratchOn.current && stroke.tool === 'pen') {
+      const taken = scratchedOut(board(), index.current, stroke.points, ERASER_REACH / camera.current.z);
+      if (taken.size > 0) { apply(removeItems(board(), taken)); return; }
+    }
+    apply(addItems(board(), [stroke]));
+  }, [apply]);
+
   const setCamera = useCallback((next: Camera) => {
     camera.current = clampCamera(next, board().page, view.current);
     repaint();
@@ -368,7 +382,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
           pushPoint(points, at.x, at.y, sample.pressure);
           last = at;
         }
-        apply(addItems(board(), [{ id: uuidv4(), tool: highlighter ? 'highlighter' : 'pen', color: ink, width: highlighter ? HIGHLIGHTER_WIDTH : PEN_WIDTHS[penSize], points }]));
+        addStroke({ id: uuidv4(), tool: highlighter ? 'highlighter' : 'pen', color: ink, width: highlighter ? HIGHLIGHTER_WIDTH : PEN_WIDTHS[penSize], points });
       },
       erase: (flat) => {
         penSeen.current = performance.now();
@@ -383,7 +397,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         if (hit.size > 0) apply(removeItems(board(), hit));
       },
     };
-  }, [apply, select, painted]);
+  }, [apply, addStroke, select, painted]);
 
   /** Writing scale with the board's `top` (board units) at the top of the view. */
   const fitTo = useCallback((top: number) => {
@@ -819,7 +833,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       if (!current || current.pointer !== event.pointerId) return;
       writing.current = null;
       paintLive();
-      if (event.type !== 'pointercancel') apply(addItems(board(), [current.stroke]));
+      if (event.type !== 'pointercancel') addStroke(current.stroke);
     };
 
     const wheel = (event: WheelEvent) => {
@@ -856,7 +870,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       canvas.removeEventListener('pointercancel', up);
       canvas.removeEventListener('wheel', wheel);
     };
-  }, [apply, paintLive, repaint, repaintLive, setCamera, booxOwns, gesture, select, holdPen]);
+  }, [apply, addStroke, paintLive, repaint, repaintLive, setCamera, booxOwns, gesture, select, holdPen]);
 
   /** The lasso's selection still on the board, or null for the whole board. */
   const selectedIds = (current: BoardInk) => {

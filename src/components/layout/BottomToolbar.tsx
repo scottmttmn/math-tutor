@@ -7,7 +7,7 @@ import { useCanvasState } from '@/context/CanvasContext';
 import { useRateLimit } from '@/hooks/useRateLimit';
 import { useNotebookMode } from '@/hooks/useNotebookMode';
 import { useBooxPenAvailable, useBooxPenMode } from '@/hooks/useBooxPen';
-import { useInkBoardMode, useOnInkBoard } from '@/hooks/useInkBoardMode';
+import { useInkBoardMode, useOnInkBoard, useScratchOutOff } from '@/hooks/useInkBoardMode';
 import { RATE_LIMIT_MS } from '@/lib/constants';
 import type { Paper, SessionType } from '@/types';
 import { PAPERS } from '@/lib/paper';
@@ -50,6 +50,7 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
   const router = useRouter();
   const { hasContent } = useCanvasState();
   const [inkForNew, toggleInkForNew] = useInkBoardMode();
+  const [scratchOff, toggleScratchOff] = useScratchOutOff();
   const onInkBoard = useOnInkBoard();
   // The rail is the ink board's; a tldraw board keeps the bar along its foot.
   const slots = useBoardRail();
@@ -119,6 +120,7 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
         ...(onInkBoard ? [] : [{ label: 'Notebook mode (experiment)', role: 'menuitemcheckbox' as const, checked: notebook, onSelect: toggleNotebook }]),
         // The ink board always uses Onyx's pen on a BOOX; the choice is tldraw's.
         ...(booxAvailable && !onInkBoard ? [{ label: 'BOOX pen (experiment)', role: 'menuitemcheckbox' as const, checked: booxPen, onSelect: toggleBooxPen }] : []),
+        ...(onInkBoard ? [{ label: 'Scratch out to erase', role: 'menuitemcheckbox' as const, checked: !scratchOff, onSelect: toggleScratchOff }] : []),
         ...(tools ? [{ label: rail ? 'Hide tool rail' : 'Hide drawing tools', role: 'menuitemcheckbox' as const, checked: tools.hidden, onSelect: tools.toggle }] : []),
         // The Android app has no address bar, so the pen test is reached from here.
         { label: 'Pen test…', disabled: isStreaming, onSelect: () => router.push('/pen-test') },

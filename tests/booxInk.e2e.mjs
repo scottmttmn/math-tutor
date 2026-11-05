@@ -299,6 +299,20 @@ try {
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await page.getByRole('button', { name: 'Pen', exact: true }).click();
 
+  // Scratch out on a BOOX: Onyx's pen scribbles over a word and the word goes.
+  {
+    const count = await strokes();
+    const word = [[box.x + 200, box.y + 700], [box.x + 230, box.y + 720], [box.x + 260, box.y + 700]];
+    await page.evaluate((points) => window.__boox.emit('stroke', points.flatMap(([x, y], i) => [x, y, 0.5, i * 20])), word);
+    await waitStrokes(count + 1);
+    const zig = [];
+    for (let i = 0; i <= 6; i += 1) zig.push([box.x + (i % 2 ? 290 : 190), box.y + 695 + i * 4]);
+    const dense = [];
+    for (let i = 1; i < zig.length; i += 1) for (let s = 0; s < 10; s += 1) dense.push([zig[i - 1][0] + ((zig[i][0] - zig[i - 1][0]) * s) / 10, zig[i - 1][1] + ((zig[i][1] - zig[i - 1][1]) * s) / 10]);
+    await page.evaluate((points) => window.__boox.emit('stroke', points.flatMap(([x, y], i) => [x, y, 0.5, i * 5])), dense);
+    await waitStrokes(count);
+  }
+
   // Leaving for Home stops the pen and releases fast mode.
   await page.getByRole('link', { name: 'Home' }).click();
   await page.waitForURL(`${origin}/`);

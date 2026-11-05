@@ -123,6 +123,34 @@ try {
   await page.getByRole('button', { name: 'Pen', exact: true }).click();
   console.log('PASS pen, highlighter, eraser (between samples), undo, redo and Ctrl+Z');
 
+  // Scratch out to erase: a scribble over a word takes the word, one undo step; over empty paper,
+  // or with the choice off, it is ink.
+  const scribble = async (x, y, width) => {
+    const box = await page.getByTestId('ink-board').boundingBox();
+    await page.mouse.move(box.x + x, box.y + y);
+    await page.mouse.down();
+    for (let i = 1; i <= 6; i += 1) await page.mouse.move(box.x + x + (i % 2 ? width : 0), box.y + y + i * 3, { steps: 10 });
+    await page.mouse.up();
+  };
+  await stroke(120, 520, 150, 540);
+  await stroke(160, 540, 190, 515);
+  await waitCount('strokes', 5);
+  await scribble(110, 515, 100);
+  await waitCount('strokes', 3);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await waitCount('strokes', 5);
+  await scribble(600, 515, 100);
+  await waitCount('strokes', 6);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await waitCount('strokes', 5);
+  await boardMenu('Scratch out to erase');
+  await scribble(110, 515, 100);
+  await waitCount('strokes', 6);
+  await boardMenu('Scratch out to erase');
+  for (let i = 0; i < 3; i += 1) await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await waitCount('strokes', 3);
+  console.log('PASS a scribble over writing scratches it out, one undo step; over empty paper or turned off it is ink');
+
   // Saved as ink (no tldraw document), and back after a reload.
   const session = await saved('session.ink?.strokes?.length === 3');
   assert.equal(session.canvasDocument, null);
