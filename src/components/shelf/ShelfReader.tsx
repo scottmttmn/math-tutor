@@ -29,6 +29,7 @@ import MoreMenu from '@/components/common/MoreMenu';
 import { ChevronIcon, EraserIcon, FullScreenIcon, HighlightIcon, KindIcon, ListIcon, PenIcon, SolvedCheck, TutorIcon, UndoIcon } from '@/components/common/Icons';
 import BoardFrame from '@/components/layout/BoardFrame';
 import { saveBoardAs } from '@/lib/exportBoard';
+import { addPictureFromFile } from '@/lib/boardPicture';
 import PdfPage from './PdfPage';
 import BookList from './BookList';
 import BookSearch from './BookSearch';
@@ -837,6 +838,7 @@ export default function ShelfReader() {
               tools={{ hidden: toolsHidden, toggle: toggleTools }}
               tutor={{ open: tutorOpen, toggle: () => setTutorOpen((open) => !open) }}
               onSaveAs={(format) => void saveBoardAs(canvasHandle.current, format, `${exercise.label} - ${shelfDocument.title}`)}
+              onAddPicture={(file) => void addPictureFromFile(canvasHandle.current, file)}
               favorite={<FavoriteButton favorite={favorite.favorite} failed={favorite.failed} onStar={(reason) => void favorite.star(reason)} onUnstar={() => void favorite.unstar()} />}
             />
           )}

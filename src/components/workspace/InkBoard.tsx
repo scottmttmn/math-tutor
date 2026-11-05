@@ -944,6 +944,29 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       chooseTool('pen');
       return true;
     },
+    addPicture: async (base64) => {
+      if (loadPending.current) return false;
+      const load = loads.current;
+      const src = `data:image/png;base64,${base64}`;
+      const picture = await loadPicture(src);
+      if (loads.current !== load || loadPending.current) return false;
+      const current = board();
+      const { page } = current;
+      // Shown at half its pixels (it is stored at up to twice the page's width), never wider than the page less its margins.
+      const scale = Math.min(0.5, (page.width - PROBLEM_MARGIN * 2) / picture.naturalWidth);
+      const w = picture.naturalWidth * scale;
+      const h = picture.naturalHeight * scale;
+      const content = boardBounds(current);
+      const y = content ? content.maxY + PROBLEM_MARGIN * 2 : camera.current.y + PROBLEM_TOP / camera.current.z;
+      const image: BoardImage = { id: uuidv4(), x: page.left + PROBLEM_MARGIN, y, w, h, src };
+      pictures.current.set(image.id, { src, image: picture, ready: Promise.resolve() });
+      apply(addItems(current, [], [image]));
+      fitTo(y - PROBLEM_TOP / fitZoom(board().page, view.current));
+      // Chosen with the lasso, so a drag moves it into place and Delete takes it away.
+      chooseTool('lasso');
+      select(new Set([image.id]));
+      return true;
+    },
     getRevision: () => inkRevision,
     getDocument: () => null,
     getInk: () => (loadPending.current ? null : board()),

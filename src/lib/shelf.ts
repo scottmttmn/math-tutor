@@ -30,9 +30,12 @@ export async function addToShelf(file: File, parentId: string | null = null): Pr
   } finally { void pdf.loadingTask.destroy(); }
 }
 
-/** A picture of a file for a problem board's figure: an image, or a PDF's first page (PNG, base64). */
-export async function problemImageFromFile(file: File): Promise<string> {
-  if (!isPdf(file)) return imageFileToPng(file);
+/** A board picture is stored at most this many pixels a side (twice the page's width): a photo stays small. */
+export const MAX_BOARD_PICTURE = 1920;
+
+/** A picture of a file for a problem board's figure, or for a board (`maxSide`): an image, or a PDF's first page (PNG, base64). */
+export async function problemImageFromFile(file: File, maxSide = Infinity): Promise<string> {
+  if (!isPdf(file)) return imageFileToPng(file, maxSide);
   const pdf = await openPdf(file);
   try { return await pageImage(pdf); } finally { void pdf.loadingTask.destroy(); }
 }
