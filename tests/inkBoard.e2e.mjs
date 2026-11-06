@@ -302,6 +302,20 @@ try {
   await page.getByRole('button', { name: 'Pen', exact: true }).click();
   console.log('PASS Add picture puts it below the work, chosen with the lasso; Delete, undo and Clear');
 
+  // Ctrl+V with a picture on the clipboard pastes it the same way.
+  await page.evaluate(async (png) => {
+    const blob = await (await fetch(`data:image/png;base64,${png}`)).blob();
+    const data = new DataTransfer();
+    data.items.add(new File([blob], 'pasted.png', { type: 'image/png' }));
+    window.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data }));
+  }, photo);
+  await waitCount('images', 2);
+  assert.equal(await ink().getAttribute('data-selected'), '1', 'the pasted picture is chosen');
+  await page.getByRole('button', { name: 'Clear board' }).click();
+  await waitCount('images', 1);
+  await page.getByRole('button', { name: 'Pen', exact: true }).click();
+  console.log('PASS Ctrl+V pastes a picture from the clipboard');
+
   // The controls are in a rail down the board's left, the tutor at its top; nothing sits below the board.
   {
     const controls = page.getByRole('group', { name: 'Board controls' });

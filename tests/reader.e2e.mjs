@@ -362,6 +362,27 @@ try {
   await page.unroute('**/api/tutor');
   console.log('PASS asking about a box on the page, closed or saved as a note page');
 
+  // Copy: drag a box with Select to copy, Copy it, and Paste in any ink board's rail puts it on the board.
+  await page.getByRole('button', { name: 'Select to copy', exact: true }).click();
+  await markBox([0.1, 0.35], [0.8, 0.5]);
+  await page.getByRole('button', { name: 'Copy', exact: true }).click();
+  await page.getByText(/^Copied\./).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Paste on this board' }).count(), 0, 'no board is open to paste on');
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.getByText(/^Copied\./).waitFor({ state: 'detached' });
+  const readerUrl = page.url();
+  await page.evaluate(() => localStorage.setItem('math-tutor:inkBoard', '1'));
+  await page.goto(`${origin}/board?new=problem`);
+  await page.locator('[data-ink-board]').waitFor();
+  const paste = page.getByTestId('paste-picture');
+  await paste.click();
+  await page.locator('[data-ink-board][data-images="1"][data-selected="1"]').waitFor();
+  await paste.waitFor({ state: 'detached' });
+  await page.evaluate(() => localStorage.removeItem('math-tutor:inkBoard'));
+  await page.goto(readerUrl);
+  await page.getByTestId('page-overlay').waitFor();
+  console.log('PASS Select to copy, then Paste on a board puts the box on it, once');
+
   // An upright tablet: an exercise opens on its board, which takes the screen with the exercise
   // put on it; the page button swaps the page in, and Back to board (or its mark) swaps back.
   await page.setViewportSize({ width: 800, height: 1100 });
@@ -395,6 +416,29 @@ try {
   await page.getByRole('menuitemcheckbox', { name: 'Notebook mode (experiment)', exact: true }).click();
   await page.getByTestId('notebook-paper').waitFor({ state: 'detached' });
   console.log('PASS on an upright tablet the exercise opens on its board, swapping with the page');
+
+  // On an upright tablet, Paste on this board swaps back from the page to the ink board, with the picture on it.
+  await page.getByRole('button', { name: 'Board menu', exact: true }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Ink board for new boards (experiment)', exact: true }).click();
+  await page.getByRole('button', { name: 'Page 3', exact: true }).click();
+  await page.getByRole('button', { name: 'Mark', exact: true }).click();
+  await markBox([0.1, 0.6], [0.7, 0.75]);
+  await page.getByRole('radio', { name: 'Exercise' }).click();
+  await page.getByRole('radio', { name: 'Own board' }).click();
+  await page.getByRole('button', { name: 'Save and open' }).click();
+  const inkBoard = page.locator('[data-ink-board]');
+  await page.locator('[data-ink-board][data-images="1"]').waitFor();
+  await page.getByRole('button', { name: 'Page 3', exact: true }).click();
+  await page.getByTestId('page-overlay').waitFor();
+  await page.getByRole('button', { name: 'Select to copy', exact: true }).click();
+  await markBox([0.1, 0.35], [0.8, 0.5]);
+  await page.getByRole('button', { name: 'Copy', exact: true }).click();
+  await page.getByRole('button', { name: 'Paste on this board' }).click();
+  await page.locator('[data-ink-board][data-images="2"][data-selected="1"]').waitFor();
+  assert.ok(await inkBoard.isVisible(), 'the board is back in view');
+  await page.getByTestId('page-overlay').waitFor({ state: 'hidden' });
+  await page.evaluate(() => localStorage.removeItem('math-tutor:inkBoard'));
+  console.log('PASS on an upright tablet, Paste on this board swaps back to the board');
 
   assert.deepEqual(browserErrors, []);
   console.log('PASS no browser exceptions');

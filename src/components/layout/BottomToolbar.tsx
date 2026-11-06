@@ -12,7 +12,8 @@ import { RATE_LIMIT_MS } from '@/lib/constants';
 import type { Paper, SessionType } from '@/types';
 import { PAPERS } from '@/lib/paper';
 import MoreMenu from '@/components/common/MoreMenu';
-import { BroomIcon, FullScreenIcon, PaperIcon, SolvedCheck, TutorIcon, UnsolvedCheck } from '@/components/common/Icons';
+import { useCopiedPicture } from '@/hooks/useCopiedPicture';
+import { BroomIcon, FullScreenIcon, PaperIcon, PasteIcon, SolvedCheck, TutorIcon, UnsolvedCheck } from '@/components/common/Icons';
 import { InBoardHeader, useBoardRail } from './BoardRail';
 
 // Drawing tools, colors and undo live in tldraw's own toolbar on the canvas.
@@ -38,6 +39,8 @@ interface Props {
   onWriteUp?: () => void;
   /** Shows Add picture… on an ink board: an image or a PDF's first page, put on the board. */
   onAddPicture?: (file: File) => void;
+  /** Shows Paste in an ink board's rail while part of a PDF page is copied: puts it on the board. */
+  onPastePicture?: () => void;
   /** Shows Paper, which picks the board's paper: blank, lined or grid. */
   paper?: { value: Paper; onChange: (paper: Paper) => void };
   onFitWidth?: () => void;
@@ -45,7 +48,7 @@ interface Props {
   favorite?: ReactNode;
 }
 
-export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp, onAddPicture, paper, onFitWidth, favorite }: Props) {
+export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp, onAddPicture, onPastePicture, paper, onFitWidth, favorite }: Props) {
   const pictureInput = useRef<HTMLInputElement>(null);
   const { notebook, toggleNotebook } = useNotebookMode();
   const [booxPen, toggleBooxPen] = useBooxPenMode();
@@ -58,6 +61,7 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
   // The rail is the ink board's; a tldraw board keeps the bar along its foot.
   const slots = useBoardRail();
   const rail = onInkBoard ? slots : null;
+  const copied = useCopiedPicture();
   const railHeader = rail?.header ?? null;
   const setRailTools = rail?.setTools;
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
@@ -65,6 +69,12 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
   const askClass = 'flex items-center gap-1.5 min-h-11 px-4 text-sm font-semibold text-white bg-indigo-700 rounded-lg hover:bg-indigo-800 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed';
   const plain = 'flex shrink-0 items-center justify-center gap-1.5 min-h-11 min-w-11 px-3 text-sm text-gray-800 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40';
   const square = `${plain} w-11 p-0`;
+  // Part of a PDF page copied on the page: Paste puts it on this board.
+  const pasteButton = rail && copied && onPastePicture && (
+    <button onClick={onPastePicture} disabled={isStreaming} className={square} aria-label="Paste" title={`Paste: ${copied.from}`} data-testid="paste-picture">
+      <PasteIcon />
+    </button>
+  );
   const paperLabel = PAPERS.find((item) => item.paper === paper?.value)?.label ?? 'Blank';
 
   const fullScreenButton = fullScreen && (
@@ -215,6 +225,7 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
             {tutorButton}{checkInButton}
             {divider}
             <div ref={setRailTools} className="contents" />
+            {pasteButton}
             {divider}
             {paperMenu}
             {fitWidthButton}

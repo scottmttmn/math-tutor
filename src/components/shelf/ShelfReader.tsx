@@ -15,7 +15,7 @@ import { listFolders, loadInk, loadProfile, loadShelfDocument, savePageInk, save
 import { folderHref, folderIndex, folderPath, folderTree, isWithin } from '@/lib/folders';
 import { cropPage, openPdf, trimmedArea } from '@/lib/pdf';
 import { findPage, pageName } from '@/lib/reader';
-import { ensureExerciseBoard, exerciseStatement, isNote, markBoardId, markExercise, nextLabel, setReadFrom, solvedExercises, unmarkExercise } from '@/lib/shelf';
+import { MAX_BOARD_PICTURE, ensureExerciseBoard, exerciseStatement, isNote, markBoardId, markExercise, nextLabel, setReadFrom, solvedExercises, unmarkExercise } from '@/lib/shelf';
 import { boardMarkOf, pictureKey, sameBoard } from '@/lib/boardProblems';
 import { paperFor } from '@/lib/paper';
 import { MAX_BOOK_PAGES, loadContents, loadSectionStarts, readBookPages, readingRange, type ContentsEntry, type ReadingRange, type SectionStart } from '@/lib/bookContext';
@@ -26,10 +26,12 @@ import BottomToolbar from '@/components/layout/BottomToolbar';
 import AppBar from '@/components/layout/AppBar';
 import ChatPanel from '@/components/chat/ChatPanel';
 import MoreMenu from '@/components/common/MoreMenu';
-import { ChevronIcon, EraserIcon, FullScreenIcon, HighlightIcon, KindIcon, ListIcon, PenIcon, SolvedCheck, TutorIcon, UndoIcon } from '@/components/common/Icons';
+import { ChevronIcon, EraserIcon, FullScreenIcon, HighlightIcon, KindIcon, ListIcon, PenIcon, SelectBoxIcon, SolvedCheck, TutorIcon, UndoIcon } from '@/components/common/Icons';
 import BoardFrame from '@/components/layout/BoardFrame';
 import { saveBoardAs } from '@/lib/exportBoard';
-import { addPictureFromFile } from '@/lib/boardPicture';
+import { addPictureFromFile, pasteCopiedPicture } from '@/lib/boardPicture';
+import { copyPicture } from '@/lib/copiedPicture';
+import { useOnInkBoard } from '@/hooks/useInkBoardMode';
 import PdfPage from './PdfPage';
 import BookList from './BookList';
 import BookSearch from './BookSearch';
@@ -87,6 +89,10 @@ export default function ShelfReader() {
   const [askQuestionText, setAskQuestionText] = useState('');
   const [pageAsk, setPageAsk] = useState<{ page: number; rect: PageRect; question: string; key: number } | null>(null);
   const [pendingMark, setPendingMark] = useState<PageRect | null>(null);
+  // Copying part of the page to paste on a board: the tool, the box drawn, and how the copy went.
+  const [copyBox, setCopyBox] = useState(false);
+  const [copyDraft, setCopyDraft] = useState<{ page: number; rect: PageRect } | null>(null);
+  const [copyState, setCopyState] = useState<'ready' | 'copying' | 'copied' | 'failed'>('ready');
   const [markLabel, setMarkLabel] = useState('');
   const [markKind, setMarkKind] = useState<ShelfMarkKind>('exercise');
   // An exercise marked while a problem board is open goes on that board, not one of its own.
@@ -134,6 +140,7 @@ export default function ShelfReader() {
   // Counts openings, so opening an exercise (even the open one, from its mark) shows its board.
   const [openings, setOpenings] = useState(0);
   const { pendingLoad, hasContent } = useCanvasState();
+  const onInkBoard = useOnInkBoard();
   useEffect(() => {
     if (!placeOn || placeOn.board !== currentSessionId || pendingLoad) return;
     setPlaceOn(null);
@@ -527,6 +534,42 @@ export default function ShelfReader() {
   const plain = 'flex shrink-0 items-center justify-center gap-1.5 min-h-11 min-w-11 px-3 text-sm text-gray-800 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40';
   const square = `${plain} w-11 p-0`;
   const stopAskBox = () => { setAskBox(false); setAskDraft(null); };
+  const stopCopyBox = () => { setCopyBox(false); setCopyDraft(null); setCopyState('ready'); };
+  // Copy: the box's part of the page, kept for Paste on any board (and on the system clipboard where allowed).
+  const copyBoxed = async () => {
+    if (!copyDraft) return;
+    setCopyState('copying');
+    try {
+      const png = await cropPage(pdf, copyDraft.page, copyDraft.rect, MAX_BOARD_PICTURE);
+      await copyPicture({ png, from: `${shelfDocument.title}, p. ${pageName(labels, copyDraft.page)}`, copiedAt: Date.now() });
+      setCopyState('copied');
+    } catch {
+      setCopyState('failed');
+    }
+  };
+  const canPasteHere = Boolean(exercise) && onInkBoard;
+  const copyForm = (
+    <div onKeyDown={(event) => { if (event.key === 'Escape') setCopyDraft(null); }}
+      className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-white border border-gray-900 shadow-md w-max max-w-[22rem]">
+      {copyState === 'copied' ? (
+        <>
+          <p role="status" className="w-full text-sm text-gray-900">Copied. {canPasteHere ? 'Paste it on this board, or on any board with Paste in its tool rail.' : 'Paste it on any board with Paste in its tool rail.'}</p>
+          {canPasteHere && (
+            <button type="button" onClick={() => { void pasteCopiedPicture(canvasHandle.current); stopCopyBox(); setOpenings((count) => count + 1); }}
+              className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Paste on this board</button>
+          )}
+          <button type="button" onClick={stopCopyBox} className="min-h-11 px-3 text-sm text-gray-900 border border-gray-300 bg-white rounded-lg hover:bg-gray-50">Done</button>
+        </>
+      ) : (
+        <>
+          {copyState === 'failed' && <p role="alert" className="w-full text-sm text-red-700">It could not be copied. Try again.</p>}
+          <button type="button" autoFocus onClick={() => void copyBoxed()} disabled={copyState === 'copying'}
+            className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700 disabled:opacity-60">{copyState === 'copying' ? 'Copying…' : 'Copy'}</button>
+          <button type="button" onClick={() => setCopyDraft(null)} className="min-h-11 px-3 text-sm text-gray-600 border border-gray-300 bg-white rounded-lg hover:bg-gray-50">Cancel</button>
+        </>
+      )}
+    </div>
+  );
   // A box drawn to ask about: send the question (empty asks for an explanation) and open the conversation.
   const submitAsk = () => {
     if (!askDraft) return;
@@ -592,9 +635,12 @@ export default function ShelfReader() {
       <div role="group" aria-label="Write on the page" className="flex shrink-0 items-center gap-1">
         {INK_TOOLS.map(({ tool, label, icon: ToolIcon }) => (
           <button key={tool} aria-pressed={inkTool === tool} aria-label={label} title={label}
-            onClick={() => { setInkTool((current) => (current === tool ? null : tool)); setMarking(false); setPendingMark(null); stopAskBox(); }}
+            onClick={() => { setInkTool((current) => (current === tool ? null : tool)); setMarking(false); setPendingMark(null); stopAskBox(); stopCopyBox(); }}
             className={`flex items-center justify-center min-h-11 w-11 rounded-lg border ${inkTool === tool ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50'}`}><ToolIcon /></button>
         ))}
+        <button aria-pressed={copyBox} aria-label="Select to copy" title="Select part of the page to copy onto a board"
+          onClick={() => { if (copyBox) stopCopyBox(); else { setCopyBox(true); setInkTool(null); setMarking(false); setPendingMark(null); stopAskBox(); } }}
+          className={`flex items-center justify-center min-h-11 w-11 rounded-lg border ${copyBox ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50'}`}><SelectBoxIcon /></button>
         {inkTool && <button onClick={undoInk} disabled={!inkUndo[page]?.length} aria-label="Undo" title="Undo" className={square}><UndoIcon /></button>}
       </div>
       {/* Reading full screen has its way out in the top bar; a board has its own Full screen. */}
@@ -607,7 +653,7 @@ export default function ShelfReader() {
       )}
       <div className="flex-1" />
       <button
-        onClick={() => { setMarking((on) => !on); setPendingMark(null); setInkTool(null); stopAskBox(); }}
+        onClick={() => { setMarking((on) => !on); setPendingMark(null); setInkTool(null); stopAskBox(); stopCopyBox(); }}
         aria-pressed={marking}
         title="Box an exercise to work it, or a passage to take notes on"
         className={`shrink-0 min-h-11 px-3 text-sm font-medium rounded-lg border border-gray-900 ${marking ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 hover:bg-gray-100'}`}
@@ -616,7 +662,7 @@ export default function ShelfReader() {
       </button>
       {!exercise && (
         <button
-          onClick={() => { if (askBox) stopAskBox(); else { setAskBox(true); setMarking(false); setPendingMark(null); setInkTool(null); } }}
+          onClick={() => { if (askBox) stopAskBox(); else { setAskBox(true); setMarking(false); setPendingMark(null); setInkTool(null); stopCopyBox(); } }}
           aria-pressed={askBox}
           title="Drag a box around part of the page to ask the tutor about it"
           className={`flex shrink-0 items-center gap-1.5 min-h-11 px-3 text-sm font-semibold rounded-lg border-2 border-indigo-700 ${askBox ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' : 'bg-indigo-700 text-white hover:bg-indigo-800'}`}
@@ -628,12 +674,13 @@ export default function ShelfReader() {
   );
   const pageView = (
     <div ref={pageArea} className="p-3">
+      {copyBox && <p className="mb-2 text-sm font-medium text-gray-900">{copyDraft?.page === page ? 'Copy it, or drag again to redraw the box.' : 'Drag a box around what you want on a board.'}</p>}
       {askBox && <p className="mb-2 text-sm font-medium text-gray-900">{askDraft?.page === page ? 'Ask your question, or drag again to redraw the box.' : 'Drag a box around what you want to ask about.'}</p>}
       {marking && <p className="mb-2 text-sm font-medium text-gray-900">{pendingMark ? 'Choose Exercise or Note, name it and save, or drag again to redraw the box.' : canAddToBoard && markOnBoard ? 'Drag a box around the next exercise to add it to this board.' : 'Drag a box around an exercise, or around a passage to take notes on.'}</p>}
       <PdfPage
-        pdf={pdf} pageNumber={page} marks={marksOnPage} solvedIds={solvedIds} activeId={openId} marking={marking || askBox}
-        pending={askBox ? (askDraft?.page === page ? askDraft.rect : null) : marking ? pendingMark : pageAsk && pageAsk.page === page ? pageAsk.rect : null}
-        pendingForm={askBox ? askForm : marking && (
+        pdf={pdf} pageNumber={page} marks={marksOnPage} solvedIds={solvedIds} activeId={openId} marking={marking || askBox || copyBox}
+        pending={copyBox ? (copyDraft?.page === page ? copyDraft.rect : null) : askBox ? (askDraft?.page === page ? askDraft.rect : null) : marking ? pendingMark : pageAsk && pageAsk.page === page ? pageAsk.rect : null}
+        pendingForm={copyBox ? copyForm : askBox ? askForm : marking && (
           <form onSubmit={(event) => { event.preventDefault(); void saveMark(); }}
             onKeyDown={(event) => { if (event.key === 'Escape') setPendingMark(null); }}
             className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-white border border-gray-900 shadow-md w-max max-w-[22rem]">
@@ -675,6 +722,7 @@ export default function ShelfReader() {
           </form>
         )}
         onMark={(rect) => {
+          if (copyBox) { setCopyDraft({ page, rect }); setCopyState('ready'); return; }
           if (askBox) { setAskDraft({ page, rect }); return; }
           if (!pendingMark) { setMarkLabel(nextLabel(shelfDocument, markKind)); setMarkFolder(startingFolder()); }
           setPendingMark(rect);
@@ -839,6 +887,7 @@ export default function ShelfReader() {
               tutor={{ open: tutorOpen, toggle: () => setTutorOpen((open) => !open) }}
               onSaveAs={(format) => void saveBoardAs(canvasHandle.current, format, `${exercise.label} - ${shelfDocument.title}`)}
               onAddPicture={(file) => void addPictureFromFile(canvasHandle.current, file)}
+              onPastePicture={() => void pasteCopiedPicture(canvasHandle.current)}
               favorite={<FavoriteButton favorite={favorite.favorite} failed={favorite.failed} onStar={(reason) => void favorite.star(reason)} onUnstar={() => void favorite.unstar()} />}
             />
           )}

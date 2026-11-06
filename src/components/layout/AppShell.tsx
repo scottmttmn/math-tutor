@@ -28,7 +28,7 @@ import BoardFrame from './BoardFrame';
 import WriteUpPanel from '../workspace/WriteUpPanel';
 import { KindIcon } from '@/components/common/Icons';
 import { saveBoardAs } from '@/lib/exportBoard';
-import { addPictureFromFile } from '@/lib/boardPicture';
+import { addPictureFromFile, pasteCopiedPicture } from '@/lib/boardPicture';
 
 function AppContent() {
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
@@ -195,6 +195,7 @@ function AppContent() {
             tutor={{ open: tutorOpen, toggle: () => setTutorOpen((open) => !open) }}
             onSaveAs={(format) => void saveBoardAs(canvasHandle.current, format, boardTitle)}
             onAddPicture={(file) => void addPictureFromFile(canvasHandle.current, file)}
+            onPastePicture={() => void pasteCopiedPicture(canvasHandle.current)}
             onWriteUp={() => setWriteUpOpen(true)}
             favorite={checkIn ? undefined : (
               <FavoriteButton favorite={favorite.favorite} disabled={!currentSessionId} failed={favorite.failed}

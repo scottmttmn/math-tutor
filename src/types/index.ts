@@ -34,6 +34,15 @@ export interface BoardStroke {
 }
 
 /** A picture on an ink board: the problem (locked, placed once) or one kept from an old board. */
+/** Part of a PDF page copied to go on a board (Copy on the page, Paste in a board's rail). */
+export interface CopiedPicture {
+  /** PNG, base64 without the data: prefix. */
+  png: string;
+  /** Where it came from, e.g. "Calculus, p. 47". */
+  from: string;
+  copiedAt: number;
+}
+
 export interface BoardImage {
   id: string;
   x: number;
