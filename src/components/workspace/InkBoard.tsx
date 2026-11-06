@@ -16,6 +16,8 @@ import { VIEW_MARGIN, clampCamera, fitCamera, fitZoom, toBoard, zoomAbout, type 
 import { TUTOR_IMAGE_PADDING, TUTOR_IMAGE_SIDE } from '@/lib/tutorBoardImages';
 import { strokePoints, sweep } from '@/lib/booxPen';
 import { useBooxInk } from '@/hooks/useBooxInk';
+import { imageFileToPng } from '@/lib/pdf';
+import { MAX_BOARD_PICTURE } from '@/lib/shelf';
 import { useBoardRail } from '@/components/layout/BoardRail';
 import { EraserIcon, FitWidthIcon, HighlightIcon, LassoIcon, PenIcon, RedoIcon, UndoIcon } from '@/components/common/Icons';
 import type { BoardImage, BoardInk, BoardStroke, InkColor, Paper } from '@/types';
@@ -522,6 +524,19 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [doUndo, doRedo, deleteSelection, duplicateSelection, select]);
+
+  // Ctrl+V with a picture on the clipboard (copied from a PDF or another app) puts it on the board, like Add picture.
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      if (typing(event.target) || !container.current?.offsetParent) return;
+      const file = [...(event.clipboardData?.files ?? [])].find((item) => item.type.startsWith('image/'));
+      if (!file) return;
+      event.preventDefault();
+      void handleRef.current?.addPicture?.(imageFileToPng(file, MAX_BOARD_PICTURE)).catch((error) => console.error('Could not paste the picture', error));
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [handleRef]);
 
   // The stroke being written, drawn whole on the live canvas at each move.
   const paintLive = useCallback(() => {

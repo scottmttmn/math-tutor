@@ -84,6 +84,16 @@ export function LassoIcon() {
   return <Icon size={20}><path d="M8 2c3.3 0 6 2 6 4.5S11.3 11 8 11 2 9 2 6.5 4.7 2 8 2z" strokeDasharray="2 2" /><path d="M5 10.5c-1 1.5 0 3 1.5 3.5" /></Icon>;
 }
 
+/** Select part of a page to copy: a dashed box. */
+export function SelectBoxIcon() {
+  return <Icon size={20}><path d="M2.5 2.5h11v11h-11z" strokeDasharray="2 2" /></Icon>;
+}
+
+/** Paste: a clipboard. */
+export function PasteIcon() {
+  return <Icon size={20}><path d="M5.5 2.5h-2v12h9v-12h-2M5.5 1.5h5v2.5h-5zM5.5 7.5h5M5.5 10.5h3.5" /></Icon>;
+}
+
 export function ListIcon() {
   return <Icon size={20}><path d="M6 4h8M6 8h8M6 12h8M2 4h.5M2 8h.5M2 12h.5" /></Icon>;
 }

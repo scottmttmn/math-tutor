@@ -80,14 +80,18 @@ export async function renderCover(pdf: PDFDocumentProxy): Promise<Blob | null> {
 const CROP_PAGE_WIDTH = 1800;
 
 /** PNG (base64, no data: prefix) of a marked region of a page, for the exercise's problem image. */
-export async function cropPage(pdf: PDFDocumentProxy, pageNumber: number, rect: PageRect): Promise<string> {
+export async function cropPage(pdf: PDFDocumentProxy, pageNumber: number, rect: PageRect, maxSide = Infinity): Promise<string> {
   const page = await drawPage(await pdf.getPage(pageNumber), CROP_PAGE_WIDTH);
   const crop = document.createElement('canvas');
   const sx = Math.round(rect.x * page.width);
   const sy = Math.round(rect.y * page.height);
-  crop.width = Math.max(1, Math.round(rect.width * page.width));
-  crop.height = Math.max(1, Math.round(rect.height * page.height));
-  crop.getContext('2d')?.drawImage(page, sx, sy, crop.width, crop.height, 0, 0, crop.width, crop.height);
+  const width = Math.max(1, Math.round(rect.width * page.width));
+  const height = Math.max(1, Math.round(rect.height * page.height));
+  // At most `maxSide` pixels a side, scaled down whole.
+  const scale = Math.min(1, maxSide / Math.max(width, height));
+  crop.width = Math.max(1, Math.round(width * scale));
+  crop.height = Math.max(1, Math.round(height * scale));
+  crop.getContext('2d')?.drawImage(page, sx, sy, width, height, 0, 0, crop.width, crop.height);
   return toBase64(crop);
 }
 
