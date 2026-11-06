@@ -271,6 +271,37 @@ try {
   assert.equal(await count('images'), 1);
   console.log('PASS Put on board places the picture once, above the work; Clear leaves it');
 
+  // Board → Add picture… puts a picture below the work, chosen with the lasso: Delete takes it,
+  // undo brings it back, and Clear takes it (only the problem picture is locked).
+  const photo = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 3000; canvas.height = 1500;
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#ddd'; context.fillRect(0, 0, 3000, 1500);
+    context.fillStyle = 'black'; context.fillRect(200, 200, 800, 400);
+    return canvas.toDataURL('image/png').split(',')[1];
+  });
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), boardMenu('Add picture…')]);
+  await chooser.setFiles({ name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from(photo, 'base64') });
+  await waitCount('images', 2);
+  assert.equal(await ink().getAttribute('data-selected'), '1', 'the new picture is chosen with the lasso');
+  assert.equal(await page.getByRole('button', { name: 'Lasso', exact: true }).getAttribute('aria-pressed'), 'true');
+  const withPicture = await saved('session.ink?.images?.length === 2');
+  const added = withPicture.ink.images.find((item) => !item.problem);
+  const own = withPicture.ink.images.find((item) => item.problem);
+  assert.ok(added.y > own.y + own.h, 'the picture goes below the work');
+  assert.ok(added.w <= withPicture.ink.page.width - 64 && Math.abs(added.w / added.h - 2) < 0.01, `picture ${added.w} × ${added.h}`);
+  const stored = Buffer.from(added.src.split(',')[1], 'base64');
+  assert.ok(stored.readUInt32BE(16) <= 1920, 'a large photo is stored at most 1920 px wide');
+  await page.keyboard.press('Delete');
+  await waitCount('images', 1);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await waitCount('images', 2);
+  await page.getByRole('button', { name: 'Clear board' }).click();
+  await waitCount('images', 1);
+  await page.getByRole('button', { name: 'Pen', exact: true }).click();
+  console.log('PASS Add picture puts it below the work, chosen with the lasso; Delete, undo and Clear');
+
   // The controls are in a rail down the board's left, the tutor at its top; nothing sits below the board.
   {
     const controls = page.getByRole('group', { name: 'Board controls' });

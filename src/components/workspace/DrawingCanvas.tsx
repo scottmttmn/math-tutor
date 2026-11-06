@@ -23,6 +23,12 @@ export interface DrawingCanvasHandle {
    * for one added to a board of several, which goes below the work already there.
    */
   placeProblemImage: (base64: string, key?: string | true) => Promise<boolean>;
+  /**
+   * Puts a picture (base64 PNG, still being made) on the board below the work, chosen with the lasso
+   * so it can be moved at once; false when it can't be placed, or another board opened meanwhile.
+   * Only the ink board has it.
+   */
+  addPicture?: (picture: Promise<string>) => Promise<boolean>;
   /** Changes whenever the drawing changes; compare it to know whether a new capture is needed. */
   getRevision: () => number;
   /** The live tldraw document, fresher than the debounced copy in CanvasContext; null on the ink board. */

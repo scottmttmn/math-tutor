@@ -92,21 +92,25 @@ export async function cropPage(pdf: PDFDocumentProxy, pageNumber: number, rect: 
 }
 
 /** A whole page as a PNG (base64), for a problem figure taken from a PDF. */
-export async function pageImage(pdf: PDFDocumentProxy, pageNumber = 1): Promise<string> {
-  return toBase64(await drawPage(await pdf.getPage(pageNumber), CROP_PAGE_WIDTH));
+export async function pageImage(pdf: PDFDocumentProxy, pageNumber = 1, maxSide = Infinity): Promise<string> {
+  const page = await pdf.getPage(pageNumber);
+  const { width, height } = page.getViewport({ scale: 1 });
+  // Never more than `maxSide` pixels on either side: a tall page is drawn narrower.
+  return toBase64(await drawPage(page, Math.min(CROP_PAGE_WIDTH, maxSide, (maxSide * width) / height)));
 }
 
-/** Any image the browser can show, as a PNG (base64), since the tutor is sent PNGs. */
-export async function imageFileToPng(file: Blob): Promise<string> {
+/** Any image the browser can show, as a PNG (base64), since the tutor is sent PNGs; at most `maxSide` pixels a side. */
+export async function imageFileToPng(file: Blob, maxSide = Infinity): Promise<string> {
   const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement('canvas');
-  canvas.width = bitmap.width;
-  canvas.height = bitmap.height;
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Canvas unavailable');
   context.fillStyle = 'white';
   context.fillRect(0, 0, canvas.width, canvas.height);
-  context.drawImage(bitmap, 0, 0);
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   bitmap.close();
   return toBase64(canvas);
 }

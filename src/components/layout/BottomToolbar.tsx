@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { useCanvasState } from '@/context/CanvasContext';
@@ -36,6 +36,8 @@ interface Props {
   onSaveAs?: (format: 'png' | 'pdf') => void;
   /** Shows TeX write-up, which opens the board's LaTeX write-up. */
   onWriteUp?: () => void;
+  /** Shows Add picture… on an ink board: an image or a PDF's first page, put on the board. */
+  onAddPicture?: (file: File) => void;
   /** Shows Paper, which picks the board's paper: blank, lined or grid. */
   paper?: { value: Paper; onChange: (paper: Paper) => void };
   onFitWidth?: () => void;
@@ -43,7 +45,8 @@ interface Props {
   favorite?: ReactNode;
 }
 
-export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp, paper, onFitWidth, favorite }: Props) {
+export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp, onAddPicture, paper, onFitWidth, favorite }: Props) {
+  const pictureInput = useRef<HTMLInputElement>(null);
   const { notebook, toggleNotebook } = useNotebookMode();
   const [booxPen, toggleBooxPen] = useBooxPenMode();
   const booxAvailable = useBooxPenAvailable();
@@ -106,7 +109,23 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
     <button onClick={onFitWidth} className={plain} title="Return to notebook writing width">Fit width</button>
   );
 
+  const addPicture = onInkBoard && onAddPicture;
   const boardMenu = (tools || onWriteUp || onSaveAs) && (
+    <>
+    {addPicture && (
+      <input
+        ref={pictureInput}
+        type="file"
+        accept="image/*,application/pdf"
+        className="hidden"
+        data-testid="add-picture"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (file) addPicture(file);
+        }}
+      />
+    )}
     <MoreMenu
       label="Board menu"
       title="Board menu"
@@ -116,7 +135,8 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
       side={Boolean(rail)}
       align="left"
       items={[
-        { label: 'Ink board for new boards (experiment)', role: 'menuitemcheckbox', checked: inkForNew, onSelect: toggleInkForNew },
+        ...(addPicture ? [{ label: 'Add picture…', disabled: isStreaming, onSelect: () => pictureInput.current?.click() }] : []),
+        { label: 'Ink board for new boards (experiment)', separatorBefore: Boolean(addPicture), role: 'menuitemcheckbox', checked: inkForNew, onSelect: toggleInkForNew },
         ...(onInkBoard ? [] : [{ label: 'Notebook mode (experiment)', role: 'menuitemcheckbox' as const, checked: notebook, onSelect: toggleNotebook }]),
         // The ink board always uses Onyx's pen on a BOOX; the choice is tldraw's.
         ...(booxAvailable && !onInkBoard ? [{ label: 'BOOX pen (experiment)', role: 'menuitemcheckbox' as const, checked: booxPen, onSelect: toggleBooxPen }] : []),
@@ -131,6 +151,7 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
         ] : []),
       ]}
     />
+    </>
   );
 
   // Solved: only for problems. A filled ink check once solved; no color.
