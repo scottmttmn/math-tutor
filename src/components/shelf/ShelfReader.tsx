@@ -555,7 +555,7 @@ export default function ShelfReader() {
         <>
           <p role="status" className="w-full text-sm text-gray-900">Copied. {canPasteHere ? 'Paste it on this board, or on any board with Paste in its tool rail.' : 'Paste it on any board with Paste in its tool rail.'}</p>
           {canPasteHere && (
-            <button type="button" onClick={() => { void pasteCopiedPicture(canvasHandle.current); stopCopyBox(); if (pageSwapped) setPageSwapped(false); }}
+            <button type="button" onClick={() => { void pasteCopiedPicture(canvasHandle.current); stopCopyBox(); setOpenings((count) => count + 1); }}
               className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Paste on this board</button>
           )}
           <button type="button" onClick={stopCopyBox} className="min-h-11 px-3 text-sm text-gray-900 border border-gray-300 bg-white rounded-lg hover:bg-gray-50">Done</button>
