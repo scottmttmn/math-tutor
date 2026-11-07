@@ -42,6 +42,8 @@ import FavoriteButton from '@/components/layout/FavoriteButton';
 
 // Whether the list beside the page is hidden, so the page gets the width.
 const LIST_HIDDEN_KEY = 'math-tutor:shelfListHidden';
+// The page's tool rail, folded away to give the page its width (Text menu → Hide tool rail).
+const RAIL_HIDDEN_KEY = 'math-tutor:pageRailHidden';
 
 // Which list is beside the page: what the student made in the book, the PDF's contents, or a search.
 type ListTab = 'list' | 'contents' | 'search';
@@ -108,6 +110,7 @@ export default function ShelfReader() {
   const { fullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
   const { toolsHidden, toggleTools } = useToolsHidden();
   const [listHidden, setListHidden] = useState(false);
+  const [railHidden, setRailHidden] = useState(false);
   const [listTab, setListTab] = useState<ListTab>('list');
   // Printed page numbers ("xii", "47") when the PDF records them; the PDF's bookmarks.
   const [labels, setLabels] = useState<string[] | null>(null);
@@ -245,7 +248,12 @@ export default function ShelfReader() {
   // Read in an effect: localStorage isn't there during server rendering.
   useEffect(() => {
     try { setListHidden(localStorage.getItem(LIST_HIDDEN_KEY) === '1'); } catch { /* stays shown */ }
+    try { setRailHidden(localStorage.getItem(RAIL_HIDDEN_KEY) === '1'); } catch { /* stays shown */ }
   }, []);
+  const changeRailHidden = (next: boolean) => {
+    setRailHidden(next);
+    try { localStorage.setItem(RAIL_HIDDEN_KEY, next ? '1' : '0'); } catch { /* only for this visit */ }
+  };
   const changeListHidden = (next: boolean) => {
     setListHidden(next);
     try { localStorage.setItem(LIST_HIDDEN_KEY, next ? '1' : '0'); } catch { /* only for this visit */ }
@@ -611,7 +619,13 @@ export default function ShelfReader() {
   // The page's controls: a rail down its left, like an ink board's, away from a writing hand
   // resting at the bottom right (Scott, Go 10.3, 2026-11-07). The tutor's Ask sits at its top.
   const railTool = (on: boolean) => `flex shrink-0 items-center justify-center min-h-11 w-11 rounded-lg border ${on ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50'} disabled:opacity-40`;
-  const pageToolbar = (
+  const pageToolbar = railHidden ? (
+    // Folded away: a tab at the page's left edge brings the rail back.
+    <button onClick={() => changeRailHidden(false)} data-pen-control aria-label="Show tool rail" title="Show tool rail"
+      className="absolute left-0 top-1/3 z-10 flex items-center justify-center w-8 min-h-11 text-gray-700 bg-white border border-l-0 border-gray-400 rounded-r-lg shadow-sm">
+      <span aria-hidden="true">»</span>
+    </button>
+  ) : (
     <div role="group" aria-label="Text controls" className="flex flex-col items-center gap-1 w-12 shrink-0 py-1.5 overflow-y-auto overscroll-contain border-r border-gray-200 bg-white">
       {!exercise && (
         <button
@@ -651,13 +665,20 @@ export default function ShelfReader() {
         <button onClick={() => turn(1)} disabled={page >= pageCount} aria-label="Next page" title="Next page" className={railTool(false)}><ChevronIcon direction="right" /></button>
       </div>
       <div aria-hidden="true" className="w-8 my-1 border-t border-gray-200" />
-      {/* Reading full screen has its way out in the top bar; a board has its own Full screen. */}
-      {!exercise && !fullScreen && <button onClick={toggleFullScreen} aria-label="Full screen" title="Full screen" className={railTool(false)}><FullScreenIcon /></button>}
+      {/* A board has its own Full screen. Reading full screen keeps its way out and the lists here. */}
+      {!exercise && <button onClick={toggleFullScreen} aria-label={fullScreen ? 'Exit full screen' : 'Full screen'} title={fullScreen ? 'Exit full screen' : 'Full screen'} aria-pressed={fullScreen} className={railTool(false)}><FullScreenIcon /></button>}
+      {readingFullScreen && (
+        <button onClick={() => setPanelOpen((open) => !open)} aria-pressed={panelOpen} aria-label="Lists: your list, contents and search" title="Lists: your list, contents and search"
+          className={railTool(panelOpen)}><ListIcon /></button>
+      )}
       {pageOnly && !fullScreen && (
         <button onClick={() => changeListHidden(false)} aria-label="Your list" title="Your list: contents and search" className={railTool(false)}><ListIcon /></button>
       )}
       <MoreMenu label="Text menu" title="Text menu" button={<span aria-hidden="true">⋯</span>} buttonClassName={railTool(false)} side
-        items={[{ label: 'Trim margins', role: 'menuitemcheckbox', checked: trim, onSelect: () => void changeTrim(!trim) }]} />
+        items={[
+          { label: 'Trim margins', role: 'menuitemcheckbox', checked: trim, onSelect: () => void changeTrim(!trim) },
+          { label: 'Hide tool rail', onSelect: () => changeRailHidden(true) },
+        ]} />
     </div>
   );
   // Go to a page: a form at the top of the page, opened from the page number in the rail.
@@ -896,17 +917,9 @@ export default function ShelfReader() {
           tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel visible={tutorOpen && !fullScreen} getBoardImages={getBoardImages} getBookContext={getBookContext} onAskForHelp={askForHelp} /> }}
         />
       ) : readingFullScreen ? (
-        // Reading full screen: the page, with its bars until a tap in the middle hides them.
+        // Reading full screen: the page and its rail (no bar above it), until a tap in the middle hides the rail.
         <div className="flex-1 min-h-0 flex flex-col bg-white">
-          {barsShown && (
-            <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-900 bg-white">
-              <button onClick={toggleFullScreen} className={smallButton}>Exit full screen</button>
-              <span className="min-w-0 flex-1 truncate font-semibold text-gray-900">{shelfDocument.title}</span>
-              <button onClick={() => setPanelOpen((open) => !open)} aria-pressed={panelOpen} aria-label="Lists: your list, contents and search"
-                className={`min-h-11 px-3 text-sm rounded-lg border border-gray-900 ${panelOpen ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 hover:bg-gray-100'}`}>Lists</button>
-            </div>
-          )}
-          <div className="flex-1 min-h-0 flex">
+          <div className="relative flex-1 min-h-0 flex">
           {barsShown && pageToolbar}
           <div className="flex-1 min-w-0 relative">
             <div className="absolute inset-0 overflow-y-auto">{pageView}</div>
@@ -923,7 +936,7 @@ export default function ShelfReader() {
         // No board open: the page, and the list beside it (which can make way).
         <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
           <section className={`flex ${pageOnly ? 'flex-1' : 'basis-[45%]'} lg:basis-auto lg:flex-1 min-w-0 min-h-0 flex-col border-b lg:border-b-0 border-gray-200`}>
-            <div className="flex-1 min-h-0 flex">
+            <div className="relative flex-1 min-h-0 flex">
               {pageToolbar}
               <div className="flex-1 min-w-0 overflow-y-auto">{pageView}</div>
             </div>

@@ -89,7 +89,7 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
             </div>
           )}
           {/* The source's toolbar is a rail down its left, like an ink board's. */}
-          <div className="flex-1 min-h-0 flex">
+          <div className="relative flex-1 min-h-0 flex">
             {source.toolbar}
             <div className="flex-1 min-w-0 overflow-y-auto">{source.content}</div>
           </div>

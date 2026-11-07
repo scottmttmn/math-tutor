@@ -84,6 +84,13 @@ try {
   assert.equal(await trimControl().getAttribute('aria-checked'), 'true');
   await page.keyboard.press('Escape');
   assert.equal(await page.getByRole('button', { name: 'Text menu' }).evaluate((button) => button === document.activeElement), true);
+  // The rail folds away from the Text menu, stays folded after a reload, and a tab brings it back.
+  await openTextMenu();
+  await page.getByRole('menuitem', { name: 'Hide tool rail' }).click();
+  await controls.waitFor({ state: 'detached' });
+  await page.reload();
+  await page.getByRole('button', { name: 'Show tool rail' }).click();
+  await controls.getByRole('button', { name: 'Mark', exact: true }).waitFor();
   console.log('PASS reader rail: one column at tablet and desktop sizes, 44px targets and keyboard menu');
 
   // Tapping the page's edges and the arrow keys turn it; a sideways swipe does too.
@@ -165,12 +172,16 @@ try {
   await trimControl().click();
   console.log('PASS margins trimmed, and kept off once turned off');
 
-  // Full screen: only the page and its bars; a tap in the middle hides the bars and brings them back.
+  // Full screen: only the page and its rail; a tap in the middle hides the rail and brings them back.
   await page.getByRole('button', { name: 'Full screen' }).click();
   await page.getByRole('link', { name: 'Home' }).waitFor({ state: 'hidden' });
   await page.getByRole('tab', { name: 'Contents' }).waitFor({ state: 'hidden' });
   // Entering full screen remounts the PDF, which first has its canvas's default size.
   await page.waitForFunction(() => document.fullscreenElement && document.querySelector('[data-testid="page-overlay"]')?.getBoundingClientRect().width > innerWidth * 0.8);
+  // No bar above the page: Exit full screen and the lists are in the rail, which starts at the top.
+  const rail = await page.getByRole('group', { name: 'Text controls' }).boundingBox();
+  const pageTop = await page.locator('[data-testid="page-overlay"]').evaluate((overlay) => overlay.getBoundingClientRect().top);
+  assert.ok(rail.y < 2 && pageTop < 40, `full screen page starts at the top: rail ${rail.y}, page ${pageTop}`);
   await tapPage(0.5, 0.4);
   await page.getByRole('button', { name: 'Exit full screen' }).waitFor({ state: 'hidden' });
   await tapPage(0.9, 0.4);
@@ -187,7 +198,7 @@ try {
   await page.getByRole('region', { name: 'Lists' }).waitFor({ state: 'detached' });
   await page.getByRole('button', { name: 'Exit full screen' }).click();
   await page.getByRole('link', { name: 'Home' }).waitFor();
-  console.log('PASS full screen reading with bars on tap');
+  console.log('PASS full screen reading: page from the top, rail on tap');
 
   // Ink: the pen writes on the page (a finger would still turn it), saved with the page.
   const inkPixels = () => page.getByTestId('page-ink').evaluate((canvas) => {
