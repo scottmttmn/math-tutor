@@ -297,10 +297,12 @@ try {
   assert.ok(stored.readUInt32BE(16) <= 1920, 'a large photo is stored at most 1920 px wide');
   // The selection's corner handle resizes it: dragged in by a quarter of its width plus height, half
   // the size, the same shape, one undo step, and still selected.
-  const area = await page.locator('[data-ink-board] [data-pen-skip]').boundingBox();
-  // That area is the box (8 px outside the picture) plus the handle's 26 px reach past its corner.
-  const handleX = area.x + area.width - 26, handleY = area.y + area.height - 26;
-  const inward = ((area.width - 34) + (area.height - 34)) / 4;
+  // The handle's area (left to the page on a BOOX) is centered on the corner of the box, 8 px outside the picture.
+  const handle = await page.getByTestId('resize-handle').boundingBox();
+  const handleX = handle.x + handle.width / 2, handleY = handle.y + handle.height / 2;
+  const boxArea = await page.locator('[data-ink-board] [data-pen-skip]').first().boundingBox();
+  assert.ok(Math.abs(boxArea.x + boxArea.width - handleX) < 1 && Math.abs(boxArea.y + boxArea.height - handleY) < 1, 'the handle sits on the box corner');
+  const inward = ((boxArea.width - 16) + (boxArea.height - 16)) / 4;
   await page.mouse.move(handleX, handleY);
   await page.mouse.down();
   await page.mouse.move(handleX - inward, handleY - inward, { steps: 10 });
