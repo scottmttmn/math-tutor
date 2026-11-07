@@ -89,6 +89,11 @@ export function SelectBoxIcon() {
   return <Icon size={20}><path d="M2.5 2.5h11v11h-11z" strokeDasharray="2 2" /></Icon>;
 }
 
+/** Mark an exercise or a passage: a box's corners. */
+export function MarkIcon() {
+  return <Icon size={20}><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10M6 8h4M8 6v4" /></Icon>;
+}
+
 /** Paste: a clipboard. */
 export function PasteIcon() {
   return <Icon size={20}><path d="M5.5 2.5h-2v12h9v-12h-2M5.5 1.5h5v2.5h-5zM5.5 7.5h5M5.5 10.5h3.5" /></Icon>;
