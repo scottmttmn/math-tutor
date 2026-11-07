@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { makePdf } from './makePdf.mjs';
+import { keepTldraw } from './tldraw-boards.mjs';
 
 // Reading a Shelf PDF: turning pages, printed page numbers, contents, trimmed margins, full screen,
 // ink, Your list and note pages.
@@ -21,6 +22,7 @@ await writeFile(pdfPath, makePdf([body('Preface'), body('Contents'), body('1 Num
 
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+await context.addInitScript(keepTldraw);
 const page = await context.newPage();
 page.on('pageerror', (error) => browserErrors.push(error.message));
 const at = (text) => page.getByText(text, { exact: true }).waitFor();
@@ -419,7 +421,7 @@ try {
 
   // On an upright tablet, Paste on this board swaps back from the page to the ink board, with the picture on it.
   await page.getByRole('button', { name: 'Board menu', exact: true }).click();
-  await page.getByRole('menuitemcheckbox', { name: 'Ink board for new boards (experiment)', exact: true }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Ink board', exact: true }).click();
   await page.getByRole('button', { name: 'Page 3', exact: true }).click();
   await page.getByRole('button', { name: 'Mark', exact: true }).click();
   await markBox([0.1, 0.6], [0.7, 0.75]);

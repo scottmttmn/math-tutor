@@ -2,6 +2,7 @@ import { chooseTutor } from './tutor-ui.mjs';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { chromium } from 'playwright';
+import { keepTldraw } from './tldraw-boards.mjs';
 
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const requests = [];
@@ -23,6 +24,7 @@ const model = { provider: 'openai-compatible', model: 'acceptance-test', baseUrl
 
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+await context.addInitScript(keepTldraw);
 const page = await context.newPage();
 page.on('pageerror', (error) => browserErrors.push(error.message));
 

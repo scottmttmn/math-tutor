@@ -203,6 +203,18 @@ test('a tldraw board converts ink, highlights, pictures and groups in drawing or
   assert.deepEqual(converted.page, { left: -45.44, top: -182, width: 1005.44 });
 });
 
+test('dashed or dotted lines and filled freehand shapes stay leftovers, so the board keeps them in tldraw', () => {
+  const document = tldrawDocument();
+  document.store['shape:ink'].props.dash = 'dashed';
+  document.store['shape:pressed'].props.dash = 'dotted';
+  document.store['shape:mouse'].props = { ...document.store['shape:mouse'].props, isClosed: true, fill: 'solid' };
+  const { leftovers } = boardFromTldraw(document);
+  assert.ok(['shape:ink', 'shape:pressed', 'shape:mouse'].every((id) => leftovers.includes(id)), leftovers.join());
+  // A closed shape without a fill is only its outline, which ink draws.
+  document.store['shape:mouse'].props.fill = 'none';
+  assert.ok(!boardFromTldraw(document).leftovers.includes('shape:mouse'));
+});
+
 test('a cropped or turned picture and see-through ink stay leftovers, and an empty document is an empty board', () => {
   const document = tldrawDocument();
   document.store['shape:problem'].props.crop = { topLeft: { x: 0, y: 0 }, bottomRight: { x: 0.5, y: 1 } };

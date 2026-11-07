@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { fakeBooxBridge } from './boox-bridge.mjs';
 import { makePdf } from './makePdf.mjs';
+import { keepTldraw } from './tldraw-boards.mjs';
 
 // Ink on a Shelf page on a BOOX tablet, with the native bridge stood in for (tests/boox-bridge.mjs):
 // with Pen or Highlight chosen Onyx's pen draws over the page (the part in view) and each stroke
@@ -18,6 +19,7 @@ const browser = await chromium.launch({ headless: true, executablePath: process.
 
 try {
   const page = await browser.newPage({ viewport: { width: 1024, height: 768 } });
+  await page.addInitScript(keepTldraw);
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.addInitScript(fakeBooxBridge);

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
+import { keepTldraw } from './tldraw-boards.mjs';
 
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const reply = String.raw`**Modulus:** \(a_1 + b_2\), $x^2$, \[\frac{1}{2}\], $$\sqrt{z}$$`;
@@ -18,6 +19,7 @@ const frames = replyFrames(8000);
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+  await page.addInitScript(keepTldraw);
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   const cachedCounts = [8000, 0, undefined];
@@ -81,6 +83,7 @@ try {
 
   // A board written while zoomed out spans a large page area; its snapshot must stay small.
   const wide = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+  await wide.addInitScript(keepTldraw);
   wide.on('pageerror', (error) => errors.push(error.message));
   const wideRequests = [];
   await wide.route('**/api/tutor', (route) => {
@@ -115,6 +118,7 @@ try {
   // Widely separated lines used to become a ~29px-wide strip, even with no problem picture.
   // Load legacy strokes to give the regression a deterministic 6000-unit board on every viewport.
   const tall = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+  await tall.addInitScript(keepTldraw);
   tall.on('pageerror', (error) => errors.push(error.message));
   const tallRequests = [];
   await tall.route('**/api/tutor', (route) => {

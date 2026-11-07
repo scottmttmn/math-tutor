@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { fakeBooxBridge } from './boox-bridge.mjs';
+import { keepTldraw } from './tldraw-boards.mjs';
 
 // The BOOX pen on a board, with the Android app's native bridge stood in for: the page believes
 // it runs in the app on a BOOX tablet, records each BooxPen call, and the test hands it strokes
@@ -22,6 +23,7 @@ function penEventBlocked(target) {
 
 try {
   const page = await browser.newPage({ viewport: { width: 1024, height: 768 } });
+  await page.addInitScript(keepTldraw);
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.addInitScript(fakeBooxBridge);
@@ -213,6 +215,7 @@ try {
 
   // If the SDK can't start on a tablet, the pen stays tldraw's instead of drawing nothing.
   const failing = await browser.newPage({ viewport: { width: 1024, height: 768 } });
+  await failing.addInitScript(keepTldraw);
   // tldraw gets the made-up pen event here and can't capture its pointer, which is fine.
   failing.on('pageerror', (error) => { if (!error.message.includes('setPointerCapture')) errors.push(error.message); });
   await failing.addInitScript(fakeBooxBridge);
@@ -228,6 +231,7 @@ try {
 
   // Anywhere else (a browser, or the app on another tablet) it isn't offered.
   const plain = await browser.newPage({ viewport: { width: 1024, height: 768 } });
+  await plain.addInitScript(keepTldraw);
   plain.on('pageerror', (error) => errors.push(error.message));
   await plain.goto(`${origin}/board?new=problem`);
   await plain.locator('.tl-canvas').waitFor();

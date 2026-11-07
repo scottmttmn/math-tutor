@@ -69,6 +69,8 @@ function inkStroke(shape: TLRecord, transform: Transform): BoardStroke | null {
   const scaleY = typeof props.scaleY === 'number' ? props.scaleY : 1;
   // A pen's pressure shows only in tldraw's "draw" dash; solid, dashed and dotted lines are even.
   const keepPressure = !highlight && props.isPen === true && props.dash === 'draw';
+  // Dashed or dotted lines and filled shapes have no ink of their own: such a board stays in tldraw.
+  if (!highlight && (props.dash === 'dashed' || props.dash === 'dotted' || (props.isClosed === true && props.fill && props.fill !== 'none'))) return null;
   const points: number[] = [];
   for (const segment of (props.segments as Segment[] | undefined) ?? []) {
     for (const point of b64Vecs.decodePoints(segment.path, segment.dim)) {

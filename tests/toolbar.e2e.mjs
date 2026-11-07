@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
+import { keepTldraw } from './tldraw-boards.mjs';
 
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  await page.addInitScript(keepTldraw);
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   const requests = [];

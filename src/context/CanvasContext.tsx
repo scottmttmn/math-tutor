@@ -1,6 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useReducer, type Dispatch } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useReducer, useRef, type Dispatch } from 'react';
+import { useInkBoardMode } from '@/hooks/useInkBoardChoice';
 import type { BoardInk, CanvasDocument, Stroke } from '@/types';
 
 // The drawing's editor (tldraw's, or the ink board's) owns the live drawing, tools, selection and
@@ -21,7 +22,10 @@ export interface CanvasLoad {
 export type BoardEditor = 'tldraw' | 'ink' | 'new';
 
 type CanvasAction =
-  | { type: 'LOAD'; document?: CanvasDocument | null; strokes?: Stroke[]; ink?: BoardInk | null }
+  // `inkFirst` (set from Board → Ink board): a tldraw or pre-tldraw drawing opens on the ink board, converted.
+  | { type: 'LOAD'; document?: CanvasDocument | null; strokes?: Stroke[]; ink?: BoardInk | null; inkFirst?: boolean }
+  // The ink board couldn't convert the drawing it was given (text, shapes): tldraw shows it instead.
+  | { type: 'KEEP_TLDRAW' }
   | { type: 'LOADED'; document: CanvasDocument | null; ink?: BoardInk | null; hasContent: boolean }
   | { type: 'DOCUMENT_CHANGED'; document: CanvasDocument; hasContent: boolean }
   | { type: 'INK_CHANGED'; ink: BoardInk; hasContent: boolean };
@@ -58,10 +62,12 @@ function canvasReducer(state: CanvasState, action: CanvasAction): CanvasState {
         ink: load.ink,
         hasContent: load.strokes.some((stroke) => stroke.tool === 'pen') || Boolean(load.document) || Boolean(drawnInk(load.ink)),
         // A board saved empty is still new.
-        editor: drawnInk(load.ink) ? 'ink' : drawnDocument(load.document) || load.strokes.length > 0 ? 'tldraw' : 'new',
+        editor: drawnInk(load.ink) ? 'ink' : drawnDocument(load.document) || load.strokes.length > 0 ? (action.inkFirst ? 'ink' : 'tldraw') : 'new',
         pendingLoad: load,
       };
     }
+    case 'KEEP_TLDRAW':
+      return { ...state, editor: 'tldraw' };
     case 'LOADED':
       return { ...state, document: action.document, ink: action.ink ?? null, hasContent: action.hasContent, pendingLoad: null };
     case 'DOCUMENT_CHANGED':
@@ -78,7 +84,12 @@ const CanvasStateContext = createContext<CanvasState>(initialState);
 const CanvasDispatchContext = createContext<Dispatch<CanvasAction>>(() => {});
 
 export function CanvasProvider({ children }: { children: React.ReactNode }) {
-  const [state, dispatch] = useReducer(canvasReducer, initialState);
+  const [state, apply] = useReducer(canvasReducer, initialState);
+  // With the ink board on, every board opens there (step 6); the ink board converts older drawings.
+  const [inkOn] = useInkBoardMode();
+  const inkFirst = useRef(inkOn);
+  useEffect(() => { inkFirst.current = inkOn; }, [inkOn]);
+  const dispatch = useCallback<Dispatch<CanvasAction>>((action) => apply(action.type === 'LOAD' ? { ...action, inkFirst: inkFirst.current } : action), []);
   return (
     <CanvasStateContext.Provider value={state}>
       <CanvasDispatchContext.Provider value={dispatch}>

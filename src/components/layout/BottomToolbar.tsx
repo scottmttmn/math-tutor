@@ -146,7 +146,7 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
       align="left"
       items={[
         ...(addPicture ? [{ label: 'Add picture…', disabled: isStreaming, onSelect: () => pictureInput.current?.click() }] : []),
-        { label: 'Ink board for new boards (experiment)', separatorBefore: Boolean(addPicture), role: 'menuitemcheckbox', checked: inkForNew, onSelect: toggleInkForNew },
+        { label: 'Ink board', separatorBefore: Boolean(addPicture), role: 'menuitemcheckbox', checked: inkForNew, onSelect: toggleInkForNew },
         ...(onInkBoard ? [] : [{ label: 'Notebook mode (experiment)', role: 'menuitemcheckbox' as const, checked: notebook, onSelect: toggleNotebook }]),
         // The ink board always uses Onyx's pen on a BOOX; the choice is tldraw's.
         ...(booxAvailable && !onInkBoard ? [{ label: 'BOOX pen (experiment)', role: 'menuitemcheckbox' as const, checked: booxPen, onSelect: toggleBooxPen }] : []),

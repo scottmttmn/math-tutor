@@ -1,13 +1,9 @@
 'use client';
 
 import { useCanvasState } from '@/context/CanvasContext';
-import { deviceToggle } from '@/hooks/useDeviceToggle';
+import { useInkBoardMode } from '@/hooks/useInkBoardChoice';
 
-/** Board → Ink board for new boards (experiment), remembered on this device. */
-export const useInkBoardMode = deviceToggle('math-tutor:inkBoard');
-
-/** Board → Scratch out to erase is on unless turned off on this device. */
-export const useScratchOutOff = deviceToggle('math-tutor:scratchOutOff');
+export { useInkBoardMode, useScratchOutOff } from '@/hooks/useInkBoardChoice';
 
 /** Whether the open board is (or, while empty, will be) an ink board rather than a tldraw one. */
 export function useOnInkBoard(): boolean {
