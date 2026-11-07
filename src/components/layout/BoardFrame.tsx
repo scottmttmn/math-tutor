@@ -29,6 +29,7 @@ interface Props {
    * exercise, the typed problem. `wide` gives it half the width, for a PDF page.
    */
   source?: {
+    /** `toolbar` is a column of controls, shown down the source's left. */
     label: string; content: ReactNode; toolbar?: ReactNode; wide?: boolean;
     /**
      * On a narrow screen, swap rather than stack: the board gets the screen, and a button named
@@ -81,16 +82,17 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
             source.wide ? 'lg:flex-1' : 'lg:w-[22rem] lg:flex-none'
           } ${!flipped ? 'boox:max-lg:basis-auto boox:max-lg:max-h-[35%]' : ''} border-b lg:border-b-0 lg:border-r border-gray-200 bg-gray-50`}
         >
-          {(source.toolbar || flipped) && (
+          {flipped && (
             <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-white border-b border-gray-200">
-              {flipped && (
-                <button onClick={() => setFlippedFor(null)}
-                  className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Back to board</button>
-              )}
-              {source.toolbar}
+              <button onClick={() => setFlippedFor(null)}
+                className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Back to board</button>
             </div>
           )}
-          <div className="flex-1 min-h-0 overflow-y-auto">{source.content}</div>
+          {/* The source's toolbar is a rail down its left, like an ink board's. */}
+          <div className="flex-1 min-h-0 flex">
+            {source.toolbar}
+            <div className="flex-1 min-w-0 overflow-y-auto">{source.content}</div>
+          </div>
         </section>
       )}
 

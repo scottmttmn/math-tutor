@@ -59,7 +59,9 @@ try {
       return { name: button.getAttribute('aria-label') || button.textContent.trim(), title: button.title, x: box.x, y: box.y, w: box.width, h: box.height };
     }));
     assert.ok(buttons.every((button) => button.w >= 44 && button.h >= 44), JSON.stringify(buttons));
-    assert.equal(new Set(buttons.map((button) => button.y)).size, 1, `one reader toolbar row at ${width}px: ${JSON.stringify(buttons)}`);
+    assert.equal(new Set(buttons.map((button) => Math.round(button.x))).size, 1, `one rail down the page's left at ${width}px: ${JSON.stringify(buttons)}`);
+    // Ask, then Mark, at the rail's top, away from a writing hand at the bottom right.
+    assert.deepEqual(buttons.slice(0, 2).map((button) => button.name), ['Ask', 'Mark']);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     for (const name of ['Previous page', 'Next page', 'Pen', 'Highlight', 'Eraser', 'Full screen', 'Text menu']) {
       assert.equal(buttons.find((button) => button.name === name)?.title, name);
@@ -82,7 +84,7 @@ try {
   assert.equal(await trimControl().getAttribute('aria-checked'), 'true');
   await page.keyboard.press('Escape');
   assert.equal(await page.getByRole('button', { name: 'Text menu' }).evaluate((button) => button === document.activeElement), true);
-  console.log('PASS compact reader controls: one row at tablet and desktop sizes, 44px targets and keyboard menu');
+  console.log('PASS reader rail: one column at tablet and desktop sizes, 44px targets and keyboard menu');
 
   // Tapping the page's edges and the arrow keys turn it; a sideways swipe does too.
   await tapPage(0.9, 0.5);

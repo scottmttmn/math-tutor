@@ -26,7 +26,7 @@ import BottomToolbar from '@/components/layout/BottomToolbar';
 import AppBar from '@/components/layout/AppBar';
 import ChatPanel from '@/components/chat/ChatPanel';
 import MoreMenu from '@/components/common/MoreMenu';
-import { ChevronIcon, EraserIcon, FullScreenIcon, HighlightIcon, KindIcon, ListIcon, PenIcon, SelectBoxIcon, SolvedCheck, TutorIcon, UndoIcon } from '@/components/common/Icons';
+import { ChevronIcon, EraserIcon, FullScreenIcon, HighlightIcon, KindIcon, ListIcon, MarkIcon, PenIcon, SelectBoxIcon, SolvedCheck, TutorIcon, UndoIcon } from '@/components/common/Icons';
 import BoardFrame from '@/components/layout/BoardFrame';
 import { saveBoardAs } from '@/lib/exportBoard';
 import { addPictureFromFile, pasteCopiedPicture } from '@/lib/boardPicture';
@@ -524,15 +524,12 @@ export default function ShelfReader() {
   const litOnPage = search.results.find((result) => result.page === page)?.matches.flatMap((match) => match.rects) ?? NO_LIT;
   const name = pageName(labels, page);
   const pageText = name === String(page) ? `Page ${page} of ${pageCount}` : `p. ${name} (${page} of ${pageCount})`;
-  const pageLabel = name === String(page) ? `${page} / ${pageCount}` : `p. ${name}`;
   const readingFullScreen = fullScreen && !exercise;
   // The bookmark the page is in: the last one starting at or before it.
   const hereIndex = contents.reduce((found, entry, index) => (entry.page <= page && (found < 0 || entry.page >= contents[found].page) ? index : found), -1);
 
   // The page and its controls: beside an open board, or beside the list of exercises.
   const smallButton = 'min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40';
-  const plain = 'flex shrink-0 items-center justify-center gap-1.5 min-h-11 min-w-11 px-3 text-sm text-gray-800 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40';
-  const square = `${plain} w-11 p-0`;
   const stopAskBox = () => { setAskBox(false); setAskDraft(null); };
   const stopCopyBox = () => { setCopyBox(false); setCopyDraft(null); setCopyState('ready'); };
   // Copy: the box's part of the page, kept for Paste on any board (and on the system clipboard where allowed).
@@ -611,69 +608,74 @@ export default function ShelfReader() {
       onClose={() => setPageAsk(null)} onSave={saveAskAsNote} />
   );
 
+  // The page's controls: a rail down its left, like an ink board's, away from a writing hand
+  // resting at the bottom right (Scott, Go 10.3, 2026-11-07). The tutor's Ask sits at its top.
+  const railTool = (on: boolean) => `flex shrink-0 items-center justify-center min-h-11 w-11 rounded-lg border ${on ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50'} disabled:opacity-40`;
   const pageToolbar = (
-    <div role="group" aria-label="Text controls" className="flex flex-1 flex-wrap items-center gap-1.5 min-w-0">
-      <div role="group" aria-label="Page navigation" className="flex items-center gap-1">
-        <button onClick={() => turn(-1)} disabled={page <= 1} aria-label="Previous page" title="Previous page" className={square}><ChevronIcon direction="left" /></button>
-        {goTo === null ? (
-          <button onClick={() => { setGoTo(''); setGoToError(''); }} title={`${pageText}. Go to a page`} aria-label={`${pageText}. Go to a page`}
-            className="min-h-11 min-w-11 px-2 text-sm text-gray-700 tabular-nums rounded-lg hover:bg-gray-100">{pageLabel}</button>
-        ) : (
-          <form onSubmit={(event) => { event.preventDefault(); submitGoTo(); }}
-            onKeyDown={(event) => { if (event.key === 'Escape') { setGoTo(null); setGoToError(''); } }}
-            className="flex items-center gap-1">
-            <input autoFocus aria-label="Go to page" value={goTo} onChange={(event) => { setGoTo(event.target.value); setGoToError(''); }}
-              placeholder={labels ? 'e.g. 47' : `1–${pageCount}`} inputMode={labels ? 'text' : 'numeric'}
-              className="w-24 min-h-11 px-2 text-sm border border-gray-900 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
-            <button type="submit" className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Go</button>
-            <button type="button" onClick={() => { setGoTo(null); setGoToError(''); }} className={smallButton}>Cancel</button>
-          </form>
-        )}
-        <button onClick={() => turn(1)} disabled={page >= pageCount} aria-label="Next page" title="Next page" className={square}><ChevronIcon direction="right" /></button>
-      </div>
-      {goToError && <span role="alert" className="text-sm text-red-700">{goToError}</span>}
-      <div role="group" aria-label="Write on the page" className="flex shrink-0 items-center gap-1">
-        {INK_TOOLS.map(({ tool, label, icon: ToolIcon }) => (
-          <button key={tool} aria-pressed={inkTool === tool} aria-label={label} title={label}
-            onClick={() => { setInkTool((current) => (current === tool ? null : tool)); setMarking(false); setPendingMark(null); stopAskBox(); stopCopyBox(); }}
-            className={`flex items-center justify-center min-h-11 w-11 rounded-lg border ${inkTool === tool ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50'}`}><ToolIcon /></button>
-        ))}
-        <button aria-pressed={copyBox} aria-label="Select to copy" title="Select part of the page to copy onto a board"
-          onClick={() => { if (copyBox) stopCopyBox(); else { setCopyBox(true); setInkTool(null); setMarking(false); setPendingMark(null); stopAskBox(); } }}
-          className={`flex items-center justify-center min-h-11 w-11 rounded-lg border ${copyBox ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50'}`}><SelectBoxIcon /></button>
-        {inkTool && <button onClick={undoInk} disabled={!inkUndo[page]?.length} aria-label="Undo" title="Undo" className={square}><UndoIcon /></button>}
-      </div>
-      {/* Reading full screen has its way out in the top bar; a board has its own Full screen. */}
-      {!exercise && !fullScreen && <button onClick={toggleFullScreen} aria-label="Full screen" title="Full screen" className={square}><FullScreenIcon /></button>}
-      <MoreMenu label="Text menu" title="Text menu" button={<span aria-hidden="true">⋯</span>} buttonClassName={square}
-        above={readingFullScreen} align="left"
-        items={[{ label: 'Trim margins', role: 'menuitemcheckbox', checked: trim, onSelect: () => void changeTrim(!trim) }]} />
-      {pageOnly && !fullScreen && (
-        <button onClick={() => changeListHidden(false)} aria-label="Your list" title="Your list: contents and search" className={square}><ListIcon /></button>
-      )}
-      <div className="flex-1" />
-      <button
-        onClick={() => { setMarking((on) => !on); setPendingMark(null); setInkTool(null); stopAskBox(); stopCopyBox(); }}
-        aria-pressed={marking}
-        title="Box an exercise to work it, or a passage to take notes on"
-        className={`shrink-0 min-h-11 px-3 text-sm font-medium rounded-lg border border-gray-900 ${marking ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 hover:bg-gray-100'}`}
-      >
-        {marking ? 'Done marking' : 'Mark'}
-      </button>
+    <div role="group" aria-label="Text controls" className="flex flex-col items-center gap-1 w-12 shrink-0 py-1.5 overflow-y-auto overscroll-contain border-r border-gray-200 bg-white">
       {!exercise && (
         <button
           onClick={() => { if (askBox) stopAskBox(); else { setAskBox(true); setMarking(false); setPendingMark(null); setInkTool(null); stopCopyBox(); } }}
-          aria-pressed={askBox}
-          title="Drag a box around part of the page to ask the tutor about it"
-          className={`flex shrink-0 items-center gap-1.5 min-h-11 px-3 text-sm font-semibold rounded-lg border-2 border-indigo-700 ${askBox ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' : 'bg-indigo-700 text-white hover:bg-indigo-800'}`}
-        >
-          <TutorIcon />{askBox ? 'Cancel ask' : 'Ask'}
-        </button>
+          aria-pressed={askBox} aria-label={askBox ? 'Cancel ask' : 'Ask'}
+          title={askBox ? 'Cancel ask' : 'Ask the tutor: drag a box around part of the page'}
+          className={`flex shrink-0 items-center justify-center min-h-11 w-11 rounded-lg border-2 border-indigo-700 ${askBox ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' : 'bg-indigo-700 text-white hover:bg-indigo-800'}`}
+        ><TutorIcon /></button>
       )}
+      <button
+        onClick={() => { setMarking((on) => !on); setPendingMark(null); setInkTool(null); stopAskBox(); stopCopyBox(); }}
+        aria-pressed={marking} aria-label={marking ? 'Done marking' : 'Mark'}
+        title={marking ? 'Done marking' : 'Mark: box an exercise to work it, or a passage to take notes on'}
+        className={railTool(marking)}
+      ><MarkIcon /></button>
+      <div role="group" aria-label="Write on the page" className="flex flex-col items-center gap-1">
+        {INK_TOOLS.map(({ tool, label, icon: ToolIcon }) => (
+          <button key={tool} aria-pressed={inkTool === tool} aria-label={label} title={label}
+            onClick={() => { setInkTool((current) => (current === tool ? null : tool)); setMarking(false); setPendingMark(null); stopAskBox(); stopCopyBox(); }}
+            className={railTool(inkTool === tool)}><ToolIcon /></button>
+        ))}
+        <button aria-pressed={copyBox} aria-label="Select to copy" title="Select part of the page to copy onto a board"
+          onClick={() => { if (copyBox) stopCopyBox(); else { setCopyBox(true); setInkTool(null); setMarking(false); setPendingMark(null); stopAskBox(); } }}
+          className={railTool(copyBox)}><SelectBoxIcon /></button>
+        {inkTool && <button onClick={undoInk} disabled={!inkUndo[page]?.length} aria-label="Undo" title="Undo" className={railTool(false)}><UndoIcon /></button>}
+      </div>
+      <div aria-hidden="true" className="w-8 my-1 border-t border-gray-200" />
+      <div role="group" aria-label="Page navigation" className="flex flex-col items-center gap-1">
+        <button onClick={() => turn(-1)} disabled={page <= 1} aria-label="Previous page" title="Previous page" className={railTool(false)}><ChevronIcon direction="left" /></button>
+        <button onClick={() => { setGoTo((current) => (current === null ? '' : null)); setGoToError(''); }} aria-pressed={goTo !== null}
+          title={`${pageText}. Go to a page`} aria-label={`${pageText}. Go to a page`}
+          className="flex flex-col items-center justify-center min-h-11 w-11 text-xs leading-tight text-gray-800 tabular-nums rounded-lg hover:bg-gray-100">
+          {labels && <span className="text-[0.65rem] text-gray-500">p.</span>}
+          <span className="max-w-11 truncate font-medium">{name}</span>
+          {!labels && <span className="text-[0.65rem] text-gray-500">/{pageCount}</span>}
+        </button>
+        <button onClick={() => turn(1)} disabled={page >= pageCount} aria-label="Next page" title="Next page" className={railTool(false)}><ChevronIcon direction="right" /></button>
+      </div>
+      <div aria-hidden="true" className="w-8 my-1 border-t border-gray-200" />
+      {/* Reading full screen has its way out in the top bar; a board has its own Full screen. */}
+      {!exercise && !fullScreen && <button onClick={toggleFullScreen} aria-label="Full screen" title="Full screen" className={railTool(false)}><FullScreenIcon /></button>}
+      {pageOnly && !fullScreen && (
+        <button onClick={() => changeListHidden(false)} aria-label="Your list" title="Your list: contents and search" className={railTool(false)}><ListIcon /></button>
+      )}
+      <MoreMenu label="Text menu" title="Text menu" button={<span aria-hidden="true">⋯</span>} buttonClassName={railTool(false)} side
+        items={[{ label: 'Trim margins', role: 'menuitemcheckbox', checked: trim, onSelect: () => void changeTrim(!trim) }]} />
     </div>
+  );
+  // Go to a page: a form at the top of the page, opened from the page number in the rail.
+  const goToForm = goTo !== null && (
+    <form onSubmit={(event) => { event.preventDefault(); submitGoTo(); }}
+      onKeyDown={(event) => { if (event.key === 'Escape') { setGoTo(null); setGoToError(''); } }}
+      className="mb-2 flex flex-wrap items-center gap-1">
+      <input autoFocus aria-label="Go to page" value={goTo} onChange={(event) => { setGoTo(event.target.value); setGoToError(''); }}
+        placeholder={labels ? 'e.g. 47' : `1–${pageCount}`} inputMode={labels ? 'text' : 'numeric'}
+        className="w-24 min-h-11 px-2 text-sm border border-gray-900 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
+      <button type="submit" className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Go</button>
+      <button type="button" onClick={() => { setGoTo(null); setGoToError(''); }} className={smallButton}>Cancel</button>
+      {goToError && <span role="alert" className="text-sm text-red-700">{goToError}</span>}
+    </form>
   );
   const pageView = (
     <div ref={pageArea} className="p-3">
+      {goToForm}
       {copyBox && <p className="mb-2 text-sm font-medium text-gray-900">{copyDraft?.page === page ? 'Copy it, or drag again to redraw the box.' : 'Drag a box around what you want on a board.'}</p>}
       {askBox && <p className="mb-2 text-sm font-medium text-gray-900">{askDraft?.page === page ? 'Ask your question, or drag again to redraw the box.' : 'Drag a box around what you want to ask about.'}</p>}
       {marking && <p className="mb-2 text-sm font-medium text-gray-900">{pendingMark ? 'Choose Exercise or Note, name it and save, or drag again to redraw the box.' : canAddToBoard && markOnBoard ? 'Drag a box around the next exercise to add it to this board.' : 'Drag a box around an exercise, or around a passage to take notes on.'}</p>}
@@ -904,7 +906,9 @@ export default function ShelfReader() {
                 className={`min-h-11 px-3 text-sm rounded-lg border border-gray-900 ${panelOpen ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 hover:bg-gray-100'}`}>Lists</button>
             </div>
           )}
-          <div className="flex-1 min-h-0 relative">
+          <div className="flex-1 min-h-0 flex">
+          {barsShown && pageToolbar}
+          <div className="flex-1 min-w-0 relative">
             <div className="absolute inset-0 overflow-y-auto">{pageView}</div>
             {askPanel && <div data-pen-control className="absolute inset-x-0 bottom-0 z-30 h-[55%] flex flex-col shadow-lg">{askPanel}</div>}
             {barsShown && panelOpen && !askPanel && (
@@ -913,16 +917,16 @@ export default function ShelfReader() {
               </section>
             )}
           </div>
-          {barsShown && <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-gray-900 bg-white">{pageToolbar}</div>}
+          </div>
         </div>
       ) : (
         // No board open: the page, and the list beside it (which can make way).
         <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
           <section className={`flex ${pageOnly ? 'flex-1' : 'basis-[45%]'} lg:basis-auto lg:flex-1 min-w-0 min-h-0 flex-col border-b lg:border-b-0 border-gray-200`}>
-            <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-white border-b border-gray-200">
+            <div className="flex-1 min-h-0 flex">
               {pageToolbar}
+              <div className="flex-1 min-w-0 overflow-y-auto">{pageView}</div>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto">{pageView}</div>
           </section>
           <section className={`${pageOnly && !askPanel ? 'hidden' : 'flex'} flex-1 lg:flex-none lg:w-1/2 min-h-0 flex-col lg:border-l border-gray-200 bg-white`}>
             {askPanel || listPanel}
