@@ -45,6 +45,34 @@ export function moveItems(board: BoardInk, ids: ReadonlySet<string>, dx: number,
   return { ...moved, page: pageAround(board.page, boardBounds(moved, ids)) };
 }
 
+/**
+ * The board with these items scaled by `factor` about (originX, originY), as a selection is resized
+ * from its corner: points, pen widths and pictures alike, so writing keeps its look. The page grows
+ * to fit; pressure is unchanged.
+ */
+export function scaleItems(board: BoardInk, ids: ReadonlySet<string>, originX: number, originY: number, factor: number): BoardInk {
+  if (factor === 1 || !(factor > 0) || ids.size === 0) return board;
+  if (!board.strokes.some((stroke) => ids.has(stroke.id)) && !board.images.some((image) => ids.has(image.id))) return board;
+  const strokes = board.strokes.map((stroke) => {
+    if (!ids.has(stroke.id)) return stroke;
+    const points = stroke.points.slice();
+    for (let i = 0; i < points.length; i += 3) {
+      points[i] = Math.round((originX + (points[i] - originX) * factor) * 10) / 10;
+      points[i + 1] = Math.round((originY + (points[i + 1] - originY) * factor) * 10) / 10;
+    }
+    return { ...stroke, points, width: Math.round(stroke.width * factor * 100) / 100 };
+  });
+  const images = board.images.map((image) => (ids.has(image.id) ? {
+    ...image,
+    x: originX + (image.x - originX) * factor,
+    y: originY + (image.y - originY) * factor,
+    w: image.w * factor,
+    h: image.h * factor,
+  } : image));
+  const scaled = { ...board, strokes, images };
+  return { ...scaled, page: pageAround(board.page, boardBounds(scaled, ids)) };
+}
+
 /** The board with copies of these items, moved by (dx, dy), on top; and the copies' ids. */
 export function copyItems(board: BoardInk, ids: ReadonlySet<string>, dx: number, dy: number, newId: () => string): { board: BoardInk; ids: Set<string> } {
   const copied = new Set<string>();
