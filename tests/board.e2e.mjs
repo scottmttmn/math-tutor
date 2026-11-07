@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
+import { keepTldraw } from './tldraw-boards.mjs';
 
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const requests = [];
@@ -42,6 +43,7 @@ let context;
 let page;
 async function openBrowser() {
   context = await chromium.launchPersistentContext(profile, launchOptions);
+  await context.addInitScript(keepTldraw);
   await context.addInitScript(() => {
     window.SpeechRecognition = class {
       constructor() { window.__testRecognition = this; }

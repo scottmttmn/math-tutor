@@ -7,6 +7,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { chromium } from 'playwright';
+import { keepTldraw } from './tldraw-boards.mjs';
 
 const root = join(import.meta.dirname, '..', 'out');
 const types = {
@@ -32,6 +33,7 @@ const origin = `http://localhost:${server.address().port}`;
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 try {
   const page = await browser.newPage({ viewport: { width: 1024, height: 1366 } });
+  await page.addInitScript(keepTldraw);
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
 
@@ -83,6 +85,7 @@ try {
   // the ChatGPT connection are kept by DeviceKeysPlugin; Sign in with ChatGPT's callback comes to
   // ChatGPTSignInPlugin's listener, and its requests to auth.openai.com go through CapacitorHttp.
   const app = await browser.newPage({ viewport: { width: 1024, height: 1366 } });
+  await app.addInitScript(keepTldraw);
   app.on('pageerror', (error) => errors.push(error.message));
   const issuer = 'https://auth.openai.com';
   const { privateKey, publicKey } = await generateKeyPair('RS256');

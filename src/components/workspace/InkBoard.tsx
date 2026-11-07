@@ -444,11 +444,27 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   useEffect(() => { open(history.current.board); }, [open]);
   useEffect(() => {
     if (!pendingLoad) return;
-    const next = pendingLoad.ink ?? emptyBoard();
-    // Loading resets the tools and undo, which the toolbar shows.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    open(next);
-    dispatch({ type: 'LOADED', document: null, ink: next, hasContent: next.strokes.length > 0 || next.images.length > 0 });
+    const show = (next: BoardInk) => {
+      // Loading resets the tools and undo, which the toolbar shows.
+      open(next);
+      dispatch({ type: 'LOADED', document: null, ink: next, hasContent: next.strokes.length > 0 || next.images.length > 0 });
+    };
+    const older = !pendingLoad.ink && (pendingLoad.document || pendingLoad.strokes.length > 0);
+    if (!older) {
+      show(pendingLoad.ink ?? emptyBoard());
+      return;
+    }
+    // A tldraw (or pre-tldraw) board, converted as it opens; the converter brings tldraw's code, so it loads only now.
+    // Nothing is saved until the board changes. A drawing with text or shapes stays in tldraw.
+    let current = true;
+    void import('@/lib/inkBoard/fromTldraw').then(({ boardFromTldraw, boardFromLegacyStrokes }) => {
+      if (!current) return;
+      if (!pendingLoad.document) { show(boardFromLegacyStrokes(pendingLoad.strokes)); return; }
+      const { board: converted, leftovers } = boardFromTldraw(pendingLoad.document);
+      if (leftovers.length > 0) dispatch({ type: 'KEEP_TLDRAW' });
+      else show(converted);
+    }).catch(() => { if (current) dispatch({ type: 'KEEP_TLDRAW' }); });
+    return () => { current = false; };
   }, [pendingLoad, open, dispatch]);
 
   useEffect(() => {

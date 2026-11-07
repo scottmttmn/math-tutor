@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { makePdf } from './makePdf.mjs';
+import { keepTldraw } from './tldraw-boards.mjs';
 
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const requests = [];
@@ -35,6 +36,7 @@ const model = { provider: 'openai-compatible', model: 'acceptance-test', baseUrl
 
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+await context.addInitScript(keepTldraw);
 const page = await context.newPage();
 page.on('pageerror', (error) => browserErrors.push(error.message));
 
@@ -450,6 +452,7 @@ try {
 
   // A library saved before folders: each book is put in a folder of its own, its boards with it.
   const old = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await old.addInitScript(keepTldraw);
   const oldPage = await old.newPage();
   oldPage.on('pageerror', (error) => browserErrors.push(error.message));
   await oldPage.goto(`${origin}/pen-test`);

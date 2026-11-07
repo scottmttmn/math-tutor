@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { chromium } from 'playwright';
 import load from './load-typescript.mjs';
 import { chooseTutor, openTutor } from './tutor-ui.mjs';
+import { keepTldraw } from './tldraw-boards.mjs';
 
 // The ink board (replacing tldraw), opt-in through Board → Ink board for new boards: writing,
 // erasing, undo, saving and reloading, paper, the tutor's picture, Save as, Put on board and Clear;
@@ -31,6 +32,7 @@ const context = await chromium.launchPersistentContext(profile, {
   headless: true, viewport: { width: 1440, height: 960 }, acceptDownloads: true,
   executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
 });
+await context.addInitScript(keepTldraw);
 const page = context.pages()[0] || await context.newPage();
 const errors = [];
 page.on('pageerror', (error) => errors.push(error.message));
@@ -100,7 +102,7 @@ try {
   await page.getByRole('button', { name: 'New', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New Problem' }).click();
   await page.waitForFunction(() => !document.querySelector('[data-loading]') && document.querySelector('.tl-canvas'));
-  await boardMenu('Ink board for new boards (experiment)');
+  await boardMenu('Ink board');
   await ink().waitFor();
   assert.equal(await page.locator('.tl-canvas').count(), 0);
 
@@ -353,7 +355,7 @@ try {
   console.log('PASS the ink board keeps its controls in a left rail that folds away; full screen hides the header');
 
   // Turned off, a new board is tldraw again; the ink board stays an ink board.
-  await boardMenu('Ink board for new boards (experiment)');
+  await boardMenu('Ink board');
   await ink().waitFor();
   await stroke(100, 300, 300, 300);
   await saved('session.ink?.strokes?.length === 1');
@@ -369,12 +371,46 @@ try {
   const untouched = await saved("session.problemStatement === 'Nothing drawn yet.'");
   assert.equal(untouched.canvasDocument, null);
   assert.equal(untouched.ink, undefined);
-  await boardMenu('Ink board for new boards (experiment)');
+  await boardMenu('Ink board');
   await ink().waitFor();
   await page.reload();
   await ink().waitFor();
   assert.equal(await problemBox().inputValue(), 'Nothing drawn yet.');
   console.log('PASS a board saved with nothing drawn follows the choice for new boards');
+
+  // With the ink board on, a tldraw board opens on it converted; one with a shape ink can't hold stays in tldraw.
+  await page.evaluate((id) => localStorage.setItem('math-tutor:currentSession', id), tlSession.id);
+  await page.reload();
+  await waitCount('strokes', 1);
+  assert.equal(await page.locator('.tl-canvas').count(), 0);
+  await boardMenu('Ink board');
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'New Problem' }).click();
+  await page.waitForFunction(() => !document.querySelector('[data-loading]') && document.querySelector('.tl-canvas'));
+  const geoCanvas = await page.locator('.tl-canvas').first().boundingBox();
+  await page.keyboard.press('r');
+  await page.mouse.move(geoCanvas.x + 200, geoCanvas.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(geoCanvas.x + 320, geoCanvas.y + 280, { steps: 6 });
+  await page.mouse.up();
+  await saved("Object.values(session.canvasDocument?.store ?? {}).some((record) => record.type === 'geo')");
+  await boardMenu('Ink board');
+  await page.reload();
+  await page.locator('.tl-canvas').first().waitFor();
+  await page.waitForFunction(() => !document.querySelector('[data-loading]'));
+  assert.equal(await ink().count(), 0, 'a board with a rectangle stays in tldraw');
+  console.log('PASS with the ink board on, a tldraw board opens converted; one with shapes stays in tldraw');
+
+  // A device that never chose opens new boards on the ink board.
+  {
+    const fresh = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
+    const first = await fresh.newPage({ viewport: { width: 1280, height: 900 } });
+    await first.goto(`${origin}/board?new=problem`);
+    await first.locator('[data-ink-board]').waitFor();
+    assert.equal(await first.locator('.tl-canvas').count(), 0);
+    await fresh.close();
+  }
+  console.log('PASS the ink board is the default for a new device');
 
   assert.deepEqual(errors, []);
 } finally {

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { makePdf } from './makePdf.mjs';
 import load from './load-typescript.mjs';
+import { keepTldraw } from './tldraw-boards.mjs';
 
 const { readZip } = load('src/lib/zip.ts');
 
@@ -24,6 +25,7 @@ const fakePicker = () => {
 
 async function openPage() {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
+  await context.addInitScript(keepTldraw);
   await context.addInitScript(fakePicker);
   const page = await context.newPage();
   page.on('pageerror', (error) => browserErrors.push(error.message));
