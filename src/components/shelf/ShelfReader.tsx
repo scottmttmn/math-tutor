@@ -13,13 +13,15 @@ import { getTutorWaitMs } from '@/hooks/useRateLimit';
 import { loadRecoveredSession } from '@/lib/sessionRecovery';
 import { listFolders, loadInk, loadProfile, loadShelfDocument, savePageInk, saveShelfDocument, shelfSessionId } from '@/lib/db';
 import { folderHref, folderIndex, folderPath, folderTree, isWithin } from '@/lib/folders';
-import { cropPage, openPdf, trimmedArea } from '@/lib/pdf';
+import { cropPage, cropParts, openPdf, trimmedArea } from '@/lib/pdf';
+import { pageTextBoxes, sectionAt } from '@/lib/bookList';
+import { exerciseNumberIn, printedLabel, sectionNumber } from '@/lib/exerciseLabel';
 import { findPage, pageName } from '@/lib/reader';
-import { MAX_BOARD_PICTURE, ensureExerciseBoard, exerciseStatement, isNote, markBoardId, markExercise, nextLabel, setReadFrom, solvedExercises, unmarkExercise } from '@/lib/shelf';
+import { MAX_BOARD_PICTURE, cropMark, ensureExerciseBoard, exerciseStatement, isNote, markBoardId, markExercise, marksOn, nextLabel, renameMark, setReadFrom, solvedExercises, unmarkExercise } from '@/lib/shelf';
 import { boardMarkOf, pictureKey, sameBoard } from '@/lib/boardProblems';
 import { paperFor } from '@/lib/paper';
 import { MAX_BOOK_PAGES, loadContents, loadSectionStarts, readBookPages, readingRange, type ContentsEntry, type ReadingRange, type SectionStart } from '@/lib/bookContext';
-import type { BookContext, ChatMessage, Folder, InkStroke, InkTool, PageRect, ShelfDocument, ShelfExercise, ShelfMarkKind, TutorBoardImages } from '@/types';
+import type { BookContext, ChatMessage, Folder, InkStroke, InkTool, MarkPart, PageRect, ShelfDocument, ShelfExercise, ShelfMarkKind, TutorBoardImages } from '@/types';
 import { askQuestion } from '@/lib/tutorAsk';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
@@ -95,6 +97,13 @@ export default function ShelfReader() {
   const [copyDraft, setCopyDraft] = useState<{ page: number; rect: PageRect } | null>(null);
   const [copyState, setCopyState] = useState<'ready' | 'copying' | 'copied' | 'failed'>('ready');
   const [markLabel, setMarkLabel] = useState('');
+  // The book's own number for the box being marked ("4.2 #55"), read from the page's text; null when none was found.
+  const [printedName, setPrintedName] = useState<string | null>(null);
+  const printedRef = useRef<string | null>(null);
+  // An exercise that goes on over the page: the boxes already drawn, before the one pending.
+  const [markParts, setMarkParts] = useState<MarkPart[]>([]);
+  // Renaming the open exercise on its board: the name being typed (null when not renaming).
+  const [renaming, setRenaming] = useState<string | null>(null);
   const [markKind, setMarkKind] = useState<ShelfMarkKind>('exercise');
   // An exercise marked while a problem board is open goes on that board, not one of its own.
   const [markOnBoard, setMarkOnBoard] = useState(false);
@@ -187,7 +196,7 @@ export default function ShelfReader() {
       // An added exercise the board never saved (its save failed after the mark was kept) joins it again.
       let image = listed?.find((problem) => problem.id === exercise.id)?.problemImage ?? null;
       if (exercise.boardOf && !listed?.some((problem) => problem.id === exercise.id)) {
-        image = await cropPage(source.pdf, exercise.page, exercise.rect);
+        image = await cropMark(source.pdf, exercise);
         const own = source.document.exercises.find((item) => item.id === exercise.boardOf);
         sessionDispatch({
           type: 'ADD_PROBLEM', first: { id: exercise.boardOf, label: own?.label ?? 'Exercise' },
@@ -288,6 +297,8 @@ export default function ShelfReader() {
     });
   }, [isSolved, openId, shelfDocument, currentSessionId]);
 
+  useEffect(() => { if (!marking) setMarkParts([]); }, [marking]);
+
   // A new page starts at its top, and a box drawn but not saved stays with the page it was drawn on.
   useEffect(() => {
     pageArea.current?.closest('.overflow-y-auto')?.scrollTo?.(0, 0);
@@ -327,16 +338,64 @@ export default function ShelfReader() {
     } finally { switching.current = false; }
   };
 
+  // The default name for a mark of `kind`: the book's own number for an exercise when the page's text gives one.
+  const defaultLabel = (kind: ShelfMarkKind) => (kind === 'exercise' && printedName) || (shelfDocument ? nextLabel(shelfDocument, kind) : '');
+
+  // Reads the exercise's number from the text at the top of the box ("55." in section 4.2 makes "4.2 #55")
+  // and names the mark with it, unless the student has typed a name of their own.
+  const nameFromPage = async (markPage: number, rect: PageRect) => {
+    if (!pdf || !shelfDocument) return;
+    const { boxes } = await pageTextBoxes(pdf, markPage);
+    const number = exerciseNumberIn(boxes, rect);
+    const found = number ? printedLabel(number, sectionNumber(sectionAt(contents, markPage, pdf.numPages).title)) : null;
+    const before = printedRef.current;
+    printedRef.current = found;
+    setPrintedName(found);
+    setMarkLabel((label) => {
+      const untouched = label === (before ?? '') || label === nextLabel(shelfDocument, 'exercise');
+      return untouched && markKind === 'exercise' ? found ?? nextLabel(shelfDocument, 'exercise') : label;
+    });
+  };
+
+  // Goes on over the page: keep this box and draw the rest of the exercise on the next page.
+  const continueMark = () => {
+    if (!pendingMark || page >= pageCount) return;
+    setMarkParts((parts) => [...parts, { page, rect: pendingMark }]);
+    setPendingMark(null);
+    setPage(page + 1);
+  };
+
+  // Renames the open exercise from its board: the mark, Your list, and the board's problem text.
+  const saveRename = async () => {
+    const exercise = openExerciseForBook;
+    const name = renaming?.trim();
+    setRenaming(null);
+    if (!exercise || !name || name === exercise.label) return;
+    try {
+      const next = await writeDocument(async (current) => {
+        const renamed = await renameMark(current, exercise.id, name);
+        updateDocument(renamed);
+        return renamed;
+      });
+      const mark = next.exercises.find((item) => item.id === exercise.id);
+      if (mark) sessionDispatch({ type: 'RENAME_PROBLEM', id: mark.id, label: mark.label, problemStatement: exerciseStatement(next, mark) });
+    } catch {
+      setError('The new name could not be saved. Try again.');
+    }
+  };
+
   const saveMark = async () => {
     if (!pdf || !pendingMark) return;
-    const rect = pendingMark;
-    const markPage = page;
+    // The first box is the mark's own; boxes drawn after Goes on over the page are the rest of it.
+    const [first, ...more] = [...markParts, { page, rect: pendingMark }];
+    const { page: markPage, rect } = first;
     setPendingMark(null);
+    setMarkParts([]);
     const board = openExerciseForBook;
-    if (board && addsToBoard) { await addToBoard(board, markPage, rect); return; }
+    if (board && addsToBoard) { await addToBoard(board, markPage, rect, more); return; }
     try {
       const { document: next, exercise } = await writeDocument(async (current) => {
-        const marked = await markExercise(pdf, current, markPage, rect, markLabel, markKind, [], markFolder || undefined);
+        const marked = await markExercise(pdf, current, markPage, rect, markLabel, markKind, [], markFolder || undefined, undefined, more);
         updateDocument(marked.document);
         return marked;
       });
@@ -348,12 +407,12 @@ export default function ShelfReader() {
 
   // Marks an exercise on the open board: it joins the board's problems and is worked on next, its picture
   // below the work; Mark stays on for the next one.
-  const addToBoard = async (board: ShelfExercise, markPage: number, rect: PageRect) => {
+  const addToBoard = async (board: ShelfExercise, markPage: number, rect: PageRect, more: MarkPart[] = []) => {
     if (!pdf) return;
     try {
-      const image = await cropPage(pdf, markPage, rect);
+      const image = await cropParts(pdf, [{ page: markPage, rect }, ...more]);
       const { document: next, exercise: added } = await writeDocument(async (current) => {
-        const marked = await markExercise(pdf, current, markPage, rect, markLabel, 'exercise', [], undefined, boardMarkOf(board));
+        const marked = await markExercise(pdf, current, markPage, rect, markLabel, 'exercise', [], undefined, boardMarkOf(board), more);
         updateDocument(marked.document);
         return marked;
       });
@@ -525,7 +584,7 @@ export default function ShelfReader() {
   const paper = paperFor(chosenPaper, exercise && isNote(exercise) ? 'note' : 'problem');
   // An open board always shows; with none open, the list can make way for the page.
   const pageOnly = listHidden && !exercise;
-  const marksOnPage = shelfDocument.exercises.filter((item) => item.page === page);
+  const marksOnPage = marksOn(shelfDocument, page);
   // The search's matches on this page are lit until it is cleared.
   const litOnPage = search.results.find((result) => result.page === page)?.matches.flatMap((match) => match.rects) ?? NO_LIT;
   const name = pageName(labels, page);
@@ -697,20 +756,20 @@ export default function ShelfReader() {
       {goToForm}
       {copyBox && <p className="mb-2 text-sm font-medium text-gray-900">{copyDraft?.page === page ? 'Copy it, or drag again to redraw the box.' : 'Drag a box around what you want on a board.'}</p>}
       {askBox && <p className="mb-2 text-sm font-medium text-gray-900">{askDraft?.page === page ? 'Ask your question, or drag again to redraw the box.' : 'Drag a box around what you want to ask about.'}</p>}
-      {marking && <p className="mb-2 text-sm font-medium text-gray-900">{pendingMark ? 'Choose Exercise or Note, name it and save, or drag again to redraw the box.' : canAddToBoard && markOnBoard ? 'Drag a box around the next exercise to add it to this board.' : 'Drag a box around an exercise, or around a passage to take notes on.'}</p>}
+      {marking && <p className="mb-2 text-sm font-medium text-gray-900">{markParts.length && !pendingMark ? `Drag a box around the rest of ${markLabel || 'the exercise'} on this page.` : pendingMark ? 'Choose Exercise or Note, name it and save, or drag again to redraw the box.' : canAddToBoard && markOnBoard ? 'Drag a box around the next exercise to add it to this board.' : 'Drag a box around an exercise, or around a passage to take notes on.'}</p>}
       <PdfPage
         pdf={pdf} pageNumber={page} marks={marksOnPage} solvedIds={solvedIds} activeId={openId} marking={marking || askBox || copyBox}
         pending={copyBox ? (copyDraft?.page === page ? copyDraft.rect : null) : askBox ? (askDraft?.page === page ? askDraft.rect : null) : marking ? pendingMark : pageAsk && pageAsk.page === page ? pageAsk.rect : null}
         pendingForm={copyBox ? copyForm : askBox ? askForm : marking && (
           <form onSubmit={(event) => { event.preventDefault(); void saveMark(); }}
-            onKeyDown={(event) => { if (event.key === 'Escape') setPendingMark(null); }}
+            onKeyDown={(event) => { if (event.key === 'Escape') { setPendingMark(null); setMarkParts([]); } }}
             className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-white border border-gray-900 shadow-md w-max max-w-[22rem]">
             <div role="radiogroup" aria-label="Mark as" className="flex w-full gap-1">
               {MARK_KINDS.map(({ kind, label }) => (
                 <button key={kind} type="button" role="radio" aria-checked={markKind === kind}
                   onClick={() => {
                     // A name still the default follows the kind ("Exercise 3" becomes "Note 1").
-                    if (markLabel === nextLabel(shelfDocument, markKind)) setMarkLabel(nextLabel(shelfDocument, kind));
+                    if (markLabel === defaultLabel(markKind)) setMarkLabel(defaultLabel(kind));
                     setMarkKind(kind);
                   }}
                   className={`flex-1 min-h-11 px-3 text-sm rounded-lg border border-gray-900 ${markKind === kind ? 'bg-gray-900 text-white font-medium' : 'bg-white text-gray-900 hover:bg-gray-100'}`}>{label}</button>
@@ -738,15 +797,22 @@ export default function ShelfReader() {
                 </select>
               </>
             )}
+            {markParts.length > 0 && <p className="w-full text-sm text-gray-600">Part {markParts.length + 1}: this box joins the one{markParts.length > 1 ? 's' : ''} on p. {markParts.map((part) => pageName(labels, part.page)).join(', ')}.</p>}
             <button type="submit" className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">{addsToBoard ? 'Add to board' : 'Save and open'}</button>
-            <button type="button" onClick={() => setPendingMark(null)} className="min-h-11 px-3 text-sm text-gray-600 border border-gray-300 bg-white rounded-lg hover:bg-gray-50">Cancel</button>
+            {page < pageCount && (
+              <button type="button" onClick={continueMark} title="Keep this box and add the rest of the exercise from the next page"
+                className="min-h-11 px-3 text-sm text-gray-900 border border-gray-900 bg-white rounded-lg hover:bg-gray-50">Goes on over the page</button>
+            )}
+            <button type="button" onClick={() => { setPendingMark(null); setMarkParts([]); }} className="min-h-11 px-3 text-sm text-gray-600 border border-gray-300 bg-white rounded-lg hover:bg-gray-50">Cancel</button>
           </form>
         )}
         onMark={(rect) => {
           if (copyBox) { setCopyDraft({ page, rect }); setCopyState('ready'); return; }
           if (askBox) { setAskDraft({ page, rect }); return; }
+          if (markParts.length) { setPendingMark(rect); return; }
           if (!pendingMark) { setMarkLabel(nextLabel(shelfDocument, markKind)); setMarkFolder(startingFolder()); }
           setPendingMark(rect);
+          void nameFromPage(page, rect);
         }}
         onOpenMark={(mark) => void openExercise(mark)}
         crop={crop}
@@ -840,7 +906,23 @@ export default function ShelfReader() {
           source={{ label: 'Page', wide: true, toolbar: pageToolbar, content: pageView, swap: { label: `Page ${name}`, key: `${exercise.id}:${openings}`, onFlip: setPageSwapped } }}
           title={(
             <>
-              <h2 className="font-semibold text-gray-900 truncate">{exercise.label}</h2>
+              {renaming !== null ? (
+                <form onSubmit={(event) => { event.preventDefault(); void saveRename(); }} className="flex flex-wrap items-center gap-2">
+                  <label htmlFor="rename-mark" className="sr-only">Name</label>
+                  <input id="rename-mark" autoFocus value={renaming} onChange={(event) => setRenaming(event.target.value)}
+                    onKeyDown={(event) => { if (event.key === 'Escape') setRenaming(null); }}
+                    className="w-48 min-h-11 px-2 text-sm font-semibold border border-gray-900 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                  <button type="submit" className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Rename</button>
+                  <button type="button" onClick={() => setRenaming(null)} className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                </form>
+              ) : (
+                <h2 className="min-w-0">
+                  <button onClick={() => setRenaming(exercise.label)} title="Rename"
+                    className="max-w-full font-semibold text-gray-900 truncate text-left rounded hover:underline decoration-dotted underline-offset-4 focus:outline-none focus:ring-2 focus:ring-gray-900">
+                    {exercise.label}
+                  </button>
+                </h2>
+              )}
               <p className="flex flex-wrap items-center gap-x-1 text-xs text-gray-600">
                 <KindIcon type={isNote(exercise) ? 'note' : 'problem'} />{isNote(exercise) ? 'Notes' : 'Problem'} · p. {pageName(labels, exercise.page)}
                 {!isNote(exercise) && <>{' · '}<label className="text-indigo-700">
@@ -888,7 +970,7 @@ export default function ShelfReader() {
               <button onClick={() => void closeExercise()} disabled={isStreaming} aria-label="Close board" className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">Close</button>
               {!fullScreen && (
                 <MoreMenu label={`More for ${exercise.label}`} disabled={isStreaming}
-                  items={[{ label: isNote(exercise) ? 'Remove note page' : 'Remove exercise', onSelect: () => void removeMark(exercise) }]} />
+                  items={[{ label: 'Rename', onSelect: () => setRenaming(exercise.label) }, { label: isNote(exercise) ? 'Remove note page' : 'Remove exercise', onSelect: () => void removeMark(exercise) }]} />
               )}
             </>
           )}

@@ -252,6 +252,12 @@ export interface PageRect {
 /** What a box marked on a Shelf page is: an exercise (a Problem board) or a note page (a Notes board). */
 export type ShelfMarkKind = 'exercise' | 'note';
 
+/** One box of a mark on a page: the parts of an exercise continued onto the next page. */
+export interface MarkPart {
+  page: number;
+  rect: PageRect;
+}
+
 /**
  * An exercise or a note page marked on a Shelf PDF; its board is the session
  * `shelf:<document id>:<exercise id>`.
@@ -264,6 +270,8 @@ export interface ShelfExercise {
   /** 1-based page number. */
   page: number;
   rect: PageRect;
+  /** The rest of an exercise continued on later pages, in order (Mark → Goes on over the page). */
+  more?: MarkPart[];
   createdAt: number;
   /** First page the tutor reads for this exercise, chosen by the student; 0 = none. Unset: worked out from the bookmarks. */
   readFrom?: number;

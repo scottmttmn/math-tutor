@@ -101,7 +101,7 @@ try {
   await page.mouse.down();
   await page.mouse.move(overlay.x + overlay.width * 0.6, overlay.y + overlay.height * 0.17, { steps: 5 });
   await page.mouse.up();
-  assert.equal(await page.getByLabel('Name').inputValue(), 'Exercise 1');
+  await page.waitForFunction(() => document.querySelector('#mark-label')?.value === 'Exercise 1');
   await page.getByRole('button', { name: 'Save and open' }).click();
   await exerciseHeading('Exercise 1').waitFor();
   // A new board opens with its exercise on it, locked, for the tutor to read work written on it.
@@ -201,7 +201,8 @@ try {
   await page.mouse.down();
   await page.mouse.move(overlay2.x + overlay2.width * 0.5, overlay2.y + overlay2.height * 0.11, { steps: 5 });
   await page.mouse.up();
-  assert.equal(await page.getByLabel('Name').inputValue(), 'Exercise 2');
+  // Named from the book's own number at the top of the box, again for the box drawn again.
+  await page.waitForFunction(() => document.querySelector('#mark-label')?.value === 'Exercise 4');
   await page.getByLabel('Name').fill('Problem 3');
   // Its board can be filed in a folder inside the book's.
   assert.equal(await page.getByLabel('Folder').inputValue(), 'book:' + new URL(page.url()).searchParams.get('doc'));
@@ -400,6 +401,13 @@ try {
   await page.getByRole('button', { name: 'Open Problem 4' }).waitFor({ state: 'detached' });
   assert.deepEqual((await onBoard.getByRole('button').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ')), ['Problem 3', 'Problem 5 (solved)']);
   assert.equal(await page.locator('[data-ink-board]').getAttribute('data-images'), '3');
+  // Renamed on its board: tap the name. The mark, the board's list and the problem text follow.
+  await exerciseHeading('Problem 3').getByRole('button').click();
+  await page.getByLabel('Name').fill('1.1 #3');
+  await page.getByRole('button', { name: 'Rename', exact: true }).click();
+  await exerciseHeading('1.1 #3').waitFor();
+  await page.getByRole('button', { name: 'Open 1.1 #3' }).waitFor();
+  assert.deepEqual((await onBoard.getByRole('button').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ')), ['1.1 #3', 'Problem 5 (solved)']);
   await page.getByText('Saved', { exact: true }).waitFor();
   await page.waitForTimeout(1200);
   // The book counts both; its folder lists the board once, with how many are solved.
@@ -408,12 +416,48 @@ try {
   await page.locator('[aria-labelledby="folders-heading"]').getByText('2 problems', { exact: true }).waitFor();
   await page.getByRole('link', { name: 'Open Chapter 2' }).click();
   const grouped = page.locator('[aria-labelledby="boards-heading"] li');
-  await grouped.getByText('Problem 3, Problem 5', { exact: true }).waitFor();
+  await grouped.getByText('1.1 #3, Problem 5', { exact: true }).waitFor();
   await grouped.getByText('1 of 2 solved', { exact: true }).waitFor();
   assert.equal(await grouped.count(), 1);
   await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Algebra drills' }).click();
   await page.getByRole('heading', { name: 'Algebra drills', exact: true }).waitFor();
-  console.log('PASS several exercises on one board: add, switch, solve each, tutor focus, remove one');
+  console.log('PASS several exercises on one board: add, switch, solve each, tutor focus, remove one, rename');
+
+  // An exercise continued over the page: Goes on over the page keeps the box, turns the page, and
+  // the box drawn there joins it; the mark shows on both pages and its picture holds both.
+  await page.getByRole('link', { name: /^Read at p\. \d+$/ }).click();
+  await page.getByRole('button', { name: /^Page \d of 2\. Go to a page$/ }).waitFor();
+  if (await page.getByRole('button', { name: 'Page 2 of 2. Go to a page', exact: true }).count()) await page.getByRole('button', { name: 'Previous page' }).click();
+  await page.getByRole('button', { name: 'Page 1 of 2. Go to a page', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Mark', exact: true }).click();
+  await boxOnPage(0.8);
+  await page.getByLabel('Name').fill('Long one');
+  await page.getByRole('button', { name: 'Goes on over the page' }).click();
+  await page.getByRole('button', { name: 'Page 2 of 2. Go to a page', exact: true }).waitFor();
+  await page.getByText('Drag a box around the rest of Long one on this page.').waitFor();
+  await boxOnPage(0.6);
+  await page.getByText('Part 2: this box joins the one on p. 1.').waitFor();
+  if (await page.getByRole('radio', { name: 'Own board' }).count()) await page.getByRole('radio', { name: 'Own board' }).click();
+  await page.getByRole('button', { name: 'Save and open' }).click();
+  await exerciseHeading('Long one').waitFor();
+  await pictures();
+  await page.getByRole('button', { name: 'Open Long one' }).waitFor();
+  const stored = await page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => { const open = indexedDB.open('math-tutor'); open.onsuccess = () => resolve(open.result); open.onerror = reject; });
+    const all = await new Promise((resolve) => { const request = db.transaction('shelf').objectStore('shelf').getAll(); request.onsuccess = () => resolve(request.result); });
+    return all.flatMap((doc) => doc.exercises).find((mark) => mark.label === 'Long one');
+  });
+  assert.deepEqual([stored.page, stored.more.map((part) => part.page)], [1, [2]]);
+  // Opening it goes to its first page; its rest is marked on the next.
+  await page.getByRole('button', { name: 'Page 1 of 2. Go to a page', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Next page' }).click();
+  await page.getByRole('button', { name: 'Open Long one' }).waitFor();
+  await page.getByRole('button', { name: 'More for Long one' }).click();
+  await page.getByRole('menuitem', { name: 'Remove exercise' }).click();
+  await page.getByRole('button', { name: 'Open Long one' }).waitFor({ state: 'detached' });
+  await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Algebra drills' }).click();
+  await page.getByRole('heading', { name: 'Algebra drills', exact: true }).waitFor();
+  console.log('PASS an exercise continued over the page is one mark on both pages');
 
   // Removing the PDF takes its remaining boards with it; its folder stays while it holds a folder.
   await page.getByRole('button', { name: 'More for the text Algebra drills' }).click();
