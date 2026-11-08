@@ -35,7 +35,7 @@ function AppContent() {
   const [captureError, setCaptureError] = useState('');
   const [tutorOpen, setTutorOpen] = useState(false);
   const [writeUpOpen, setWriteUpOpen] = useState(false);
-  const { fullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
+  const { fullScreen, toggle: toggleFullScreen } = useBoardFullScreen();
   const { toolsHidden, toggleTools } = useToolsHidden();
 
   const { isStreaming, isSolved, sessionType, problemStatement, problemImage, checkIn, chatHistory, paper: chosenPaper, currentSessionId } = useSessionState();
@@ -85,7 +85,6 @@ function AppContent() {
     if (getTutorWaitMs() > 0) return;
     // Read the editor directly: the context mirror lags a just-finished stroke.
     // The reply shows in the chat beside the board.
-    leaveFullScreen();
     setTutorOpen(true);
     // A check-in starts with the tutor's first problem; after that, Ask tutor hands in an answer.
     const question = checkIn ? (checkInStarted(chatHistory) ? 'Here is my answer.' : 'Start the check-in.') : picked;
@@ -96,7 +95,7 @@ function AppContent() {
     } catch (error) {
       setCaptureError(error instanceof Error ? error.message : 'The board image could not be captured. Please try again.');
     }
-  }, [sendHelp, leaveFullScreen, checkIn, chatHistory]);
+  }, [sendHelp, checkIn, chatHistory]);
 
   const getBoardImages = useCallback(async (): Promise<TutorBoardImages> => {
     if (!canvasHandle.current) throw new Error('The board is still loading. Please try again.');
@@ -202,7 +201,7 @@ function AppContent() {
             )}
           />
         )}
-        tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel visible={tutorOpen && !fullScreen} getBoardImages={getBoardImages} onAskForHelp={handleAskForHelp} /> }}
+        tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel visible={tutorOpen} getBoardImages={getBoardImages} onAskForHelp={handleAskForHelp} /> }}
       />
 
       {writeUpOpen && (

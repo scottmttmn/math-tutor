@@ -115,7 +115,7 @@ export default function ShelfReader() {
   const [tutorOpen, setTutorOpen] = useState(false);
   const [sectionStarts, setSectionStarts] = useState<SectionStart[]>([]);
   const [bookHasText, setBookHasText] = useState(true);
-  const { fullScreen, toggle: toggleFullScreen, leave: leaveFullScreen } = useBoardFullScreen();
+  const { fullScreen, toggle: toggleFullScreen } = useBoardFullScreen();
   const { toolsHidden, toggleTools } = useToolsHidden();
   const [listHidden, setListHidden] = useState(false);
   const [railHidden, setRailHidden] = useState(false);
@@ -542,7 +542,6 @@ export default function ShelfReader() {
   const askForHelp = async (question?: string) => {
     if (getTutorWaitMs() > 0) return;
     // The reply shows beside the board.
-    leaveFullScreen();
     setTutorOpen(true);
     setError('');
     try {
@@ -906,7 +905,7 @@ export default function ShelfReader() {
       {exercise ? (
         <BoardFrame
           fullScreen={fullScreen}
-          source={{ label: 'Page', wide: true, toolbar: pageToolbar, content: pageView, swap: { label: `Page ${name}`, key: `${exercise.id}:${openings}`, onFlip: setPageSwapped } }}
+          source={{ label: 'Page', wide: true, toolbar: pageToolbar, content: pageView, swap: { label: `Page ${name}`, railLabel: `p. ${name}`, key: `${exercise.id}:${openings}`, onFlip: setPageSwapped } }}
           title={(
             <>
               {renaming !== null ? (
@@ -996,7 +995,7 @@ export default function ShelfReader() {
               favorite={<FavoriteButton favorite={favorite.favorite} failed={favorite.failed} onStar={(reason) => void favorite.star(reason)} onUnstar={() => void favorite.unstar()} />}
             />
           )}
-          tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel visible={tutorOpen && !fullScreen} getBoardImages={getBoardImages} getBookContext={getBookContext} onAskForHelp={askForHelp} /> }}
+          tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel visible={tutorOpen} getBoardImages={getBoardImages} getBookContext={getBookContext} onAskForHelp={askForHelp} /> }}
         />
       ) : readingFullScreen ? (
         // Reading full screen: the page and its rail (no bar above it), until a tap in the middle hides the rail.

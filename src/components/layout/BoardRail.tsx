@@ -13,6 +13,11 @@ export interface BoardRail {
   header: HTMLElement | null;
   setTools: (element: HTMLElement | null) => void;
   setHeader: (element: HTMLElement | null) => void;
+  /**
+   * The source (a book's page) when it is out of sight: a short name for the rail ("p. 47") and
+   * what brings it back, swapping it into the board's place on a narrow or full screen.
+   */
+  source: { label: string; title: string; show: () => void } | null;
 }
 
 export const BoardRailContext = createContext<BoardRail | null>(null);
