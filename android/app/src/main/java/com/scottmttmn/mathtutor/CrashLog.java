@@ -74,20 +74,42 @@ final class CrashLog {
         }
     }
 
-    /** Every entry recorded since the last take, as JSON lines; the file is then emptied. */
-    static synchronized String take(Context context) throws Exception {
+    /** Every entry recorded since the last clear, as JSON lines (the file's first `size` bytes). */
+    static synchronized String read(Context context) throws Exception {
         File file = new File(context.getFilesDir(), FILE);
         if (!file.exists()) return "";
-        String text;
         try (InputStream in = new FileInputStream(file)) {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             byte[] buffer = new byte[8192];
             int read;
             while ((read = in.read(buffer)) > 0) out.write(buffer, 0, read);
-            text = out.toString("UTF-8");
+            return out.toString("UTF-8");
         }
-        if (!file.delete()) throw new java.io.IOException("Couldn't empty the crash log");
-        return text;
+    }
+
+    /**
+     * Drops the first `size` bytes, what the page read and has now kept, leaving anything added
+     * since. Called only once the page has stored them, so a failed store keeps them for next time.
+     */
+    static synchronized void clear(Context context, long size) throws Exception {
+        File file = new File(context.getFilesDir(), FILE);
+        if (!file.exists() || size <= 0) return;
+        if (size >= file.length()) {
+            if (!file.delete()) throw new java.io.IOException("Couldn't empty the crash log");
+            return;
+        }
+        byte[] rest;
+        try (FileInputStream in = new FileInputStream(file)) {
+            if (in.skip(size) != size) throw new java.io.IOException("Couldn't read the crash log");
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) > 0) out.write(buffer, 0, read);
+            rest = out.toByteArray();
+        }
+        try (FileOutputStream out = new FileOutputStream(file, false)) {
+            out.write(rest);
+        }
     }
 
     /**
