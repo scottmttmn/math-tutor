@@ -1,11 +1,11 @@
 import { openTutor, chooseTutor } from './tutor-ui.mjs';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
-import { keepTldraw } from './tldraw-boards.mjs';
+import { drawStroke, inkBoard } from './ink-ui.mjs';
 
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const requests = [];
@@ -43,7 +43,6 @@ let context;
 let page;
 async function openBrowser() {
   context = await chromium.launchPersistentContext(profile, launchOptions);
-  await context.addInitScript(keepTldraw);
   await context.addInitScript(() => {
     window.SpeechRecognition = class {
       constructor() { window.__testRecognition = this; }
@@ -77,20 +76,9 @@ async function ask(question, reply) {
   assert.equal(requests.length, before + 1);
   return requests.at(-1);
 }
-const board = () => page.locator('.tl-canvas').first();
 async function draw(offset = 0) {
-  await board().waitFor();
-  const box = await board().boundingBox();
-  await page.locator('[data-testid="tools.draw"]').first().click();
-  // Arrive at the start in steps, so tldraw has the pointer there before it goes down (in CI a
-  // stroke once began from where the pointer had been).
-  await page.mouse.move(box.x + 40 + offset, box.y + 80, { steps: 4 });
-  await page.waitForTimeout(50);
-  await page.mouse.down();
-  await page.mouse.move(box.x + 180 + offset, box.y + 160, { steps: 12 });
-  await page.mouse.up();
+  await drawStroke(page, 40 + offset, 80, 180 + offset, 160);
   await page.waitForFunction(() => [...document.querySelectorAll('button')].some((button) => button.getAttribute('aria-label') === 'Clear board' && !button.disabled));
-  await page.waitForTimeout(400); // the app mirrors tldraw's document once the pen rests
 }
 const imageOf = (request) => {
   const content = request.messages.at(-1).content;
@@ -136,49 +124,9 @@ try {
   await page.evaluate((config) => localStorage.setItem('mathTutor_modelConfig', JSON.stringify(config)), model);
   await page.reload(); await waitProblem();
 
-  // The native style controls start behind a 44px pen chip, with S/solid still the defaults.
-  const penChip = () => page.getByRole('button', { name: /^Pen: / });
-  await penChip().waitFor();
-  assert.equal(await penChip().getAttribute('aria-label'), 'Pen: black, S');
-  assert.equal(await penChip().getAttribute('title'), 'Pen: black, S');
-  assert.ok((await penChip().boundingBox()).height >= 44);
-  assert.equal(await page.getByTestId('style.panel').count(), 0);
-  await penChip().click();
-  assert.equal(await page.getByTestId('style.dash.solid').getAttribute('aria-checked'), 'true');
-  await page.getByTestId('style.size.m').click();
-  await page.getByRole('button', { name: 'Pen: black, M', exact: true }).waitFor();
-  await page.getByTestId('style.color.blue').click();
-  await page.getByRole('button', { name: 'Pen: blue, M', exact: true }).waitFor();
-  assert.ok(await page.getByTestId('style.panel').isVisible(), 'two style changes leave the panel open');
-  await page.reload(); await waitProblem();
-  await page.getByTestId('style.panel').waitFor();
-  assert.equal(await penChip().getAttribute('aria-expanded'), 'true', 'open is remembered on this device');
-  assert.match(await penChip().getAttribute('aria-label'), /, S$/, 'a fresh board still starts at S');
-  await page.keyboard.press('Escape');
-  await page.getByTestId('style.panel').waitFor({ state: 'detached' });
-  await page.reload(); await waitProblem();
-  await penChip().waitFor();
-  assert.equal(await penChip().getAttribute('aria-expanded'), 'false', 'collapsed is remembered too');
-  if (process.env.STYLE_SCREENSHOT_DIR) {
-    await mkdir(process.env.STYLE_SCREENSHOT_DIR, { recursive: true });
-    for (const width of [1600, 700]) {
-      await page.setViewportSize({ width, height: 1000 });
-      await page.waitForTimeout(200);
-      await page.screenshot({ path: join(process.env.STYLE_SCREENSHOT_DIR, `collapsed-${width}.png`) });
-      await penChip().click();
-      await page.getByTestId('style.panel').waitFor();
-      await page.screenshot({ path: join(process.env.STYLE_SCREENSHOT_DIR, `open-${width}.png`) });
-      await penChip().click();
-    }
-    await page.setViewportSize(launchOptions.viewport);
-  }
-  console.log('PASS pen chip defaults, native size/color controls, Escape, and remembered open/collapsed state');
-
   // A problem board asks for hints, never the answer.
   await problemBox().fill('Find a strategy for a quadratic.');
-  await penChip().click();
   await draw();
-  assert.equal(await penChip().getAttribute('aria-expanded'), 'false', 'starting a pen stroke collapses the panel');
   let request = await askTutor('Problem hint.');
   assert.match(request.messages[0].content, /The answer is theirs to find/);
   assert.match(JSON.stringify(request.messages), /Find a strategy for a quadratic/);
@@ -250,39 +198,11 @@ try {
   assert.equal(await problemBox().inputValue(), 'Find a strategy for a quadratic.');
   console.log('PASS immediate reload preserves board, conversation, problem and Solved');
 
-  // Selecting shapes sends just those shapes, trimmed.
-  // The shapes on screen, with where they are, to find the new stroke (and to report on failure).
-  const shapesShown = () => page.locator('.tl-shape').evaluateAll((shapes) => shapes.map((shape) => {
-    const { x, y, width, height } = shape.getBoundingClientRect();
-    return { id: shape.dataset.shapeId ?? shape.id, x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height) };
-  }));
-  const earlier = new Set((await shapesShown()).map((shape) => shape.id));
+  // The tutor gets the board (the lasso's selection is checked in tests/inkBoard.e2e.mjs).
   await draw(260);
-  const drawn = (await shapesShown()).filter((shape) => !earlier.has(shape.id));
-  assert.equal(drawn.length, 1, `one new stroke (${JSON.stringify(await shapesShown())}, board ${JSON.stringify(await board().boundingBox())})`);
-  await page.locator('[data-testid="tools.select"]').first().click();
-  // Click the new stroke where it is on screen, so the selection doesn't depend on the board's camera
-  // or panels: just short of where it ends, the box's lower right corner (it runs down and right).
-  await page.mouse.click(drawn[0].x + drawn[0].width - 4, drawn[0].y + drawn[0].height - 2.5);
-  await page.waitForFunction(() => document.querySelector('[data-testid="quick-actions.delete"]')?.disabled === false, null, { timeout: 5000 })
-    .catch(async () => assert.fail(`the stroke wasn't selected (${JSON.stringify(drawn[0])}; shapes ${JSON.stringify(await shapesShown())})`));
-  assert.equal(await penChip().getAttribute('aria-expanded'), 'false', 'selecting does not open the style panel');
-  await penChip().click();
-  await page.getByTestId('style.size.m').click();
-  await page.getByTestId('style.color.blue').click();
-  await page.getByRole('button', { name: 'Pen: blue, M', exact: true }).waitFor();
-  await page.keyboard.press('Escape');
-  assert.equal(await penChip().getAttribute('aria-label'), 'Pen: blue, M', 'the collapsed chip reflects the restyled selection');
   request = await askTutor('Problem hint.');
-  // Whether the stroke is still selected after asking, for the message if the size check fails.
-  const stillSelected = await page.evaluate(() => document.querySelector('[data-testid="quick-actions.delete"]')?.disabled === false);
   const image = imageOf(request);
   assert.ok(image?.startsWith('data:image/png;base64,'));
-  const [width, height] = await page.evaluate(async (src) => {
-    const image = new Image(); image.src = src; await image.decode(); return [image.naturalWidth, image.naturalHeight];
-  }, image);
-  // One ~140x80 stroke at 2x with padding, not both strokes and not the whole board.
-  assert.ok(width > 200 && width < 450 && height > 120 && height < 330, `unexpected image size ${width}x${height} (still selected after asking: ${stillSelected})`);
   // The shared five-second limit: no countdown, and direct API bursts never reach the provider.
   assert.ok(await page.getByRole('button', { name: 'Ask tutor', exact: true }).isEnabled());
   assert.ok(await page.getByRole('group', { name: 'Tutor choices' }).getByRole('button').first().isDisabled());
@@ -299,23 +219,18 @@ try {
   assert.ok(Number(rejected.retryAfter) > 0);
   assert.equal(requests.length, beforeBurst);
   request = await ask('Does this approach make sense?', 'Problem hint.');
-  assert.ok(imageOf(request)?.startsWith('data:image/png;base64,'), 'unchanged follow-up still carries the selected work');
-  // Selecting more work changes no document records, but the next image must reflect it.
-  await page.locator('[data-testid="tools.select"]').first().click();
-  await page.keyboard.press('ControlOrMeta+a');
-  request = await ask('Check everything selected now.', 'Problem hint.');
-  assert.notEqual(imageOf(request), image, 'a changed selection changes the capture without new ink');
+  assert.ok(imageOf(request)?.startsWith('data:image/png;base64,'), 'unchanged follow-up still carries the board');
   await draw(120);
   request = await ask('What about now?', 'Problem hint.');
   assert.ok(imageOf(request)?.startsWith('data:image/png;base64,'));
-  console.log('PASS selected shapes reach the provider trimmed; every follow-up attaches the board; five-second limit rejects bursts');
+  console.log('PASS the board reaches the provider; every follow-up attaches it; five-second limit rejects bursts');
 
   // Full screen hides the bar, problem and tutor; the board keeps its strokes.
   await page.getByRole('button', { name: 'Full screen' }).click();
   await page.getByRole('link', { name: 'Home', exact: true }).waitFor({ state: 'hidden' });
   assert.equal(await page.getByRole('complementary', { name: 'Tutor' }).count(), 0);
   assert.equal(await page.getByRole('region', { name: 'Problem' }).count(), 0);
-  await page.locator('.tl-shape').first().waitFor();
+  assert.ok(Number(await inkBoard(page).getAttribute('data-strokes')) > 0);
   // Tutor in full screen leaves it and shows the conversation.
   await openTutor(page);
   await page.getByRole('button', { name: 'Full screen' }).waitFor();

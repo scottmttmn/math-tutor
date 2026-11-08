@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { chromium } from 'playwright';
-import { keepTldraw } from './tldraw-boards.mjs';
 
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const requests = [];
@@ -28,7 +27,6 @@ const model = { provider: 'openai-compatible', model: 'acceptance-test', baseUrl
 
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
-await page.addInitScript(keepTldraw);
 page.on('pageerror', (error) => browserErrors.push(error.message));
 const dialog = () => page.getByRole('dialog', { name: 'Problem from tutor' });
 const shown = () => page.getByTestId('tutor-problem');
@@ -73,7 +71,7 @@ try {
   console.log('PASS Different problem swaps in another one');
 
   // Once there is work on the board, the problem stays.
-  const board = await page.locator('.tl-canvas').boundingBox();
+  const board = await page.getByTestId('ink-board').boundingBox();
   await page.mouse.move(board.x + 150, board.y + 150);
   await page.mouse.down();
   await page.mouse.move(board.x + 320, board.y + 220, { steps: 8 });

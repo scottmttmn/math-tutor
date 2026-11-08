@@ -15,7 +15,7 @@ function subscribe(listener: () => void) {
   return () => { listeners.delete(listener); };
 }
 
-/** Hides tldraw's toolbars and style panel so writing gets the whole board; the pen stays in hand. */
+/** Board → Hide tool rail: folds the board's rail away so writing gets the whole board; the pen stays in hand. */
 export function useToolsHidden() {
   // The server render shows the tools; the stored choice applies once in the browser.
   const toolsHidden = useSyncExternalStore(subscribe, readHidden, () => false);

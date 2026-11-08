@@ -1,11 +1,11 @@
-import { b64Vecs } from 'tldraw';
 import type { BoardImage, BoardInk, BoardStroke, CanvasDocument, InkColor, Stroke } from '@/types';
 import { clipErasedInk } from '@/lib/legacyStrokes';
 import { emptyBoard, pageAround, boardBounds, pushPoint } from './model';
+import { decodeTldrawPoints } from './tldrawPoints';
 
-// Turning a board saved by tldraw (or by the canvas before it) into an ink board. Pen and
-// highlighter ink and pictures convert exactly; anything else (shapes, text, arrows, notes,
-// frames, cropped or turned pictures, anything see-through) is reported, so the caller can keep it as a picture.
+// Turning a board saved by tldraw (or by the canvas before it) into an ink board, without tldraw. Pen
+// and highlighter ink and pictures convert exactly; anything else (shapes, text, arrows, notes,
+// frames, dashed lines, cropped or turned pictures, anything see-through) is left out and reported.
 
 /** tldraw's draw width per size (2 × its stroke size + 1) and its highlighter's (16px × font size × 1.12). */
 const DRAW_WIDTHS: Record<string, number> = { s: 3, m: 4.5, l: 6, xl: 11 };
@@ -38,7 +38,7 @@ interface TLRecord {
   meta?: Record<string, unknown>;
 }
 
-interface Segment { type: 'free' | 'straight'; path: string; dim?: 2 | 3 }
+interface Segment { type: 'free' | 'straight'; path?: string; dim?: 2 | 3; points?: { x: number; y: number; z?: number }[] }
 
 /** An affine transform [a, b, c, d, e, f]: x' = a·x + c·y + e, y' = b·x + d·y + f. */
 type Transform = [number, number, number, number, number, number];
@@ -56,7 +56,7 @@ const apply = (t: Transform, x: number, y: number) => ({ x: t[0] * x + t[2] * y 
 
 export interface Conversion {
   board: BoardInk;
-  /** Shapes that couldn't be converted, as tldraw shape ids, in drawing order. */
+  /** Shapes that couldn't be converted and were left out, as tldraw shape ids, in drawing order. */
   leftovers: string[];
 }
 
@@ -69,11 +69,12 @@ function inkStroke(shape: TLRecord, transform: Transform): BoardStroke | null {
   const scaleY = typeof props.scaleY === 'number' ? props.scaleY : 1;
   // A pen's pressure shows only in tldraw's "draw" dash; solid, dashed and dotted lines are even.
   const keepPressure = !highlight && props.isPen === true && props.dash === 'draw';
-  // Dashed or dotted lines and filled shapes have no ink of their own: such a board stays in tldraw.
+  // Dashed or dotted lines and filled shapes have no ink of their own: they are left out.
   if (!highlight && (props.dash === 'dashed' || props.dash === 'dotted' || (props.isClosed === true && props.fill && props.fill !== 'none'))) return null;
   const points: number[] = [];
   for (const segment of (props.segments as Segment[] | undefined) ?? []) {
-    for (const point of b64Vecs.decodePoints(segment.path, segment.dim)) {
+    // tldraw saved points as a list before it packed them into `path`.
+    for (const point of segment.path !== undefined ? decodeTldrawPoints(segment.path, segment.dim) : segment.points ?? []) {
       const at = apply(transform, point.x * scaleX, point.y * scaleY);
       pushPoint(points, at.x, at.y, keepPressure ? (point.z ?? 0.5) : 0.5);
     }

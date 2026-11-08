@@ -1,17 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
 import load from './load-typescript.mjs';
+import { encodePoints, encodePoints2D } from './tldraw-points.mjs';
 
-// tldraw's schema package holds the same b64Vecs as tldraw itself, without the editor and React.
-const tlschema = createRequire(import.meta.url)('@tldraw/tlschema');
-const { b64Vecs } = tlschema;
 const loaded = new Map();
 const model = load('src/lib/inkBoard/model.ts', {}, loaded);
 const edits = load('src/lib/inkBoard/edits.ts', {}, loaded);
 const { GridIndex, strokesHitByPath, itemsInLasso, insidePolygon } = load('src/lib/inkBoard/hitTest.ts', {}, loaded);
 const { drawBoard, drawBoardStroke, tilesFor } = load('src/lib/inkBoard/render.ts', {}, loaded);
-const { boardFromTldraw, boardFromLegacyStrokes } = load('src/lib/inkBoard/fromTldraw.ts', { tldraw: tlschema }, loaded);
+const { boardFromTldraw, boardFromLegacyStrokes } = load('src/lib/inkBoard/fromTldraw.ts', {}, loaded);
+const { decodeTldrawPoints, float16 } = load('src/lib/inkBoard/tldrawPoints.ts', {}, loaded);
 
 const line = (id, x0, y0, x1, y1, extra = {}) => ({ id, tool: 'pen', color: 'black', width: 3, points: [x0, y0, 0.5, x1, y1, 0.5], ...extra });
 const board = (strokes, images = []) => ({ ...model.emptyBoard(), strokes, images });
@@ -177,7 +175,7 @@ function tldrawDocument() {
   const record = (id, type, rest) => [id, { id, typeName: 'shape', type, x: 0, y: 0, rotation: 0, index: 'a1', parentId: 'page:page', isLocked: false, opacity: 1, meta: {}, ...rest }];
   const draw = (points, props = {}) => ({
     color: 'black', fill: 'none', dash: 'solid', size: 's', isComplete: true, isClosed: false, isPen: true, scale: 1, scaleX: 1, scaleY: 1,
-    segments: [{ type: 'free', path: b64Vecs.encodePoints(points, 3), dim: 3 }], ...props,
+    segments: [{ type: 'free', path: encodePoints(points), dim: 3 }], ...props,
   });
   return {
     schema: {},
@@ -187,8 +185,8 @@ function tldrawDocument() {
       record('shape:problem', 'image', { x: 10, y: -150, index: 'a0', isLocked: true, meta: { problemImage: true }, props: { assetId: 'asset:problem', w: 100, h: 50, crop: null, flipX: false, flipY: false } }),
       record('shape:ink', 'draw', { x: 100, y: 200, index: 'a2', props: draw([{ x: 0, y: 0, z: 0.2 }, { x: 10, y: 5, z: 0.8 }]) }),
       record('shape:pressed', 'draw', { x: 0, y: 0, index: 'a3', props: draw([{ x: 0, y: 0, z: 0.2 }, { x: 10, y: 0, z: 0.9 }], { dash: 'draw', size: 'm', color: 'light-blue' }) }),
-      record('shape:mouse', 'draw', { x: 0, y: 0, index: 'a4', props: { ...draw([], { isPen: false, scale: 2, size: 'l' }), segments: [{ type: 'straight', path: b64Vecs.encodePoints2D([{ x: 0, y: 0 }, { x: 30, y: 40 }]), dim: 2 }] } }),
-      record('shape:hl', 'highlight', { x: 0, y: 300, index: 'a1V', props: { color: 'yellow', size: 'm', isPen: false, isComplete: true, scale: 1, scaleX: 1, scaleY: 1, segments: [{ type: 'free', path: b64Vecs.encodePoints2D([{ x: 0, y: 0 }, { x: 50, y: 0 }]), dim: 2 }] } }),
+      record('shape:mouse', 'draw', { x: 0, y: 0, index: 'a4', props: { ...draw([], { isPen: false, scale: 2, size: 'l' }), segments: [{ type: 'straight', path: encodePoints2D([{ x: 0, y: 0 }, { x: 30, y: 40 }]), dim: 2 }] } }),
+      record('shape:hl', 'highlight', { x: 0, y: 300, index: 'a1V', props: { color: 'yellow', size: 'm', isPen: false, isComplete: true, scale: 1, scaleX: 1, scaleY: 1, segments: [{ type: 'free', path: encodePoints2D([{ x: 0, y: 0 }, { x: 50, y: 0 }]), dim: 2 }] } }),
       record('shape:group', 'group', { x: 500, y: 500, rotation: Math.PI / 2, index: 'a5', props: {} }),
       record('shape:inGroup', 'draw', { x: 10, y: 0, index: 'a1', parentId: 'shape:group', props: draw([{ x: 0, y: 0, z: 0.5 }, { x: 10, y: 0, z: 0.5 }]) }),
       record('shape:box', 'geo', { x: 0, y: 600, index: 'a6', props: { geo: 'rectangle', w: 100, h: 100 } }),
@@ -196,6 +194,17 @@ function tldrawDocument() {
     ]),
   };
 }
+
+test('tldraw\'s saved points read without tldraw (paths made by tldraw 5.4.2)', () => {
+  const near = (points, expected) => points.every((p, i) => ['x', 'y', 'z'].every((k) => Math.abs(p[k] - expected[i][k]) < 0.01));
+  const three = decodeTldrawPoints('AABIQQAAUMDNzEw+IEhARzM3ADQIVgA0', 3);
+  assert.equal(three.length, 3);
+  assert.ok(near(three, [{ x: 12.5, y: -3.25, z: 0.2 }, { x: 20.75, y: 4, z: 0.65 }, { x: 21, y: 100.5, z: 0.9 }]), JSON.stringify(three));
+  const two = decodeTldrawPoints('AAAgwgAA8EBgVABRAD4Avg==', 2);
+  assert.ok(near(two, [{ x: -40, y: 7.5, z: 0.5 }, { x: 30, y: 47.5, z: 0.5 }, { x: 31.5, y: 46, z: 0.5 }]), JSON.stringify(two));
+  assert.deepEqual(decodeTldrawPoints(''), []);
+  assert.deepEqual([float16(0x3c00), float16(0xc000), float16(0x0001), float16(0x7c00)], [1, -2, 2 ** -24, Infinity]);
+});
 
 test('a tldraw board converts ink, highlights, pictures and groups in drawing order, and names what it couldn\'t', () => {
   const { board: converted, leftovers } = boardFromTldraw(tldrawDocument());
@@ -219,7 +228,7 @@ test('a tldraw board converts ink, highlights, pictures and groups in drawing or
   assert.deepEqual(converted.page, { left: -45.44, top: -182, width: 1005.44 });
 });
 
-test('dashed or dotted lines and filled freehand shapes stay leftovers, so the board keeps them in tldraw', () => {
+test('dashed or dotted lines and filled freehand shapes are left out', () => {
   const document = tldrawDocument();
   document.store['shape:ink'].props.dash = 'dashed';
   document.store['shape:pressed'].props.dash = 'dotted';
@@ -231,7 +240,7 @@ test('dashed or dotted lines and filled freehand shapes stay leftovers, so the b
   assert.ok(!boardFromTldraw(document).leftovers.includes('shape:mouse'));
 });
 
-test('a cropped or turned picture and see-through ink stay leftovers, and an empty document is an empty board', () => {
+test('a cropped or turned picture and see-through ink are left out, and an empty document is an empty board', () => {
   const document = tldrawDocument();
   document.store['shape:problem'].props.crop = { topLeft: { x: 0, y: 0 }, bottomRight: { x: 0.5, y: 1 } };
   document.store['shape:problem'].meta = {};

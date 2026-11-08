@@ -16,7 +16,6 @@ try {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.addInitScript(fakeBooxBridge);
-  await page.addInitScript(() => localStorage.setItem('math-tutor:inkBoard', '1'));
   await page.goto(`${origin}/board?new=problem`);
   const board = page.locator('[data-ink-board]');
   await board.waitFor();
@@ -104,11 +103,9 @@ try {
   assert.ok((await calls('interaction')).some((call) => call.options.active), 'the wheel used fast mode');
   await page.getByRole('button', { name: 'Fit width', exact: true }).click();
 
-  // An open menu over the board takes the pen back; closing it gives it to the SDK again. The
-  // BOOX pen choice is tldraw's: the ink board always uses it.
+  // An open menu over the board takes the pen back; closing it gives it to the SDK again.
   await page.getByRole('button', { name: 'Board menu' }).click();
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'pause'));
-  assert.equal(await page.getByRole('menuitemcheckbox', { name: 'BOOX pen (experiment)' }).count(), 0);
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'resume'));
   // + New's menu hangs over the board too: the pen must be able to tap its items.

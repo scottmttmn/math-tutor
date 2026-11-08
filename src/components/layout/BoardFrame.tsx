@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { TutorIcon } from '@/components/common/Icons';
-import { useOnInkBoard } from '@/hooks/useInkBoardMode';
 import { BoardRailContext } from './BoardRail';
 
 // Tailwind's 2xl: wide enough for the source, the board and the tutor side by side.
@@ -44,7 +43,7 @@ interface Props {
   actions?: ReactNode;
   /** The DrawingCanvas; its wrapper here is positioned and sized. */
   canvas: ReactNode;
-  /** The BottomToolbar: along the foot of a tldraw board, a rail down the left of an ink board. */
+  /** The BottomToolbar: a rail down the board's left. */
   toolbar: ReactNode;
   /** The tutor, closed until asked: a column on the right, in the source's place unless the screen is very wide. */
   tutor: { open: boolean; onClose: () => void; content: ReactNode };
@@ -65,8 +64,7 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
   const showSource = Boolean(source) && !fullScreen && (swapping ? flipped : !sourceHidden);
   // Below 2xl the open tutor takes the source's place, whether or not the source was hidden.
   const sourceCovered = Boolean(source) && showTutor && !wide && !swapping;
-  // An ink board has its controls in a rail on the left (BoardRail), and full screen hides its header too.
-  const rail = useOnInkBoard();
+  // The board's controls are in a rail on the left (BoardRail), and full screen hides its header too.
   const [railTools, setRailTools] = useState<HTMLElement | null>(null);
   const [railHeader, setRailHeader] = useState<HTMLElement | null>(null);
   const railSlots = useMemo(() => ({ tools: railTools, header: railHeader, setTools: setRailTools, setHeader: setRailHeader }), [railTools, railHeader]);
@@ -99,10 +97,11 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
       {/* Flipped to the source, the board stays mounted (hidden), so its drawing and undo stay. */}
       <section className={`${flipped ? 'hidden' : 'flex'} flex-1 min-w-0 min-h-0 flex-col bg-white ${source?.wide && showSource && !showTutor ? 'lg:flex-none lg:w-1/2' : ''}`}>
         <BoardRailContext.Provider value={railSlots}>
-        <div className={`${rail && fullScreen ? 'hidden' : 'flex'} flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200`}>
-          <div className="min-w-0 flex-1">{title}</div>
+        <div className={`${fullScreen ? 'hidden' : 'flex'} flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200`}>
+          {/* The title keeps room to read; the buttons wrap below it on a narrow board. */}
+          <div className="min-w-[min(100%,16rem)] flex-1">{title}</div>
           {actions}
-          {rail && <div ref={setRailHeader} className="contents" />}
+          <div ref={setRailHeader} className="contents" />
           {source?.swap && swapping ? (
             <button onClick={() => { tutor.onClose(); setFlippedFor(source.swap?.key ?? null); }}
               title={`Show the ${source.label.toLowerCase()} in the board's place`}
@@ -121,17 +120,10 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
             </button>
           )}
         </div>
-        {rail ? (
-          <div className="flex-1 min-h-0 flex">
-            {toolbar}
-            <div className="relative flex-1 min-w-0">{canvas}</div>
-          </div>
-        ) : (
-          <>
-            <div className="relative flex-1 min-h-0">{canvas}</div>
-            {toolbar}
-          </>
-        )}
+        <div className="flex-1 min-h-0 flex">
+          {toolbar}
+          <div className="relative flex-1 min-w-0">{canvas}</div>
+        </div>
         </BoardRailContext.Provider>
       </section>
 

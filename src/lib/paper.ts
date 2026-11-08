@@ -20,14 +20,3 @@ export const PAPER_LINE = '#8b9099';
 export function paperFor(chosen: Paper | null | undefined, type: SessionType): Paper {
   return chosen ?? (type === 'note' ? 'lined' : 'blank');
 }
-
-/**
- * Where the lines fall on screen for a camera (tldraw's x, y and zoom) and a spacing in board units:
- * the gap between lines in screen px and the offset of the first one. Null when they'd be too dense to show.
- */
-export function paperLines(camera: { x: number; y: number; z: number }, spacing: number) {
-  const gap = spacing * camera.z;
-  if (gap < 8) return null;
-  const offset = (value: number) => ((value * camera.z) % gap + gap) % gap;
-  return { gap, x: offset(camera.x), y: offset(camera.y) };
-}

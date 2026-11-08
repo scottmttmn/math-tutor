@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { makePdf } from './makePdf.mjs';
-import { keepTldraw } from './tldraw-boards.mjs';
 
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const requests = [];
@@ -36,18 +35,20 @@ const model = { provider: 'openai-compatible', model: 'acceptance-test', baseUrl
 
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-await context.addInitScript(keepTldraw);
 const page = await context.newPage();
 page.on('pageerror', (error) => browserErrors.push(error.message));
 
 async function drawStroke(offset = 0) {
-  const board = await page.locator('.tl-canvas').boundingBox();
+  const board = await page.getByTestId('ink-board').boundingBox();
   await page.mouse.move(board.x + 120 + offset, board.y + 120);
   await page.mouse.down();
   await page.mouse.move(board.x + 260 + offset, board.y + 180, { steps: 8 });
   await page.mouse.up();
 }
-const shapeCount = () => page.locator('.tl-shape').count();
+// What is on the board: its strokes and pictures.
+const shapeCount = () => page.locator('[data-ink-board]').evaluate((board) => Number(board.dataset.strokes) + Number(board.dataset.images));
+/** Waits for at least `count` pictures on the board. */
+const pictures = (count = 1) => page.waitForFunction((least) => Number(document.querySelector('[data-ink-board]')?.dataset.images) >= least, count);
 const exerciseHeading = (name) => page.getByRole('heading', { name, exact: true });
 
 try {
@@ -104,7 +105,7 @@ try {
   await page.getByRole('button', { name: 'Save and open' }).click();
   await exerciseHeading('Exercise 1').waitFor();
   // A new board opens with its exercise on it, locked, for the tutor to read work written on it.
-  await page.locator('.tl-image').waitFor();
+  await pictures();
   await drawStroke();
   await page.getByText('Saved', { exact: true }).waitFor();
 
@@ -162,10 +163,8 @@ try {
   await page.waitForTimeout(1200);
   await page.reload();
   await exerciseHeading('Exercise 1').waitFor();
-  await page.locator('.tl-image').waitFor();
+  await pictures();
   assert.equal(await shapeCount(), 2);
-  const pictureOnBoard = () => page.locator('.tl-image').first().evaluate((image) => image.src);
-  const firstPicture = await pictureOnBoard();
 
   // A second exercise on page 2 gets its own empty board; the first keeps its work.
   await page.getByRole('button', { name: 'Next page' }).click();
@@ -210,15 +209,15 @@ try {
   await page.getByLabel('Folder').selectOption({ index: 1 });
   await page.getByRole('button', { name: 'Save and open' }).click();
   await exerciseHeading('Problem 3').waitFor();
-  await page.locator('.tl-image').waitFor();
+  await pictures();
   assert.equal(await shapeCount(), 1);
   // Its own picture: the last board's (locked) one doesn't stay behind.
   await page.waitForTimeout(300);
-  assert.notEqual(await pictureOnBoard(), firstPicture);
+  assert.equal(await shapeCount(), 1);
   await page.getByRole('button', { name: 'Previous page' }).click();
   await page.getByRole('button', { name: 'Open Exercise 1' }).click();
   await exerciseHeading('Exercise 1').waitFor();
-  await page.locator('.tl-shape').first().waitFor();
+  await page.waitForFunction(() => Number(document.querySelector('[data-ink-board]')?.dataset.strokes) > 0);
   await page.waitForTimeout(300);
   assert.equal(await shapeCount(), 2, 'its exercise and the stroke, not a second copy');
   console.log('PASS add a PDF, mark exercises, boards beside the page, tutor sees the marked region, reload');
@@ -233,11 +232,11 @@ try {
   assert.equal(await shapeCount(), 1, 'Clear keeps the problem');
 
   // Full screen hides the page and gives the board the window; asking for help leaves it.
-  const boardWidth = (await page.locator('.tl-canvas').boundingBox()).width;
+  const boardWidth = (await page.getByTestId('ink-board').boundingBox()).width;
   await page.getByRole('button', { name: 'Full screen' }).click();
   await page.getByRole('button', { name: 'Page 1 of 2. Go to a page', exact: true }).waitFor({ state: 'hidden' });
   await page.waitForTimeout(300);
-  assert.ok((await page.locator('.tl-canvas').boundingBox()).width > boardWidth * 1.5, 'the board fills the window');
+  assert.ok((await page.getByTestId('ink-board').boundingBox()).width > boardWidth * 1.5, 'the board fills the window');
   await page.getByRole('button', { name: 'Exit full screen' }).click();
   await page.getByRole('button', { name: 'Page 1 of 2. Go to a page', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Full screen' }).click();
@@ -245,18 +244,19 @@ try {
   await chooseTutor(page);
   await page.getByRole('button', { name: 'Full screen' }).waitFor();
   await page.getByText('Shelf hint.').last().waitFor();
-  // Hiding the tools leaves the pen writing; the choice survives a reload.
-  await page.locator('.tlui-layout').waitFor();
+  // Hiding the rail leaves the pen writing; the choice survives a reload.
+  const railControls = page.getByRole('group', { name: 'Board controls' });
+  await railControls.waitFor();
   await page.getByRole('button', { name: 'Board menu' }).click();
-  await page.getByRole('menuitemcheckbox', { name: 'Hide drawing tools' }).click();
-  await page.locator('.tlui-layout').waitFor({ state: 'detached' });
+  await page.getByRole('menuitemcheckbox', { name: 'Hide tool rail' }).click();
+  await railControls.waitFor({ state: 'detached' });
   const before = await shapeCount();
   await drawStroke(200);
   await page.waitForTimeout(300);
   assert.equal(await shapeCount(), before + 1, 'the pen still writes');
   await page.reload();
   await page.getByRole('button', { name: 'Show tools' }).click();
-  await page.locator('.tlui-layout').waitFor();
+  await railControls.waitFor();
   console.log('PASS the problem goes on the board; full screen board');
 
 
@@ -318,9 +318,9 @@ try {
   await page.locator('input[aria-label="Problem picture"]').setInputFiles(imagePath);
   await page.getByAltText(/problem/i).first().waitFor();
   // Its picture can go on the board, and the board can take the whole screen.
-  await page.locator('.tl-canvas').waitFor();
+  await page.getByTestId('ink-board').waitFor();
   await page.getByRole('button', { name: 'Put on board' }).click();
-  await page.locator('.tl-image').waitFor();
+  await pictures();
   await page.getByRole('button', { name: 'Full screen' }).click();
   await page.getByRole('link', { name: 'Home' }).waitFor({ state: 'hidden' });
   assert.equal(await page.getByAltText(/problem/i).count(), 0, 'the problem header is hidden');
@@ -354,7 +354,7 @@ try {
   if (await page.getByRole('button', { name: 'Page 1 of 2. Go to a page', exact: true }).count()) await page.getByRole('button', { name: 'Next page' }).click();
   await page.getByRole('button', { name: 'Open Problem 3' }).click();
   await exerciseHeading('Problem 3').waitFor();
-  await page.locator('.tl-image').waitFor();
+  await pictures();
   await page.getByRole('button', { name: 'Mark', exact: true }).click();
   await boxOnPage(0.3);
   await page.getByRole('radio', { name: 'This board' }).click();
@@ -364,7 +364,7 @@ try {
   await exerciseHeading('Problem 4').waitFor();
   const onBoard = page.getByRole('group', { name: 'Exercises on this board' });
   await onBoard.getByRole('button', { name: 'Problem 4', pressed: true }).waitFor();
-  await page.locator('.tl-image').nth(1).waitFor();
+  await pictures(2);
   await page.getByRole('button', { name: 'Done marking' }).waitFor();
   await boxOnPage(0.5);
   assert.equal(await page.getByRole('radio', { name: 'This board' }).getAttribute('aria-checked'), 'true');
@@ -390,7 +390,7 @@ try {
   await page.reload();
   await exerciseHeading('Problem 3').waitFor();
   await onBoard.getByRole('button', { name: 'Problem 5 (solved)' }).waitFor();
-  await page.locator('.tl-image').nth(2).waitFor();
+  await pictures(3);
   // Removing one of them keeps the board, and its picture and work, for the others.
   await onBoard.getByRole('button', { name: 'Problem 4', exact: true }).click();
   await exerciseHeading('Problem 4').waitFor();
@@ -399,7 +399,7 @@ try {
   await exerciseHeading('Problem 3').waitFor();
   await page.getByRole('button', { name: 'Open Problem 4' }).waitFor({ state: 'detached' });
   assert.deepEqual((await onBoard.getByRole('button').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ')), ['Problem 3', 'Problem 5 (solved)']);
-  assert.equal(await page.locator('.tl-image').count(), 3);
+  assert.equal(await page.locator('[data-ink-board]').getAttribute('data-images'), '3');
   await page.getByText('Saved', { exact: true }).waitFor();
   await page.waitForTimeout(1200);
   // The book counts both; its folder lists the board once, with how many are solved.
@@ -452,7 +452,6 @@ try {
 
   // A library saved before folders: each book is put in a folder of its own, its boards with it.
   const old = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-  await old.addInitScript(keepTldraw);
   const oldPage = await old.newPage();
   oldPage.on('pageerror', (error) => browserErrors.push(error.message));
   await oldPage.goto(`${origin}/pen-test`);

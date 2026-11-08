@@ -12,7 +12,6 @@ try {
 
   const page = await browser.newPage({ viewport: { width: 930, height: 1240 } });
   await page.addInitScript(fakeBooxBridge);
-  await page.addInitScript(() => localStorage.setItem('math-tutor:inkBoard', '1'));
   await page.goto(`${origin}/board?new=problem`);
   await page.locator('[data-ink-board]').waitFor();
   await page.waitForFunction(() => getComputedStyle(document.documentElement).fontSize === '20px');

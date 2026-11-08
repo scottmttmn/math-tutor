@@ -7,7 +7,6 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { chromium } from 'playwright';
-import { keepTldraw } from './tldraw-boards.mjs';
 
 const root = join(import.meta.dirname, '..', 'out');
 const types = {
@@ -33,7 +32,6 @@ const origin = `http://localhost:${server.address().port}`;
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 try {
   const page = await browser.newPage({ viewport: { width: 1024, height: 1366 } });
-  await page.addInitScript(keepTldraw);
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
 
@@ -49,19 +47,11 @@ try {
   await page.getByRole('heading', { name: 'Tutor memory', exact: true }).waitFor();
   assert.equal(new URL(page.url()).pathname, '/memory');
   await page.goto(`${origin}/board?new=note`);
-  await page.locator('.tl-canvas').waitFor();
+  await page.getByTestId('ink-board').waitFor();
   assert.equal(new URL(page.url()).pathname, '/board');
-  await page.getByRole('button', { name: 'Board menu', exact: true }).click();
-  await page.getByRole('menuitemcheckbox', { name: 'Notebook mode (experiment)', exact: true }).click();
-  await page.getByTestId('notebook-paper').waitFor();
-  await page.getByRole('button', { name: 'Fit width', exact: true }).click();
-  assert.equal(await page.getByTestId('notebook-paper').getAttribute('data-page-width'), '960');
   await page.reload();
-  await page.getByTestId('notebook-paper').waitFor();
-  await page.getByRole('button', { name: 'Board menu', exact: true }).click();
-  assert.equal(await page.getByRole('menuitemcheckbox', { name: 'Notebook mode (experiment)', exact: true }).getAttribute('aria-checked'), 'true');
-  await page.getByRole('menuitemcheckbox', { name: 'Notebook mode (experiment)', exact: true }).click();
-  await page.getByTestId('notebook-paper').waitFor({ state: 'detached' });
+  await page.getByTestId('ink-board').waitFor();
+  assert.equal(new URL(page.url()).pathname, '/board');
   // The app has no address bar: the pen test is reached from the Board menu.
   await page.getByRole('button', { name: 'Board menu', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Pen test…', exact: true }).click();
@@ -69,7 +59,7 @@ try {
   assert.equal(new URL(page.url()).pathname, '/pen-test');
   // ← Board goes back to the board it came from.
   await page.getByRole('button', { name: '← Board', exact: true }).click();
-  await page.locator('.tl-canvas').waitFor();
+  await page.getByTestId('ink-board').waitFor();
   assert.equal(new URL(page.url()).pathname, '/board');
   await page.goto(`${origin}/pen-test`);
   await page.getByTestId('pen-test-canvas').waitFor();
@@ -85,7 +75,6 @@ try {
   // the ChatGPT connection are kept by DeviceKeysPlugin; Sign in with ChatGPT's callback comes to
   // ChatGPTSignInPlugin's listener, and its requests to auth.openai.com go through CapacitorHttp.
   const app = await browser.newPage({ viewport: { width: 1024, height: 1366 } });
-  await app.addInitScript(keepTldraw);
   app.on('pageerror', (error) => errors.push(error.message));
   const issuer = 'https://auth.openai.com';
   const { privateKey, publicKey } = await generateKeyPair('RS256');
@@ -214,8 +203,8 @@ try {
   });
   await app.goto(`${origin}/board`);
   await app.getByPlaceholder("Type the math problem you're working on...").fill('Find x when 2x + 3 = 7');
-  await app.locator('.tl-canvas').waitFor();
-  const board = await app.locator('.tl-canvas').boundingBox();
+  await app.getByTestId('ink-board').waitFor();
+  const board = await app.getByTestId('ink-board').boundingBox();
   await app.mouse.move(board.x + 120, board.y + 120);
   await app.mouse.down();
   await app.mouse.move(board.x + 300, board.y + 200, { steps: 8 });

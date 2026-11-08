@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, type RefObject } from 'react';
-import { useBooxPenAvailable } from '@/hooks/useBooxPen';
+import { useBooxPenAvailable } from '@/hooks/useBooxPenAvailable';
 import { BooxPen, boxOf, overlaps } from '@/lib/booxPen';
 import type { BooxPenBox } from '@/types';
 

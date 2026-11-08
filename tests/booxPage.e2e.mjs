@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { fakeBooxBridge } from './boox-bridge.mjs';
 import { makePdf } from './makePdf.mjs';
-import { keepTldraw } from './tldraw-boards.mjs';
 
 // Ink on a Shelf page on a BOOX tablet, with the native bridge stood in for (tests/boox-bridge.mjs):
 // with Pen or Highlight chosen Onyx's pen draws over the page (the part in view) and each stroke
@@ -19,7 +18,6 @@ const browser = await chromium.launch({ headless: true, executablePath: process.
 
 try {
   const page = await browser.newPage({ viewport: { width: 1024, height: 768 } });
-  await page.addInitScript(keepTldraw);
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.addInitScript(fakeBooxBridge);
@@ -134,7 +132,6 @@ try {
 
   // An upright tablet: the exercise's board has the pen; swapped for the page, the page takes it,
   // and its strokes never reach the hidden board; back on the board, the board takes it again.
-  await page.evaluate(() => localStorage.setItem('math-tutor:inkBoard', '1'));
   await page.setViewportSize({ width: 800, height: 1100 });
   await page.getByRole('button', { name: 'Mark', exact: true }).click();
   const area = await overlay.boundingBox();

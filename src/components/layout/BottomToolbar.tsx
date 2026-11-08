@@ -5,9 +5,7 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { useCanvasState } from '@/context/CanvasContext';
 import { useRateLimit } from '@/hooks/useRateLimit';
-import { useNotebookMode } from '@/hooks/useNotebookMode';
-import { useBooxPenAvailable, useBooxPenMode } from '@/hooks/useBooxPen';
-import { useInkBoardMode, useOnInkBoard, useScratchOutOff } from '@/hooks/useInkBoardMode';
+import { useScratchOutOff } from '@/hooks/useInkBoardChoice';
 import { RATE_LIMIT_MS } from '@/lib/constants';
 import type { Paper, SessionType } from '@/types';
 import { PAPERS } from '@/lib/paper';
@@ -16,7 +14,7 @@ import { useCopiedPicture } from '@/hooks/useCopiedPicture';
 import { BroomIcon, FullScreenIcon, PaperIcon, PasteIcon, SolvedCheck, TutorIcon, UnsolvedCheck } from '@/components/common/Icons';
 import { InBoardHeader, useBoardRail } from './BoardRail';
 
-// Drawing tools, colors and undo live in tldraw's own toolbar on the canvas.
+// The board's rail (BoardFrame): the tutor, InkBoard's tools (portaled in), paper, clear and the Board menu.
 interface Props {
   /** Asks the tutor about the board; `question` is a direct check-in action, if any. */
   onAskForHelp: (question?: string) => void;
@@ -43,34 +41,24 @@ interface Props {
   onPastePicture?: () => void;
   /** Shows Paper, which picks the board's paper: blank, lined or grid. */
   paper?: { value: Paper; onChange: (paper: Paper) => void };
-  onFitWidth?: () => void;
   /** The Favorite button (FavoriteButton), shown beside Mark solved on problems. */
   favorite?: ReactNode;
 }
 
-export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp, onAddPicture, onPastePicture, paper, onFitWidth, favorite }: Props) {
+export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp, onAddPicture, onPastePicture, paper, favorite }: Props) {
   const pictureInput = useRef<HTMLInputElement>(null);
-  const { notebook, toggleNotebook } = useNotebookMode();
-  const [booxPen, toggleBooxPen] = useBooxPenMode();
-  const booxAvailable = useBooxPenAvailable();
   const router = useRouter();
   const { hasContent } = useCanvasState();
-  const [inkForNew, toggleInkForNew] = useInkBoardMode();
   const [scratchOff, toggleScratchOff] = useScratchOutOff();
-  const onInkBoard = useOnInkBoard();
-  // The rail is the ink board's; a tldraw board keeps the bar along its foot.
-  const slots = useBoardRail();
-  const rail = onInkBoard ? slots : null;
+  const rail = useBoardRail();
   const copied = useCopiedPicture();
-  const railHeader = rail?.header ?? null;
-  const setRailTools = rail?.setTools;
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
   const helpDisabled = isLimited || isStreaming;
   const askClass = 'flex items-center gap-1.5 min-h-11 px-4 text-sm font-semibold text-white bg-indigo-700 rounded-lg hover:bg-indigo-800 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed';
   const plain = 'flex shrink-0 items-center justify-center gap-1.5 min-h-11 min-w-11 px-3 text-sm text-gray-800 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40';
   const square = `${plain} w-11 p-0`;
   // Part of a PDF page copied on the page: Paste puts it on this board.
-  const pasteButton = rail && copied && onPastePicture && (
+  const pasteButton = copied && onPastePicture && (
     <button onClick={onPastePicture} disabled={isStreaming} className={square} aria-label="Paste" title={`Paste: ${copied.from}`} data-testid="paste-picture">
       <PasteIcon />
     </button>
@@ -95,8 +83,7 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
       title={`Paper: ${paperLabel}`}
       button={<PaperIcon paper={paper.value} />}
       buttonClassName={square}
-      above={!rail}
-      side={Boolean(rail)}
+      side
       align="left"
       menuClassName="w-56 p-2 grid grid-cols-3 gap-1"
       items={PAPERS.map((item) => ({
@@ -114,12 +101,7 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
     </button>
   );
 
-  // The ink board's rail shows its own Fit width, only while zoomed away from writing scale.
-  const fitWidthButton = (notebook || onInkBoard) && onFitWidth && !rail && (
-    <button onClick={onFitWidth} className={plain} title="Return to notebook writing width">Fit width</button>
-  );
-
-  const addPicture = onInkBoard && onAddPicture;
+  const addPicture = onAddPicture;
   const boardMenu = (tools || onWriteUp || onSaveAs) && (
     <>
     {addPicture && (
@@ -139,19 +121,14 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
     <MoreMenu
       label="Board menu"
       title="Board menu"
-      button={rail ? <span aria-hidden="true">⋯</span> : <><span className="hidden lg:inline">Board</span><span aria-hidden="true">⋯</span></>}
-      buttonClassName={rail ? square : plain}
-      above={!rail}
-      side={Boolean(rail)}
+      button={<span aria-hidden="true">⋯</span>}
+      buttonClassName={square}
+      side
       align="left"
       items={[
         ...(addPicture ? [{ label: 'Add picture…', disabled: isStreaming, onSelect: () => pictureInput.current?.click() }] : []),
-        { label: 'Ink board', separatorBefore: Boolean(addPicture), role: 'menuitemcheckbox', checked: inkForNew, onSelect: toggleInkForNew },
-        ...(onInkBoard ? [] : [{ label: 'Notebook mode (experiment)', role: 'menuitemcheckbox' as const, checked: notebook, onSelect: toggleNotebook }]),
-        // The ink board always uses Onyx's pen on a BOOX; the choice is tldraw's.
-        ...(booxAvailable && !onInkBoard ? [{ label: 'BOOX pen (experiment)', role: 'menuitemcheckbox' as const, checked: booxPen, onSelect: toggleBooxPen }] : []),
-        ...(onInkBoard ? [{ label: 'Scratch out to erase', role: 'menuitemcheckbox' as const, checked: !scratchOff, onSelect: toggleScratchOff }] : []),
-        ...(tools ? [{ label: rail ? 'Hide tool rail' : 'Hide drawing tools', role: 'menuitemcheckbox' as const, checked: tools.hidden, onSelect: tools.toggle }] : []),
+        { label: 'Scratch out to erase', separatorBefore: Boolean(addPicture), role: 'menuitemcheckbox', checked: !scratchOff, onSelect: toggleScratchOff },
+        ...(tools ? [{ label: 'Hide tool rail', role: 'menuitemcheckbox' as const, checked: tools.hidden, onSelect: tools.toggle }] : []),
         // The Android app has no address bar, so the pen test is reached from here.
         { label: 'Pen test…', disabled: isStreaming, onSelect: () => router.push('/pen-test') },
         ...(onWriteUp ? [{ label: 'TeX write-up…', separatorBefore: Boolean(tools), onSelect: onWriteUp }] : []),
@@ -190,12 +167,12 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
       }}
       aria-pressed={tutor.open && !fullScreen?.on}
       aria-label="Ask tutor"
-      className={`flex shrink-0 items-center justify-center gap-1.5 min-h-11 ${rail ? 'w-11' : 'px-4'} text-sm font-semibold border-2 border-indigo-700 rounded-lg ${
+      className={`flex shrink-0 items-center justify-center gap-1.5 min-h-11 w-11 text-sm font-semibold border-2 border-indigo-700 rounded-lg ${
         tutor.open && !fullScreen?.on ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' : 'bg-indigo-700 text-white hover:bg-indigo-800'
       }`}
       title="Ask tutor"
     >
-      <TutorIcon />{!rail && 'Ask tutor'}
+      <TutorIcon />
     </button>
   );
 
@@ -205,59 +182,40 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
       disabled={helpDisabled}
       title={isLimited ? 'Please wait a moment before asking again.' : 'Ask the tutor about your board'}
       aria-label={checkInLabel}
-      className={rail ? `${askClass} w-11 justify-center px-0` : askClass}
+      className={`${askClass} w-11 justify-center px-0`}
     >
       <TutorIcon />
-      {!rail && checkInLabel}
     </button>
   );
 
-  // An ink board: a rail down the board's left, the tutor at its top, away from a resting hand;
-  // the ink tools go in the middle (InkBoard puts them there). Favorite, Mark solved and Full
-  // screen go in the board's header. Hidden, only those stay, and a tab brings the rail back.
-  if (rail) {
-    const divider = <div aria-hidden="true" className="w-7 my-0.5 border-t border-gray-200" />;
-    return (
-      <>
-        {/* A short board (a panel above it, a landscape phone) scrolls the rail; its menus are placed on the screen. */}
-        {!tools?.hidden && (
-          <div role="group" aria-label="Board controls" className="flex flex-col items-center gap-1 w-12 shrink-0 py-1.5 overflow-y-auto overscroll-contain border-r border-gray-200 bg-white">
-            {tutorButton}{checkInButton}
-            {divider}
-            <div ref={setRailTools} className="contents" />
-            {pasteButton}
-            {divider}
-            {paperMenu}
-            {fitWidthButton}
-            {clearButton}
-            {boardMenu}
-            {fullScreen?.on && fullScreenButton}
-          </div>
-        )}
-        {railHeader && createPortal(
-          <InBoardHeader.Provider value={true}>
-            {sessionType === 'problem' && favorite}
-            {solvedButton}
-            {!fullScreen?.on && fullScreenButton}
-          </InBoardHeader.Provider>,
-          railHeader,
-        )}
-      </>
-    );
-  }
-
+  // A rail down the board's left, the tutor at its top, away from a resting hand; the ink tools go
+  // in the middle (InkBoard puts them there). Favorite, Mark solved and Full screen go in the
+  // board's header. Hidden, only those stay, and a tab brings the rail back.
+  const divider = <div aria-hidden="true" className="w-7 my-0.5 border-t border-gray-200" />;
   return (
-    <div role="group" aria-label="Board controls" className="flex items-center gap-1.5 lg:gap-2 px-2 lg:px-3 py-2 border-t border-gray-200 bg-white flex-wrap">
-      {fullScreenButton}
-      {paperMenu}
-      {clearButton}
-      {fitWidthButton}
-      {boardMenu}
-      <div className="flex-1" />
-      {sessionType === 'problem' && favorite}
-      {solvedButton}
-      {tutorButton}
-      {checkInButton}
-    </div>
+    <>
+      {/* A short board (a panel above it, a landscape phone) scrolls the rail; its menus are placed on the screen. */}
+      {!tools?.hidden && (
+        <div role="group" aria-label="Board controls" className="flex flex-col items-center gap-1 w-12 shrink-0 py-1.5 overflow-y-auto overscroll-contain border-r border-gray-200 bg-white">
+          {tutorButton}{checkInButton}
+          {divider}
+          <div ref={rail?.setTools} className="contents" />
+          {pasteButton}
+          {divider}
+          {paperMenu}
+          {clearButton}
+          {boardMenu}
+          {fullScreen?.on && fullScreenButton}
+        </div>
+      )}
+      {rail?.header && createPortal(
+        <InBoardHeader.Provider value={true}>
+          {sessionType === 'problem' && favorite}
+          {solvedButton}
+          {!fullScreen?.on && fullScreenButton}
+        </InBoardHeader.Provider>,
+        rail.header,
+      )}
+    </>
   );
 }
