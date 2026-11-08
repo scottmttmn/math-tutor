@@ -232,19 +232,29 @@ try {
   await page.waitForTimeout(300);
   assert.equal(await shapeCount(), 1, 'Clear keeps the problem');
 
-  // Full screen hides the page and gives the board the window; asking for help leaves it.
+  // Full screen hides the page and gives the board the window; the tutor comes out beside it.
   const boardWidth = (await page.getByTestId('ink-board').boundingBox()).width;
   await page.getByRole('button', { name: 'Full screen' }).click();
   await page.getByRole('button', { name: 'Page 1 of 2. Go to a page', exact: true }).waitFor({ state: 'hidden' });
   await page.waitForTimeout(300);
   assert.ok((await page.getByTestId('ink-board').boundingBox()).width > boardWidth * 1.5, 'the board fills the window');
+  // The rail's page button swaps the book's page in, still full screen, and Back to board swaps back.
+  await page.getByRole('button', { name: 'p. 1: show the page' }).click();
+  await page.getByRole('button', { name: 'Page 1 of 2. Go to a page', exact: true }).waitFor();
+  await page.getByTestId('ink-board').waitFor({ state: 'hidden' });
+  await page.getByRole('button', { name: 'Back to board' }).click();
+  await page.getByTestId('ink-board').waitFor();
+  await page.getByRole('button', { name: 'Page 1 of 2. Go to a page', exact: true }).waitFor({ state: 'hidden' });
   await page.getByRole('button', { name: 'Exit full screen' }).click();
+  assert.equal(await page.getByRole('button', { name: 'p. 1: show the page' }).count(), 0, 'beside the board, the page needs no button');
   await page.getByRole('button', { name: 'Page 1 of 2. Go to a page', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Full screen' }).click();
   await page.waitForTimeout(5000);
   await chooseTutor(page);
-  await page.getByRole('button', { name: 'Full screen' }).waitFor();
+  // The tutor answers beside the board, still full screen.
   await page.getByText('Shelf hint.').last().waitFor();
+  await page.getByRole('button', { name: 'Exit full screen' }).click();
+  await page.getByRole('button', { name: 'Full screen' }).waitFor();
   // Hiding the rail leaves the pen writing; the choice survives a reload.
   const railControls = page.getByRole('group', { name: 'Board controls' });
   await railControls.waitFor();

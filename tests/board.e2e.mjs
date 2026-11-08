@@ -225,15 +225,25 @@ try {
   assert.ok(imageOf(request)?.startsWith('data:image/png;base64,'));
   console.log('PASS the board reaches the provider; every follow-up attaches it; five-second limit rejects bursts');
 
-  // Full screen hides the bar, problem and tutor; the board keeps its strokes.
+  // Full screen hides the bar and problem; the board keeps its strokes.
+  if (await page.getByRole('complementary', { name: 'Tutor' }).count()) await page.getByRole('button', { name: 'Close tutor' }).click();
   await page.getByRole('button', { name: 'Full screen' }).click();
   await page.getByRole('link', { name: 'Home', exact: true }).waitFor({ state: 'hidden' });
   assert.equal(await page.getByRole('complementary', { name: 'Tutor' }).count(), 0);
   assert.equal(await page.getByRole('region', { name: 'Problem' }).count(), 0);
   assert.ok(Number(await inkBoard(page).getAttribute('data-strokes')) > 0);
-  // Tutor in full screen leaves it and shows the conversation.
+  // Ask tutor in full screen brings the tutor out beside the board and stays full screen; the same
+  // button puts it away again.
   await openTutor(page);
+  await page.getByRole('complementary', { name: 'Tutor' }).waitFor();
+  await page.getByRole('link', { name: 'Home', exact: true }).waitFor({ state: 'hidden' });
+  const railAsk = page.getByRole('group', { name: 'Board controls' }).getByRole('button', { name: 'Ask tutor', exact: true });
+  assert.equal(await railAsk.getAttribute('aria-pressed'), 'true');
+  await railAsk.click();
+  await page.getByRole('complementary', { name: 'Tutor' }).waitFor({ state: 'hidden' });
+  await page.getByRole('button', { name: 'Exit full screen' }).click();
   await page.getByRole('button', { name: 'Full screen' }).waitFor();
+  await openTutor(page);
   await page.getByRole('complementary', { name: 'Tutor' }).waitFor();
   // The open tutor stands in the problem's place; Show problem closes it.
   await page.getByRole('button', { name: 'Show problem' }).click(); await waitProblem();

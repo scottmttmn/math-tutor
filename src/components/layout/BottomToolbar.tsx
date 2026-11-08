@@ -160,15 +160,12 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
   // Opening the drawer is always available, including during a reply or rate limit.
   const tutorButton = !checkInLabel && tutor && (
     <button
-      onClick={() => {
-        // Full screen hides the tutor, so opening it leaves full screen (as Ask tutor does).
-        if (fullScreen?.on) { fullScreen.toggle(); if (!tutor.open) tutor.toggle(); }
-        else tutor.toggle();
-      }}
-      aria-pressed={tutor.open && !fullScreen?.on}
+      // In full screen too: the tutor comes out beside the board, and full screen stays.
+      onClick={tutor.toggle}
+      aria-pressed={tutor.open}
       aria-label="Ask tutor"
       className={`flex shrink-0 items-center justify-center gap-1.5 min-h-11 w-11 text-sm font-semibold border-2 border-indigo-700 rounded-lg ${
-        tutor.open && !fullScreen?.on ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' : 'bg-indigo-700 text-white hover:bg-indigo-800'
+        tutor.open ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' : 'bg-indigo-700 text-white hover:bg-indigo-800'
       }`}
       title="Ask tutor"
     >
@@ -198,6 +195,12 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
       {!tools?.hidden && (
         <div role="group" aria-label="Board controls" className="flex flex-col items-center gap-1 w-12 shrink-0 py-1.5 overflow-y-auto overscroll-contain border-r border-gray-200 bg-white">
           {tutorButton}{checkInButton}
+          {rail?.source && (
+            <button onClick={rail.source.show} title={rail.source.title} aria-label={`${rail.source.label}: ${rail.source.title.toLowerCase()}`}
+              className="flex shrink-0 items-center justify-center min-h-11 w-11 px-0.5 text-xs font-medium leading-tight text-center text-gray-900 border border-gray-900 rounded-lg bg-white hover:bg-gray-50 break-words">
+              {rail.source.label}
+            </button>
+          )}
           {divider}
           <div ref={rail?.setTools} className="contents" />
           {pasteButton}
