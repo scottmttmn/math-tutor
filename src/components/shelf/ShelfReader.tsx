@@ -298,6 +298,8 @@ export default function ShelfReader() {
   }, [isSolved, openId, shelfDocument, currentSessionId]);
 
   useEffect(() => { if (!marking) setMarkParts([]); }, [marking]);
+  // A rename under way belongs to the exercise it started on.
+  useEffect(() => { setRenaming(null); }, [openId]);
 
   // A new page starts at its top, and a box drawn but not saved stays with the page it was drawn on.
   useEffect(() => {
@@ -814,7 +816,8 @@ export default function ShelfReader() {
           setPendingMark(rect);
           void nameFromPage(page, rect);
         }}
-        onOpenMark={(mark) => void openExercise(mark)}
+        // A continued exercise's box on a later page is drawn from a copy; open the mark itself.
+        onOpenMark={(mark) => { const own = shelfDocument.exercises.find((item) => item.id === mark.id); if (own) void openExercise(own); }}
         crop={crop}
         onTurn={turn}
         onTapMiddle={readingFullScreen ? () => { setBarsShown((shown) => !shown); setPanelOpen(false); } : undefined}
