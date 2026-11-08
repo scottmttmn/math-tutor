@@ -1,43 +1,32 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useEffect, useReducer, useRef, type Dispatch } from 'react';
-import { useInkBoardMode } from '@/hooks/useInkBoardChoice';
+import React, { createContext, useContext, useReducer, type Dispatch } from 'react';
 import type { BoardInk, CanvasDocument, Stroke } from '@/types';
 
-// The drawing's editor (tldraw's, or the ink board's) owns the live drawing, tools, selection and
-// undo history. This context mirrors what the rest of the app needs (the saved drawing and whether
-// anything is drawn) and carries requests to replace the drawing.
+// The ink board owns the live drawing, tools, selection and undo history. This context mirrors
+// what the rest of the app needs (the saved drawing and whether anything is drawn) and carries
+// requests to replace the drawing.
 
-/** A drawing to put on the canvas: a tldraw document, an ink board, or strokes from a pre-tldraw session. */
+/**
+ * A drawing to put on the board: an ink board, or one saved before it (a tldraw document or
+ * strokes from the canvas before tldraw), which the board converts as it opens.
+ */
 export interface CanvasLoad {
   document: CanvasDocument | null;
   strokes: Stroke[];
   ink?: BoardInk | null;
 }
 
-/**
- * Which editor the open board belongs to: tldraw, the ink board, or `new` for a board with no
- * drawing yet, which opens in whichever the student chose for new boards.
- */
-export type BoardEditor = 'tldraw' | 'ink' | 'new';
-
 type CanvasAction =
-  // `inkFirst` (set from Board → Ink board): a tldraw or pre-tldraw drawing opens on the ink board, converted.
-  | { type: 'LOAD'; document?: CanvasDocument | null; strokes?: Stroke[]; ink?: BoardInk | null; inkFirst?: boolean }
-  // The ink board couldn't convert the drawing it was given (text, shapes): tldraw shows it instead.
-  | { type: 'KEEP_TLDRAW' }
-  | { type: 'LOADED'; document: CanvasDocument | null; ink?: BoardInk | null; hasContent: boolean }
-  | { type: 'DOCUMENT_CHANGED'; document: CanvasDocument; hasContent: boolean }
+  | { type: 'LOAD'; document?: CanvasDocument | null; strokes?: Stroke[]; ink?: BoardInk | null }
+  | { type: 'LOADED'; ink: BoardInk; hasContent: boolean }
   | { type: 'INK_CHANGED'; ink: BoardInk; hasContent: boolean };
 
 interface CanvasState {
-  /** Latest tldraw document mirrored from the editor (debounced while drawing). */
-  document: CanvasDocument | null;
   /** Latest ink board mirrored from it (debounced while drawing). */
   ink: BoardInk | null;
   hasContent: boolean;
-  editor: BoardEditor;
-  /** A load the editor has not applied yet; it may mount after the request. */
+  /** A load the board has not applied yet; it may mount after the request. */
   pendingLoad: CanvasLoad | null;
 }
 
@@ -46,35 +35,27 @@ export function drawnInk(ink: BoardInk | null | undefined): BoardInk | null {
   return ink && (ink.strokes.length > 0 || ink.images.length > 0) ? ink : null;
 }
 
-/** The tldraw document, if it holds any shape. */
+/** A tldraw document saved before the ink board, if it holds any shape. */
 export function drawnDocument(document: CanvasDocument | null | undefined): CanvasDocument | null {
   return document && Object.keys(document.store ?? {}).some((key) => key.startsWith('shape:')) ? document : null;
 }
 
-const initialState: CanvasState = { document: null, ink: null, hasContent: false, editor: 'new', pendingLoad: null };
+const initialState: CanvasState = { ink: null, hasContent: false, pendingLoad: null };
 
 function canvasReducer(state: CanvasState, action: CanvasAction): CanvasState {
   switch (action.type) {
     case 'LOAD': {
       const load = { document: action.document ?? null, strokes: action.strokes ?? [], ink: action.ink ?? null };
       return {
-        document: load.document,
         ink: load.ink,
-        hasContent: load.strokes.some((stroke) => stroke.tool === 'pen') || Boolean(load.document) || Boolean(drawnInk(load.ink)),
-        // A board saved empty is still new.
-        editor: drawnInk(load.ink) ? 'ink' : drawnDocument(load.document) || load.strokes.length > 0 ? (action.inkFirst ? 'ink' : 'tldraw') : 'new',
+        hasContent: load.strokes.some((stroke) => stroke.tool === 'pen') || Boolean(drawnDocument(load.document)) || Boolean(drawnInk(load.ink)),
         pendingLoad: load,
       };
     }
-    case 'KEEP_TLDRAW':
-      return { ...state, editor: 'tldraw' };
     case 'LOADED':
-      return { ...state, document: action.document, ink: action.ink ?? null, hasContent: action.hasContent, pendingLoad: null };
-    case 'DOCUMENT_CHANGED':
-      // A new board belongs to tldraw once something is drawn on it.
-      return { ...state, document: action.document, ink: null, hasContent: action.hasContent, editor: state.editor === 'new' && action.hasContent ? 'tldraw' : state.editor };
+      return { ...state, ink: action.ink, hasContent: action.hasContent, pendingLoad: null };
     case 'INK_CHANGED':
-      return { ...state, ink: action.ink, document: null, hasContent: action.hasContent, editor: state.editor === 'new' && action.hasContent ? 'ink' : state.editor };
+      return { ...state, ink: action.ink, hasContent: action.hasContent };
     default:
       return state;
   }
@@ -84,12 +65,7 @@ const CanvasStateContext = createContext<CanvasState>(initialState);
 const CanvasDispatchContext = createContext<Dispatch<CanvasAction>>(() => {});
 
 export function CanvasProvider({ children }: { children: React.ReactNode }) {
-  const [state, apply] = useReducer(canvasReducer, initialState);
-  // With the ink board on, every board opens there (step 6); the ink board converts older drawings.
-  const [inkOn] = useInkBoardMode();
-  const inkFirst = useRef(inkOn);
-  useEffect(() => { inkFirst.current = inkOn; }, [inkOn]);
-  const dispatch = useCallback<Dispatch<CanvasAction>>((action) => apply(action.type === 'LOAD' ? { ...action, inkFirst: inkFirst.current } : action), []);
+  const [state, dispatch] = useReducer(canvasReducer, initialState);
   return (
     <CanvasStateContext.Provider value={state}>
       <CanvasDispatchContext.Provider value={dispatch}>

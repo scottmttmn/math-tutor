@@ -2,19 +2,18 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
-import { keepTldraw } from './tldraw-boards.mjs';
+import { drawStroke } from './ink-ui.mjs';
 
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
-  await page.addInitScript(keepTldraw);
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   const requests = [];
   await page.route('**/api/tutor', (route) => { requests.push(route.request()); return route.abort(); });
   await page.goto(`${origin}/board?new=problem`);
-  await page.locator('.tl-canvas').waitFor();
+  await page.getByTestId('ink-board').waitFor();
   const controls = page.getByRole('group', { name: 'Board controls' });
   const clear = controls.getByRole('button', { name: 'Clear board', exact: true });
   await clear.and(page.locator(':disabled')).waitFor();
@@ -22,31 +21,26 @@ try {
   await controls.getByRole('button', { name: 'Board menu' }).click();
   assert.ok(await page.getByRole('menuitem', { name: 'Save as PNG' }).isDisabled());
   assert.ok(await page.getByRole('menuitem', { name: 'Save as PDF' }).isDisabled());
-  assert.equal(await page.getByRole('menuitemcheckbox', { name: 'Hide drawing tools' }).getAttribute('aria-checked'), 'false');
+  assert.equal(await page.getByRole('menuitemcheckbox', { name: 'Hide tool rail' }).getAttribute('aria-checked'), 'false');
   await page.keyboard.press('Escape');
   await controls.getByRole('button', { name: 'Paper: Blank' }).click();
   assert.equal(await page.getByRole('menuitemradio', { name: 'Blank' }).getAttribute('aria-checked'), 'true');
   await page.getByRole('menuitemradio', { name: 'Lined' }).click();
   await page.locator('[data-paper="lined"]').waitFor();
-  const box = await page.locator('.tl-canvas').boundingBox();
-  await page.locator('[data-testid="tools.draw"]').click();
-  await page.mouse.move(box.x + 100, box.y + 150, { steps: 4 });
-  await page.mouse.down();
-  await page.mouse.move(box.x + 280, box.y + 210, { steps: 12 });
-  await page.mouse.up();
+  await drawStroke(page, 100, 150, 280, 210);
   await clear.and(page.locator(':enabled')).waitFor();
   await clear.click();
   await clear.and(page.locator(':disabled')).waitFor();
-  await page.locator('[data-testid="quick-actions.undo"]').click();
+  await controls.getByRole('button', { name: 'Undo', exact: true }).click();
   await clear.and(page.locator(':enabled')).waitFor();
   await controls.getByRole('button', { name: 'Board menu' }).click();
-  await page.getByRole('menuitemcheckbox', { name: 'Hide drawing tools' }).click();
-  await page.locator('.tlui-layout').waitFor({ state: 'detached' });
-  assert.equal(await page.getByRole('button', { name: /^Pen: / }).count(), 0, 'Hide drawing tools hides the pen chip too');
+  await page.getByRole('menuitemcheckbox', { name: 'Hide tool rail' }).click();
+  await controls.waitFor({ state: 'detached' });
   await page.getByRole('button', { name: 'Show tools', exact: true }).click();
-  await page.locator('.tlui-layout').waitFor();
-  await page.getByRole('button', { name: /^Pen: / }).waitFor();
-  await controls.getByRole('button', { name: 'Favorite', exact: true }).and(page.locator(':enabled')).waitFor();
+  await controls.getByRole('button', { name: 'Pen', exact: true }).waitFor();
+  // Favorite, Mark solved and Full screen are in the board's header, away from the writing hand.
+  await page.getByRole('button', { name: 'Favorite', exact: true }).and(page.locator(':enabled')).waitFor();
+  assert.equal(await controls.getByRole('button', { name: 'Favorite', exact: true }).count(), 0);
 
   const ask = controls.getByRole('button', { name: 'Ask tutor', exact: true });
   assert.equal(await ask.getAttribute('aria-pressed'), 'false');
@@ -73,9 +67,9 @@ try {
       w: button.getBoundingClientRect().width, h: button.getBoundingClientRect().height,
     })));
     assert.ok(buttons.every((button) => button.h >= 44 && button.w >= 44), JSON.stringify(buttons));
-    assert.equal(new Set(buttons.map((button) => button.y)).size, 1, `one toolbar row at ${width}px: ${JSON.stringify(buttons)}`);
+    assert.equal(new Set(buttons.map((button) => Math.round(button.x))).size, 1, `one rail column at ${width}px: ${JSON.stringify(buttons)}`);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-    for (const name of ['Full screen', 'Paper: Lined', 'Clear board', 'Board menu']) {
+    for (const name of ['Paper: Lined', 'Clear board', 'Board menu']) {
       assert.equal(buttons.find((button) => button.name === name)?.title, name);
     }
     if (process.env.BOARD_SCREENSHOT_DIR) {
@@ -84,7 +78,7 @@ try {
     }
   }
   assert.deepEqual(errors, []);
-  console.log('PASS toolbar swatches, disabled exports, undoable sweep, Show tools chip, and 44px controls on one row at 700px and desktop');
+  console.log('PASS paper, disabled exports, undoable sweep, the rail folding away, and 44px controls in one column at 700px and desktop');
 } finally {
   await browser.close();
 }

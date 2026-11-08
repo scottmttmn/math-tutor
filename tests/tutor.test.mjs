@@ -533,12 +533,8 @@ test('recovery preserves newer unsaved work and ignores corrupt or stale copies'
   delete global.localStorage;
 });
 
-test('pre-tldraw strokes convert to draw shapes with erased ink removed', () => {
-  const tldraw = {
-    createShapeId: (() => { let n = 0; return () => `shape:${++n}`; })(),
-    b64Vecs: { encodePoints2D: (points) => JSON.stringify(points) },
-  };
-  const { clipErasedInk, legacyStrokesToShapes } = load('src/lib/legacyStrokes.ts', { tldraw });
+test('pre-tldraw strokes lose the ink erased after them', () => {
+  const { clipErasedInk } = load('src/lib/legacyStrokes.ts');
   const line = { points: [0, 10, 20, 30, 40].map((x) => ({ x, y: 0 })), color: '#DC2626', thickness: 3, tool: 'pen' };
   const eraser = { points: [{ x: 20, y: 0 }], color: '#fff', thickness: 6, tool: 'eraser' };
   // An eraser drawn after the line splits it; one drawn before leaves it whole.
@@ -551,10 +547,6 @@ test('pre-tldraw strokes convert to draw shapes with erased ink removed', () => 
   assert.equal(clipErasedInk([line, swipe]).length, 2);
   const sparse = { ...line, points: [{ x: 0, y: 0 }, { x: 40, y: 0 }] };
   assert.equal(clipErasedInk([sparse, swipe]).length, 2);
-  const [shape] = legacyStrokesToShapes([{ ...line, points: [{ x: 100, y: 50 }, { x: 110, y: 60 }] }]);
-  assert.equal(shape.type, 'draw');
-  assert.deepEqual([shape.x, shape.y, shape.props.color, shape.props.size], [100, 50, 'red', 'm']);
-  assert.deepEqual(JSON.parse(shape.props.segments[0].path), [{ x: 0, y: 0 }, { x: 10, y: 10 }]);
 });
 
 test('a ChatGPT-plan request releases the server gate when it ends', async () => {

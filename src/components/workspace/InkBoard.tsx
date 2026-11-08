@@ -9,7 +9,7 @@ import { HIGHLIGHTER_WIDTH, HIGHLIGHT_ALPHA, INK_COLORS, PEN_WIDTHS, boardBounds
 import { addItems, commit, copyItems, moveItems, redo, removeItems, scaleItems, startHistory, undo, type BoardHistory } from '@/lib/inkBoard/edits';
 import { GridIndex, itemsInLasso, strokesHitByPath } from '@/lib/inkBoard/hitTest';
 import { scratchedOut } from '@/lib/inkBoard/scratchOut';
-import { useScratchOutOff } from '@/hooks/useInkBoardMode';
+import { useScratchOutOff } from '@/hooks/useInkBoardChoice';
 import { drawBoard, drawBoardStroke } from '@/lib/inkBoard/render';
 import { EXPORT_PADDING, MAX_EXPORT_SIDE, THUMBNAIL_SIDE, problemImage, renderItems, tutorImages } from '@/lib/inkBoard/capture';
 import { VIEW_MARGIN, clampCamera, fitCamera, fitZoom, toBoard, zoomAbout, type Camera, type ViewSize } from '@/lib/inkBoard/camera';
@@ -23,7 +23,7 @@ import { EraserIcon, FitWidthIcon, HighlightIcon, LassoIcon, PenIcon, RedoIcon, 
 import type { BoardImage, BoardInk, BoardStroke, InkColor, Paper } from '@/types';
 import type { DrawingCanvasHandle } from './DrawingCanvas';
 
-// The ink board: our own Notes-like canvas (replacing tldraw). One long page of fixed width; the
+// The ink board: our own Notes-like canvas (it replaced tldraw). One long page of fixed width; the
 // pen or mouse writes, two fingers scroll and pinch (one does nothing), the wheel scrolls (with Ctrl, zooms). The drawing
 // is plain 2D canvas: finished ink on one canvas, the stroke being written on another above it.
 // On a BOOX tablet Onyx's pen SDK draws the pen tool's strokes and hands them over (useBooxInk).
@@ -474,23 +474,26 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     const show = (next: BoardInk) => {
       // Loading resets the tools and undo, which the toolbar shows.
       open(next);
-      dispatch({ type: 'LOADED', document: null, ink: next, hasContent: next.strokes.length > 0 || next.images.length > 0 });
+      dispatch({ type: 'LOADED', ink: next, hasContent: next.strokes.length > 0 || next.images.length > 0 });
     };
     const older = !pendingLoad.ink && (pendingLoad.document || pendingLoad.strokes.length > 0);
     if (!older) {
       show(pendingLoad.ink ?? emptyBoard());
       return;
     }
-    // A tldraw (or pre-tldraw) board, converted as it opens; the converter brings tldraw's code, so it loads only now.
-    // Nothing is saved until the board changes. A drawing with text or shapes stays in tldraw.
+    // A board saved by tldraw (or the canvas before it), converted as it opens; the converter loads only
+    // now. Nothing is saved until the board changes. Text, shapes and the like have no ink and are left out.
     let current = true;
     void import('@/lib/inkBoard/fromTldraw').then(({ boardFromTldraw, boardFromLegacyStrokes }) => {
       if (!current) return;
       if (!pendingLoad.document) { show(boardFromLegacyStrokes(pendingLoad.strokes)); return; }
       const { board: converted, leftovers } = boardFromTldraw(pendingLoad.document);
-      if (leftovers.length > 0) dispatch({ type: 'KEEP_TLDRAW' });
-      else show(converted);
-    }).catch(() => { if (current) dispatch({ type: 'KEEP_TLDRAW' }); });
+      if (leftovers.length > 0) console.warn(`Left out ${leftovers.length} shape${leftovers.length === 1 ? '' : 's'} the ink board can't show`);
+      show(converted);
+    }).catch((error) => {
+      console.error('Could not convert the board', error);
+      if (current) show(emptyBoard());
+    });
     return () => { current = false; };
   }, [pendingLoad, open, dispatch]);
 
@@ -575,7 +578,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       const file = [...(event.clipboardData?.files ?? [])].find((item) => item.type.startsWith('image/'));
       if (!file) return;
       event.preventDefault();
-      void handleRef.current?.addPicture?.(imageFileToPng(file, MAX_BOARD_PICTURE)).catch((error) => console.error('Could not paste the picture', error));
+      void handleRef.current?.addPicture(imageFileToPng(file, MAX_BOARD_PICTURE)).catch((error) => console.error('Could not paste the picture', error));
     };
     window.addEventListener('paste', onPaste);
     return () => window.removeEventListener('paste', onPaste);
@@ -954,7 +957,6 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   };
 
   useImperativeHandle(handleRef, () => ({
-    fitWidth: () => fitTo(camera.current.y),
     captureForTutor: async () => {
       if (loadPending.current) throw new Error('The board is still loading. Please try again.');
       const load = loads.current;
@@ -1045,7 +1047,6 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       return true;
     },
     getRevision: () => inkRevision,
-    getDocument: () => null,
     getInk: () => (loadPending.current ? null : board()),
     // Clear leaves the problem picture, as it is locked.
     clear: () => { select(new Set()); apply(removeItems(board(), new Set([...board().strokes.map((stroke) => stroke.id), ...board().images.filter((image) => !image.problem).map((image) => image.id)]))); },
@@ -1061,7 +1062,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   };
 
   return (
-    <div ref={container} className="absolute inset-0 overflow-hidden" data-ink-board="true" data-strokes="0" data-images="0" data-selected="0">
+    <div ref={container} className="absolute inset-0 overflow-hidden" data-ink-board="true" data-paper={paper} data-strokes="0" data-images="0" data-selected="0">
       <canvas ref={inkCanvas} className="absolute inset-0" aria-hidden="true" />
       <div ref={selectionArea} data-pen-skip className="absolute pointer-events-none" aria-hidden="true" />
       <div ref={handleArea} data-pen-skip data-testid="resize-handle" className="absolute pointer-events-none" aria-hidden="true" />

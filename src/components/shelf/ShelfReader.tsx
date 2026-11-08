@@ -31,7 +31,6 @@ import BoardFrame from '@/components/layout/BoardFrame';
 import { saveBoardAs } from '@/lib/exportBoard';
 import { addPictureFromFile, pasteCopiedPicture } from '@/lib/boardPicture';
 import { copyPicture } from '@/lib/copiedPicture';
-import { useOnInkBoard } from '@/hooks/useInkBoardMode';
 import PdfPage from './PdfPage';
 import BookList from './BookList';
 import BookSearch from './BookSearch';
@@ -143,7 +142,6 @@ export default function ShelfReader() {
   // Counts openings, so opening an exercise (even the open one, from its mark) shows its board.
   const [openings, setOpenings] = useState(0);
   const { pendingLoad, hasContent } = useCanvasState();
-  const onInkBoard = useOnInkBoard();
   useEffect(() => {
     if (!placeOn || placeOn.board !== currentSessionId || pendingLoad) return;
     setPlaceOn(null);
@@ -552,7 +550,7 @@ export default function ShelfReader() {
       setCopyState('failed');
     }
   };
-  const canPasteHere = Boolean(exercise) && onInkBoard;
+  const canPasteHere = Boolean(exercise);
   const copyForm = (
     <div onKeyDown={(event) => { if (event.key === 'Escape') setCopyDraft(null); }}
       className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-white border border-gray-900 shadow-md w-max max-w-[22rem]">
@@ -899,7 +897,6 @@ export default function ShelfReader() {
             <BottomToolbar
               onAskForHelp={(question) => void askForHelp(question)}
               onClear={() => canvasHandle.current?.clear()}
-              onFitWidth={() => canvasHandle.current?.fitWidth()}
               isStreaming={isStreaming}
               isSolved={isSolved}
               onToggleSolved={() => sessionDispatch({ type: 'TOGGLE_SOLVED' })}

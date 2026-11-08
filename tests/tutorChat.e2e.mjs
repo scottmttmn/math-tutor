@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
-import { keepTldraw } from './tldraw-boards.mjs';
 
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const reply = String.raw`**Modulus:** \(a_1 + b_2\), $x^2$, \[\frac{1}{2}\], $$\sqrt{z}$$`;
@@ -19,14 +18,13 @@ const frames = replyFrames(8000);
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
-  await page.addInitScript(keepTldraw);
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   const cachedCounts = [8000, 0, undefined];
   let replyIndex = 0;
   await page.route('**/api/tutor', (route) => route.fulfill({ contentType: 'text/event-stream', body: replyFrames(cachedCounts[replyIndex++]) }));
   await page.goto(`${origin}/board?new=note`);
-  await page.locator('.tl-canvas').waitFor();
+  await page.getByTestId('ink-board').waitFor();
   await chooseTutor(page);
   const chat = () => page.locator('.tutor-content').last();
   await chat().locator('.katex').nth(3).waitFor();
@@ -81,9 +79,8 @@ try {
   assert.equal(await page.getByText(/Input includes .* cached tokens/).count(), 2);
   console.log('PASS zero and missing cached-input counts');
 
-  // A board written while zoomed out spans a large page area; its snapshot must stay small.
+  // A very wide board (here old strokes 6000 units apart) gets a snapshot no larger than 2048px.
   const wide = await browser.newPage({ viewport: { width: 1440, height: 960 } });
-  await wide.addInitScript(keepTldraw);
   wide.on('pageerror', (error) => errors.push(error.message));
   const wideRequests = [];
   await wide.route('**/api/tutor', (route) => {
@@ -91,34 +88,31 @@ try {
     route.fulfill({ contentType: 'text/event-stream', body: frames });
   });
   await wide.goto(`${origin}/board`);
-  const canvas = wide.locator('.tl-canvas');
-  await canvas.waitFor();
-  const canvasBox = await canvas.boundingBox();
-  await wide.mouse.move(canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height / 2);
-  for (let i = 0; i < 8; i += 1) {
-    await wide.keyboard.down('Control');
-    await wide.mouse.wheel(0, 100);
-    await wide.keyboard.up('Control');
-    await wide.waitForTimeout(150);
-  }
-  await wide.keyboard.press('d');
-  for (const [x, y] of [[canvasBox.x + 60, canvasBox.y + 60], [canvasBox.x + canvasBox.width - 120, canvasBox.y + canvasBox.height - 120]]) {
-    await wide.mouse.move(x, y);
-    await wide.mouse.down();
-    for (let i = 0; i < 10; i += 1) await wide.mouse.move(x + i * 5, y + Math.sin(i) * 10);
-    await wide.mouse.up();
-  }
+  await wide.getByTestId('ink-board').waitFor();
+  await wide.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => { const open = indexedDB.open('math-tutor'); open.onsuccess = () => resolve(open.result); open.onerror = () => reject(open.error); });
+    const canvasStrokes = [0, 6000].map((x) => ({ points: Array.from({ length: 10 }, (_, i) => ({ x: x + 60 + i * 5, y: 60 + Math.sin(i) * 10 })), color: '#000000', thickness: 2, tool: 'pen' }));
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction('sessions', 'readwrite');
+      transaction.objectStore('sessions').put({ id: 'wide-work', title: 'Wide work', problemStatement: 'Wide', problemImage: null, canvasStrokes, canvasImageBlob: null, chatHistory: [], createdAt: Date.now(), updatedAt: Date.now() });
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+    });
+    db.close();
+    localStorage.setItem('math-tutor:currentSession', 'wide-work');
+  });
+  await wide.reload();
+  await wide.waitForFunction(() => document.querySelector('[data-ink-board]')?.getAttribute('data-strokes') === '2');
   await chooseTutor(wide);
   await wide.locator('.tutor-content').last().locator('.katex').first().waitFor();
   const png = Buffer.from(wideRequests.at(-1).canvasImage, 'base64');
   const [width, height] = [png.readUInt32BE(16), png.readUInt32BE(20)];
   assert.ok(Math.max(width, height) <= 2048 && width > 1000, `snapshot ${width}x${height}`);
-  console.log(`PASS zoomed-out board snapshot is ${width}x${height}`);
+  console.log(`PASS a very wide board's snapshot is ${width}x${height}`);
 
   // Widely separated lines used to become a ~29px-wide strip, even with no problem picture.
   // Load legacy strokes to give the regression a deterministic 6000-unit board on every viewport.
   const tall = await browser.newPage({ viewport: { width: 1440, height: 960 } });
-  await tall.addInitScript(keepTldraw);
   tall.on('pageerror', (error) => errors.push(error.message));
   const tallRequests = [];
   await tall.route('**/api/tutor', (route) => {
@@ -126,7 +120,7 @@ try {
     return route.fulfill({ contentType: 'text/event-stream', body: frames });
   });
   await tall.goto(`${origin}/board`);
-  await tall.locator('.tl-canvas').waitFor();
+  await tall.getByTestId('ink-board').waitFor();
   await tall.evaluate(async () => {
     const db = await new Promise((resolve, reject) => {
       const request = indexedDB.open('math-tutor');
@@ -155,9 +149,9 @@ try {
     localStorage.setItem('math-tutor:currentSession', 'tall-work');
   });
   await tall.reload();
-  await tall.locator('.tl-canvas').waitFor();
+  await tall.getByTestId('ink-board').waitFor();
   await tall.getByPlaceholder("Type the math problem you're working on...").fill('Check these lines');
-  await tall.waitForFunction(() => document.querySelectorAll('.tl-shape[data-shape-type="draw"]').length === 6);
+  await tall.waitForFunction(() => document.querySelector('[data-ink-board]')?.getAttribute('data-strokes') === '6');
   await chooseTutor(tall);
   await tall.locator('.tutor-content .katex').first().waitFor();
   const first = tallRequests.at(-1);
@@ -193,8 +187,10 @@ try {
   // A failed export must be visible, preserve a typed question, and never reach the provider.
   await tall.evaluate(() => {
     window.originalToBlob = HTMLCanvasElement.prototype.toBlob;
+    window.originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
     window.captureFailures = 0;
     HTMLCanvasElement.prototype.toBlob = () => { window.captureFailures += 1; throw new Error('Simulated capture failure'); };
+    HTMLCanvasElement.prototype.toDataURL = () => { window.captureFailures += 1; throw new Error('Simulated capture failure'); };
   });
   const beforeFailure = tallRequests.length;
   await tall.getByRole('button', { name: 'Ask tutor', exact: true }).and(tall.locator(':enabled')).waitFor({ timeout: 10_000 });
@@ -208,7 +204,7 @@ try {
   await tall.locator('form').getByRole('alert').filter({ hasText: 'could not be captured' }).waitFor();
   assert.equal(await follow.inputValue(), 'Keep this question if capture fails.');
   assert.equal(tallRequests.length, beforeFailure);
-  await tall.evaluate(() => { HTMLCanvasElement.prototype.toBlob = window.originalToBlob; });
+  await tall.evaluate(() => { HTMLCanvasElement.prototype.toBlob = window.originalToBlob; HTMLCanvasElement.prototype.toDataURL = window.originalToDataURL; });
   await tall.getByRole('button', { name: 'Send', exact: true }).and(tall.locator(':enabled')).waitFor();
   await follow.press('Enter');
   await tall.locator('.tutor-content').filter({ has: tall.locator('.katex') }).nth(2).waitFor();
@@ -218,8 +214,8 @@ try {
   // A sparse diagonal spans 16 grid cells by bounds, but only its actual ink needs close-ups.
   await tall.getByRole('link', { name: 'Home', exact: true }).click();
   await tall.getByRole('button', { name: 'Open Long diagonal', exact: true }).click();
-  await tall.locator('.tl-canvas').waitFor();
-  await tall.waitForFunction(() => document.querySelector('textarea')?.value === 'Check the long diagonal' && document.querySelectorAll('.tl-shape[data-shape-type="draw"]').length === 1);
+  await tall.getByTestId('ink-board').waitFor();
+  await tall.waitForFunction(() => document.querySelector('textarea')?.value === 'Check the long diagonal' && document.querySelector('[data-ink-board]')?.getAttribute('data-strokes') === '1');
   await tall.getByRole('button', { name: 'Ask tutor', exact: true }).and(tall.locator(':enabled')).waitFor({ timeout: 10_000 });
   await chooseTutor(tall);
   await tall.locator('.tutor-content .katex').first().waitFor();

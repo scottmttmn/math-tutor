@@ -121,7 +121,7 @@ function AppContent() {
 
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
-      // Undo, redo and delete are tldraw's own shortcuts.
+      // Undo, redo and delete are the ink board's own shortcuts.
       if (mod && key === 's') {
         e.preventDefault();
         void saveNowRef.current();
@@ -184,7 +184,6 @@ function AppContent() {
             onAskForHelp={(question) => void handleAskForHelp(question)}
             checkInLabel={checkIn ? (checkInStarted(chatHistory) ? 'Hand in answer' : 'Start check-in') : undefined}
             onClear={() => canvasHandle.current?.clear()}
-            onFitWidth={() => canvasHandle.current?.fitWidth()}
             isStreaming={isStreaming}
             isSolved={isSolved}
             onToggleSolved={() => sessionDispatch({ type: 'TOGGLE_SOLVED' })}

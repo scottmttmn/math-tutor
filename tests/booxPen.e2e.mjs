@@ -1,206 +1,18 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { fakeBooxBridge } from './boox-bridge.mjs';
-import { keepTldraw } from './tldraw-boards.mjs';
 
-// The BOOX pen on a board, with the Android app's native bridge stood in for: the page believes
-// it runs in the app on a BOOX tablet, records each BooxPen call, and the test hands it strokes
-// as the SDK would. What the SDK itself does on the e-ink screen can only be judged on the device.
+// The pen test's BOOX pen SDK toggle, with the Android app's native bridge stood in for (the
+// board's own BOOX pen is in tests/booxInk.e2e.mjs). What the SDK itself does on the e-ink screen
+// can only be judged on the device.
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 
-/** Whether a pen pointerdown on the canvas is stopped before tldraw sees it. */
-function penEventBlocked(target) {
-  return target.evaluate(() => {
-    const canvas = document.querySelector('.tl-canvas');
-    const { left, top } = canvas.getBoundingClientRect();
-    const event = new PointerEvent('pointerdown', { pointerType: 'pen', bubbles: true, cancelable: true, clientX: left + 50, clientY: top + 50 });
-    canvas.dispatchEvent(event);
-    canvas.dispatchEvent(new PointerEvent('pointerup', { pointerType: 'pen', bubbles: true, cancelable: true, clientX: left + 50, clientY: top + 50 }));
-    return event.defaultPrevented;
-  });
-}
-
 try {
-  const page = await browser.newPage({ viewport: { width: 1024, height: 768 } });
-  await page.addInitScript(keepTldraw);
   const errors = [];
+  const page = await browser.newPage({ viewport: { width: 1024, height: 768 } });
   page.on('pageerror', (error) => errors.push(error.message));
   await page.addInitScript(fakeBooxBridge);
-  await page.goto(`${origin}/board?new=problem`);
-  const canvas = page.locator('.tl-canvas');
-  await canvas.waitFor();
-  const controls = page.getByRole('group', { name: 'Board controls' });
-  const calls = (method) => page.evaluate((name) => window.__boox.calls.filter((call) => call.method === name), method);
-  const drawShapes = () => page.locator('[data-shape-type="draw"]').count();
-
-  // E-ink interaction changes apply even before the optional native pen experiment is chosen.
-  await page.waitForFunction(() => JSON.parse(localStorage.getItem('TLDRAW_USER_DATA_v3'))?.user.animationSpeed === 0);
-
-  // Off until chosen, and offered only because the page thinks it is on a BOOX.
-  await controls.getByRole('button', { name: 'Board menu' }).click();
-  const item = page.getByRole('menuitemcheckbox', { name: 'BOOX pen (experiment)', exact: true });
-  assert.equal(await item.getAttribute('aria-checked'), 'false');
-  await item.click();
-  await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'start'));
-  const [{ options: start }] = await calls('start');
-  const box = await canvas.boundingBox();
-  assert.ok(Math.abs(start.region.w - box.width) < 2 && Math.abs(start.region.h - box.height) < 2, 'the pen draws over the canvas');
-  assert.ok(start.exclude.length > 0, "tldraw's controls stay tappable");
-
-  // The layout columns stretch down the board, but the blank margins under their controls
-  // remain writable. Check the portrait tablet too, where this previously hid whole side strips.
-  const checkPenBounds = async () => {
-    const result = await page.evaluate(() => {
-      const area = window.__boox.calls.filter((call) => ['start', 'setRegion'].includes(call.method)).at(-1).options;
-      const contains = (rect, point) => point.x >= rect.x && point.x < rect.x + rect.w && point.y >= rect.y && point.y < rect.y + rect.h;
-      const canvas = document.querySelector('.tl-canvas').getBoundingClientRect();
-      const margins = [canvas.left + 12, canvas.right - 12].map((x) => ({ x, y: canvas.top + canvas.height / 2 }));
-      const controls = [...document.querySelectorAll('[data-testid="tools.draw"], button[aria-label^="Pen:"]')];
-      return {
-        marginsAreCanvas: margins.every((point) => document.elementFromPoint(point.x, point.y)?.closest('.tl-canvas')),
-        marginsExcluded: margins.some((point) => area.exclude.some((rect) => contains(rect, point))),
-        controlCount: controls.length,
-        controlsExcluded: controls.every((control) => {
-          const rect = control.getBoundingClientRect();
-          const center = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-          return area.exclude.some((box) => contains(box, center));
-        }),
-      };
-    });
-    assert.equal(result.marginsAreCanvas, true, 'the margin samples are blank drawing space');
-    assert.equal(result.marginsExcluded, false, 'blank side margins stay writable');
-    assert.equal(result.controlCount, 2, 'both the tool and pen-style controls are present');
-    assert.equal(result.controlsExcluded, true, 'the actual toolbars still take taps');
-  };
-  const resizeBoard = async (viewport) => {
-    const previous = (await calls('setRegion')).length;
-    await page.setViewportSize(viewport);
-    await page.waitForFunction((count) => {
-      const changes = window.__boox.calls.filter((call) => call.method === 'setRegion');
-      const region = changes.at(-1)?.options.region;
-      const rect = document.querySelector('.tl-canvas').getBoundingClientRect();
-      return changes.length > count && region
-        && Math.abs(region.w - rect.width) < 1 && Math.abs(region.h - rect.height) < 1
-        && Math.abs(region.x - rect.left) < 1 && Math.abs(region.y - rect.top) < 1;
-    }, previous);
-  };
-  // A stroke from the SDK becomes ink where it was drawn, and the screen is let through.
-  const strokeX = box.x + box.width * 0.25, strokeY = box.y + box.height * 0.35;
-  const strokeWidth = box.width * 0.6, strokeHeight = box.height * 0.2;
-  const flat = [];
-  for (let i = 0; i <= 20; i += 1) flat.push(strokeX + strokeWidth * i / 20, strokeY + strokeHeight * i / 20, 0.6, i * 8);
-  await page.evaluate((points) => window.__boox.emit('stroke', points), flat);
-  await page.locator('[data-shape-type="draw"]').first().waitFor();
-  assert.equal(await drawShapes(), 1);
-  const shape = await page.locator('[data-shape-type="draw"]').first().boundingBox();
-  assert.ok(shape.x < strokeX + 10 && shape.x + shape.width > strokeX + strokeWidth - 10, 'the ink sits where the pen wrote');
-  const renderedWidth = await page.locator('[data-shape-type="draw"] path[stroke-width]').first().evaluate((path) => Number(path.getAttribute('stroke-width')) * path.getScreenCTM().a);
-  assert.ok(Math.abs(start.width - renderedWidth) < 0.01, 'native preview and finalized ink have the same width');
-  await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'refresh'));
-  const startsBeforeSize = (await calls('start')).length;
-  await page.getByRole('button', { name: 'Pen: black, S', exact: true }).click();
-  await page.getByTestId('style.size.m').click();
-  await page.waitForFunction((width) => Math.abs(window.__boox.calls.filter((call) => call.method === 'setWidth').at(-1)?.options.width - width * 1.5) < 0.01, start.width);
-  await page.getByTestId('style.size.s').click();
-  await page.waitForFunction((width) => Math.abs(window.__boox.calls.filter((call) => call.method === 'setWidth').at(-1)?.options.width - width) < 0.01, start.width);
-  await page.keyboard.press('Escape');
-  assert.equal((await calls('start')).length, startsBeforeSize, 'changing pen size updates the preview without restarting input');
-
-  // Autosave keeps the editable document and only a bounded PNG for the library card.
-  let preview = null;
-  for (let attempt = 0; attempt < 100; attempt++) {
-    preview = await page.evaluate(async () => {
-      const id = localStorage.getItem('math-tutor:currentSession');
-      if (!id) return false;
-      const db = await new Promise((resolve) => { const request = indexedDB.open('math-tutor'); request.onsuccess = () => resolve(request.result); });
-      const session = await new Promise((resolve) => { const request = db.transaction('sessions').objectStore('sessions').get(id); request.onsuccess = () => resolve(request.result); });
-      db.close();
-      if (!session?.canvasImageBlob) return false;
-      const bitmap = await createImageBitmap(session.canvasImageBlob);
-      const size = { width: bitmap.width, height: bitmap.height, shapes: Object.values(session.canvasDocument.store).filter((record) => record.typeName === 'shape' && record.type === 'draw').length };
-      bitmap.close();
-      return size;
-    });
-    if (preview) break;
-    await page.waitForTimeout(100);
-  }
-  assert.ok(preview && preview.width > 0 && preview.height > 0 && Math.max(preview.width, preview.height) <= 512, `the saved card preview is at most 512 pixels: ${JSON.stringify(preview)}`);
-  assert.equal(preview.shapes, 1, 'the editable stroke is saved separately from the preview');
-
-  // An open menu over the board takes the pen back; closing it gives the pen to the SDK again.
-  await controls.getByRole('button', { name: 'Board menu' }).click();
-  await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'pause'));
-  await page.keyboard.press('Escape');
-  await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'resume'));
-
-  // While the SDK has the pen, pen events the WebView still hears don't reach tldraw.
-  const interactionsBeforeInk = (await calls('interaction')).length;
-  assert.equal(await penEventBlocked(page), true);
-  assert.equal((await calls('interaction')).length, interactionsBeforeInk, 'native handwriting does not enter page interaction mode');
-
-  // The eraser end erases the stroke it crosses, even between two far-apart samples; undo brings it back.
-  await page.evaluate(([x, y]) => window.__boox.emit('erase', [x, y - 80, 0.5, 0, x, y + 80, 0.5, 8]), [strokeX + strokeWidth / 2, strokeY + strokeHeight / 2]);
-  await page.waitForFunction(() => document.querySelectorAll('[data-shape-type="draw"]').length === 0);
-  await page.keyboard.press('Control+z');
-  await page.locator('[data-shape-type="draw"]').first().waitFor();
-
-  // Keep layout changes after the stroke checks: tldraw adjusts its viewport while resizing.
-  await checkPenBounds();
-  await resizeBoard({ width: 992, height: 1320 });
-  await checkPenBounds();
-  await resizeBoard({ width: 1024, height: 768 });
-
-  // Another tool hands the pen back to tldraw.
-  const editingStart = (await calls('interaction')).length;
-  await page.getByTestId('tools.select').click();
-  await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'stop'));
-
-  // Editing tools keep fast updates through pauses, avoiding a cleanup flash after every contact.
-  await page.getByTestId('tools.hand').click();
-  const liveBox = await canvas.boundingBox();
-  await page.mouse.move(liveBox.x + liveBox.width / 2, liveBox.y + liveBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(liveBox.x + liveBox.width / 2 + 50, liveBox.y + liveBox.height / 2 + 30, { steps: 8 });
-  await page.waitForTimeout(250);
-  assert.deepEqual((await calls('interaction')).slice(editingStart).map((call) => call.options.active), [true], 'fast mode stays active while editing');
-  await page.mouse.up();
-  await page.waitForTimeout(250);
-  assert.deepEqual((await calls('interaction')).slice(editingStart).map((call) => call.options.active), [true], 'lifting and pausing do not trigger a cleanup repaint');
-
-  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
-  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === false);
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === true);
-
-  await page.locator('.tl-container').evaluate((root) => { root.style.display = 'none'; });
-  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === false);
-  await page.locator('.tl-container').evaluate((root) => { root.style.display = ''; });
-  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === true);
-
-  await page.getByTestId('tools.draw').click();
-  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === false);
-  const touch = await page.context().newCDPSession(page);
-  await touch.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
-  const p1 = { id: 1, x: liveBox.x + liveBox.width * 0.35, y: liveBox.y + liveBox.height * 0.4 };
-  const p2 = { id: 2, x: liveBox.x + liveBox.width * 0.55, y: liveBox.y + liveBox.height * 0.65 };
-  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [p1] });
-  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [p1, p2] });
-  await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...p1, x: p1.x - 20 }, { ...p2, x: p2.x + 20 }] });
-  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [p1] });
-  await page.waitForTimeout(250);
-  assert.equal((await calls('interaction')).at(-1).options.active, true, 'a remaining finger keeps fast mode active');
-  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === false);
-  await touch.detach();
-  const currentWidth = await page.locator('[data-shape-type="draw"] path[stroke-width]').first().evaluate((path) => Number(path.getAttribute('stroke-width')) * path.getScreenCTM().a);
-  await page.waitForFunction((width) => Math.abs(window.__boox.calls.filter((call) => call.method === 'setWidth').at(-1)?.options.width - width) < 0.01, currentWidth);
-
-  await page.mouse.wheel(0, 100);
-  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === true);
-  await page.waitForFunction(() => window.__boox.calls.filter((call) => call.method === 'interaction').at(-1)?.options.active === false);
-
-  // The pen test can hand the pen to the SDK too, to compare it with the browser's own drawing.
   await page.goto(`${origin}/pen-test`);
   await page.getByRole('button', { name: 'BOOX pen SDK' }).click();
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'start'));
@@ -213,38 +25,15 @@ try {
   await page.setViewportSize({ width: 768, height: 1024 });
   await page.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'setRegion' && call.options.region.w < 800));
 
-  // If the SDK can't start on a tablet, the pen stays tldraw's instead of drawing nothing.
-  const failing = await browser.newPage({ viewport: { width: 1024, height: 768 } });
-  await failing.addInitScript(keepTldraw);
-  // tldraw gets the made-up pen event here and can't capture its pointer, which is fine.
-  failing.on('pageerror', (error) => { if (!error.message.includes('setPointerCapture')) errors.push(error.message); });
-  await failing.addInitScript(fakeBooxBridge);
-  await failing.addInitScript(() => { window.__failStart = true; });
-  await failing.goto(`${origin}/board?new=problem`);
-  await failing.locator('.tl-canvas').waitFor();
-  await failing.getByRole('group', { name: 'Board controls' }).getByRole('button', { name: 'Board menu' }).click();
-  await failing.getByRole('menuitemcheckbox', { name: 'BOOX pen (experiment)', exact: true }).click();
-  await failing.waitForFunction(() => window.__boox.calls.some((call) => call.method === 'start'));
-  await failing.waitForTimeout(200);
-  assert.equal(await penEventBlocked(failing), false);
-  assert.equal((await failing.evaluate(() => window.__boox.calls.filter((call) => call.method === 'start').length)), 1, 'a failed start is not retried on every change');
-
   // Anywhere else (a browser, or the app on another tablet) it isn't offered.
   const plain = await browser.newPage({ viewport: { width: 1024, height: 768 } });
-  await plain.addInitScript(keepTldraw);
   plain.on('pageerror', (error) => errors.push(error.message));
-  await plain.goto(`${origin}/board?new=problem`);
-  await plain.locator('.tl-canvas').waitFor();
-  assert.notEqual(await plain.evaluate(() => JSON.parse(localStorage.getItem('TLDRAW_USER_DATA_v3'))?.user.animationSpeed), 0, 'other devices keep their animation preference');
-  await plain.getByRole('group', { name: 'Board controls' }).getByRole('button', { name: 'Board menu' }).click();
-  await plain.getByRole('menuitemcheckbox', { name: 'Notebook mode (experiment)', exact: true }).waitFor();
-  assert.equal(await plain.getByRole('menuitemcheckbox', { name: 'BOOX pen (experiment)' }).count(), 0);
   await plain.goto(`${origin}/pen-test`);
   await plain.getByRole('button', { name: 'Clear' }).waitFor();
   assert.equal(await plain.getByRole('button', { name: 'BOOX pen SDK' }).count(), 0);
 
   assert.deepEqual(errors, []);
-  console.log('PASS BOOX pen: offered only on BOOX, strokes become ink, erases, pauses under menus, stops for other tools, pen test');
+  console.log('PASS the pen test hands the pen to the BOOX SDK on a BOOX, and offers it nowhere else');
 } finally {
   await browser.close();
 }

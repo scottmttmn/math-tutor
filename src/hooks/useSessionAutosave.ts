@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { drawnDocument, drawnInk, useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
+import { drawnInk, useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
 import { useSessionDispatch, useSessionState } from '@/context/SessionContext';
 import { hasRecoveryCopy, loadRecoveredSession, saveRecoverableSession, settleInterruptedReplies, stageSession } from '@/lib/sessionRecovery';
 import { boardToOpen, setBoardToOpen } from '@/lib/currentBoard';
@@ -31,12 +31,12 @@ const rememberCurrent = setBoardToOpen;
 export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle | null>, { reopenLast = true }: { reopenLast?: boolean } = {}) {
   const state = useSessionState();
   const sessionDispatch = useSessionDispatch();
-  const { document: canvasDocument, ink: canvasInk, pendingLoad, hasContent } = useCanvasState();
+  const { ink: canvasInk, pendingLoad, hasContent } = useCanvasState();
   const canvasDispatch = useCanvasDispatch();
   const [status, setStatus] = useState<AutosaveStatus>('idle');
 
-  const latest = useRef({ ...state, canvasDocument, canvasInk, pendingLoad, hasContent });
-  useLayoutEffect(() => { latest.current = { ...state, canvasDocument, canvasInk, pendingLoad, hasContent }; });
+  const latest = useRef({ ...state, canvasInk, pendingLoad, hasContent });
+  useLayoutEffect(() => { latest.current = { ...state, canvasInk, pendingLoad, hasContent }; });
 
   // Id for a new session until its first save; created lazily so render stays pure.
   const draftId = useRef<string | null>(null);
@@ -57,13 +57,12 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
   const snapshot = useCallback((): Session | null => {
     if (loading.current) return null;
     const s = latest.current;
-    // Read the editor directly: the context mirror lags a just-finished stroke. A board is drawn
-    // in tldraw or on the ink board, never both, and an empty board is saved as neither so it
-    // stays new: it belongs to whichever editor it is first drawn in.
+    // Read the board directly: the context mirror lags a just-finished stroke. A board saved before
+    // the ink board is converted as it opens (nothing is saved meanwhile, see `loading`), so it is
+    // saved as ink, and the old drawing goes, once it changes.
     const handle = canvasHandle.current;
     const ink = drawnInk(handle ? handle.getInk() : s.canvasInk);
-    const document = ink ? null : drawnDocument(handle?.getDocument() ?? s.canvasDocument);
-    const hasDrawing = s.hasContent || Boolean(ink && hasWork(ink)) || Object.keys(document?.store ?? {}).some((key) => key.startsWith('shape:'));
+    const hasDrawing = s.hasContent || Boolean(ink && hasWork(ink));
     // A paper chosen on a new board counts as a change, so the choice isn't lost.
     if (!s.currentSessionId && !s.problemStatement.trim() && !s.problemImage && s.chatHistory.length === 0 && !hasDrawing && !s.paper) return null;
     if (!s.currentSessionId && !draftId.current) draftId.current = uuidv4();
@@ -73,9 +72,8 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
       title: s.checkIn ? checkInTitle(s.checkIn) : s.tutorProblem?.title ? s.tutorProblem.title : s.problems ? problemsTitle(s.problems) : s.problemStatement.slice(0, 50) || 'Untitled',
       problemStatement: s.problemStatement,
       problemImage: s.problemImage,
-      // Strokes from a pre-tldraw save stay until the editor has converted them.
-      canvasStrokes: document || ink ? [] : s.pendingLoad?.strokes ?? [],
-      canvasDocument: document,
+      canvasStrokes: [],
+      canvasDocument: null,
       ...(ink ? { ink } : {}),
       canvasImageBlob: thumbnail.current,
       chatHistory: s.chatHistory,
@@ -207,7 +205,7 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
   useEffect(() => {
     const timer = setTimeout(() => { void persist(); }, SAVE_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [state.problemStatement, state.problemImage, state.chatHistory, state.isSolved, state.sessionType, state.paper, state.problems, state.currentProblem, state.tutorProblem, canvasDocument, canvasInk, persist]);
+  }, [state.problemStatement, state.problemImage, state.chatHistory, state.isSolved, state.sessionType, state.paper, state.problems, state.currentProblem, state.tutorProblem, canvasInk, persist]);
 
   // A reload or closed tab can't wait for IndexedDB; keep a synchronous copy for the next load.
   const flush = useCallback(() => {

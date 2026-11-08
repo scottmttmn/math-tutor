@@ -1,9 +1,14 @@
-import type { TLStoreSnapshot } from 'tldraw';
 
 // === Canvas Types ===
 
-/** A tldraw document (shapes, pages, schema) as saved with a session. */
-export type CanvasDocument = TLStoreSnapshot;
+/**
+ * A tldraw document (shapes, pages, schema) as saved with a session before the ink board replaced
+ * tldraw. Only read, to convert it (src/lib/inkBoard/fromTldraw.ts).
+ */
+export interface CanvasDocument {
+  store: Record<string, unknown>;
+  schema?: unknown;
+}
 
 /** A point of a legacy stroke, from before the canvas moved to tldraw. */
 export interface Point {
@@ -112,7 +117,7 @@ export interface Session {
   /** Legacy drawing; new saves leave it empty and use canvasDocument. */
   canvasStrokes: Stroke[];
   canvasDocument?: CanvasDocument | null;
-  /** The drawing of a board on the ink board (replacing tldraw); a session has this or `canvasDocument`. */
+  /** The board's drawing. A session saved before the ink board has `canvasDocument` (or `canvasStrokes`) instead. */
   ink?: BoardInk | null;
   canvasImageBlob: Blob | null;
   chatHistory: ChatMessage[];

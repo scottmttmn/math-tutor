@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { makePdf } from './makePdf.mjs';
-import { keepTldraw } from './tldraw-boards.mjs';
 
 // Reading a Shelf PDF: turning pages, printed page numbers, contents, trimmed margins, full screen,
 // ink, Your list and note pages.
@@ -22,7 +21,6 @@ await writeFile(pdfPath, makePdf([body('Preface'), body('Contents'), body('1 Num
 
 const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-await context.addInitScript(keepTldraw);
 const page = await context.newPage();
 page.on('pageerror', (error) => browserErrors.push(error.message));
 const at = (text) => page.getByText(text, { exact: true }).waitFor();
@@ -295,7 +293,7 @@ try {
   assert.equal(await page.getByLabel('Name').inputValue(), 'Note 1');
   await page.getByRole('button', { name: 'Save and open' }).click();
   await page.getByRole('heading', { name: 'Note 1' }).waitFor();
-  await page.locator('.tl-image').waitFor();
+  await page.locator('[data-ink-board][data-images="1"]').waitFor();
   await page.locator('[data-paper="lined"]').waitFor();
   assert.equal(await page.getByText('Tutor reads').count(), 0);
   await openTutor(page);
@@ -386,14 +384,12 @@ try {
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   await page.getByText(/^Copied\./).waitFor({ state: 'detached' });
   const readerUrl = page.url();
-  await page.evaluate(() => localStorage.setItem('math-tutor:inkBoard', '1'));
   await page.goto(`${origin}/board?new=problem`);
   await page.locator('[data-ink-board]').waitFor();
   const paste = page.getByTestId('paste-picture');
   await paste.click();
   await page.locator('[data-ink-board][data-images="1"][data-selected="1"]').waitFor();
   await paste.waitFor({ state: 'detached' });
-  await page.evaluate(() => localStorage.removeItem('math-tutor:inkBoard'));
   await page.goto(readerUrl);
   await page.getByTestId('page-overlay').waitFor();
   console.log('PASS Select to copy, then Paste on a board puts the box on it, once');
@@ -405,36 +401,28 @@ try {
   await markBox([0.1, 0.1], [0.7, 0.25]);
   await page.getByRole('radio', { name: 'Exercise' }).click();
   await page.getByRole('button', { name: 'Save and open' }).click();
-  await page.locator('.tl-image').waitFor();
+  const board = page.getByTestId('ink-board');
+  await page.locator('[data-ink-board][data-images="1"]').waitFor();
   await page.getByTestId('page-overlay').waitFor({ state: 'hidden' });
-  const boardBox = await page.locator('.tl-canvas').boundingBox();
+  const boardBox = await board.boundingBox();
   assert.ok(boardBox.height > 600, `the board takes the screen (${boardBox.height}px tall)`);
-  await page.getByRole('button', { name: 'Board menu', exact: true }).click();
-  await page.getByRole('menuitemcheckbox', { name: 'Notebook mode (experiment)', exact: true }).click();
-  await page.getByTestId('notebook-paper').waitFor();
-  await page.getByRole('button', { name: 'Fit width', exact: true }).click();
   await page.getByRole('button', { name: 'Page 3', exact: true }).click();
   await page.getByTestId('page-overlay').waitFor();
-  await page.locator('.tl-canvas').waitFor({ state: 'hidden' });
+  await board.waitFor({ state: 'hidden' });
   await page.getByRole('button', { name: 'Back to board' }).click();
-  await page.locator('.tl-canvas').waitFor();
+  await board.waitFor();
   await page.getByTestId('page-overlay').waitFor({ state: 'hidden' });
   await page.getByRole('button', { name: 'Page 3', exact: true }).click();
   await page.getByRole('button', { name: 'Open Exercise 1' }).click();
-  await page.locator('.tl-canvas').waitFor();
+  await board.waitFor();
   await page.getByTestId('page-overlay').waitFor({ state: 'hidden' });
-  assert.equal(await page.locator('.tl-image').count(), 1, 'put on the board once');
-  await page.getByTestId('notebook-paper').waitFor();
+  assert.equal(await page.locator('[data-ink-board]').getAttribute('data-images'), '1', 'put on the board once');
   await page.getByRole('button', { name: 'Put on board', exact: true }).click();
-  assert.equal(await page.locator('.tl-image').count(), 1, 'notebook navigation does not duplicate the problem picture');
-  await page.getByRole('button', { name: 'Board menu', exact: true }).click();
-  await page.getByRole('menuitemcheckbox', { name: 'Notebook mode (experiment)', exact: true }).click();
-  await page.getByTestId('notebook-paper').waitFor({ state: 'detached' });
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('[data-ink-board]').getAttribute('data-images'), '1', 'Put on board does not add it again');
   console.log('PASS on an upright tablet the exercise opens on its board, swapping with the page');
 
   // On an upright tablet, Paste on this board swaps back from the page to the ink board, with the picture on it.
-  await page.getByRole('button', { name: 'Board menu', exact: true }).click();
-  await page.getByRole('menuitemcheckbox', { name: 'Ink board', exact: true }).click();
   await page.getByRole('button', { name: 'Page 3', exact: true }).click();
   await page.getByRole('button', { name: 'Mark', exact: true }).click();
   await markBox([0.1, 0.6], [0.7, 0.75]);
@@ -452,7 +440,6 @@ try {
   await page.locator('[data-ink-board][data-images="2"][data-selected="1"]').waitFor();
   assert.ok(await inkBoard.isVisible(), 'the board is back in view');
   await page.getByTestId('page-overlay').waitFor({ state: 'hidden' });
-  await page.evaluate(() => localStorage.removeItem('math-tutor:inkBoard'));
   console.log('PASS on an upright tablet, Paste on this board swaps back to the board');
 
   assert.deepEqual(browserErrors, []);

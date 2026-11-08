@@ -13,7 +13,7 @@ for (const name of Object.keys({ ...dependencies, ...devDependencies })) {
   const installed = existsSync(manifest) ? JSON.parse(readFileSync(manifest, 'utf8')).version : null;
   if (installed !== wanted) stale.push(`${name} (installed ${installed ?? 'nothing'}, needs ${wanted})`);
 }
-for (const asset of ['public/pdfjs/pdf.worker.min.mjs', 'public/tldraw-assets']) {
+for (const asset of ['public/pdfjs/pdf.worker.min.mjs']) {
   if (!existsSync(join(root, asset))) stale.push(`${asset} (copied by npm install)`);
 }
 if (stale.length > 0) {

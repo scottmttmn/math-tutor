@@ -1,21 +1,16 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { createRequire } from 'node:module';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
-import load from './load-typescript.mjs';
 import { chooseTutor, openTutor } from './tutor-ui.mjs';
-import { keepTldraw } from './tldraw-boards.mjs';
+import { encodePoints } from './tldraw-points.mjs';
 
-// The ink board (replacing tldraw), opt-in through Board → Ink board for new boards: writing,
-// erasing, undo, saving and reloading, paper, the tutor's picture, Save as, Put on board and Clear;
-// and the converter on a board that tldraw itself drew.
+// The board: writing, erasing, undo, saving and reloading, paper, the tutor's picture, Save as,
+// Put on board and Clear; and a board tldraw saved, converted as it opens.
 
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
-const tlschema = createRequire(import.meta.url)('@tldraw/tlschema');
-const { boardFromTldraw } = load('src/lib/inkBoard/fromTldraw.ts', { tldraw: tlschema });
 const requests = [];
 const provider = createServer(async (req, res) => {
   let raw = '';
@@ -32,7 +27,6 @@ const context = await chromium.launchPersistentContext(profile, {
   headless: true, viewport: { width: 1440, height: 960 }, acceptDownloads: true,
   executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
 });
-await context.addInitScript(keepTldraw);
 const page = context.pages()[0] || await context.newPage();
 const errors = [];
 page.on('pageerror', (error) => errors.push(error.message));
@@ -75,36 +69,40 @@ try {
   await problemBox().waitFor();
   await page.evaluate((config) => localStorage.setItem('mathTutor_modelConfig', JSON.stringify(config)), model);
 
-  // A tldraw board first, so the converter can be checked on ink tldraw itself drew.
+  // A board saved by tldraw opens converted: its ink, not its rectangle. Nothing is written until it changes.
+  const shape = (id, type, rest) => [id, { id, typeName: 'shape', type, x: 0, y: 0, rotation: 0, index: 'a1', parentId: 'page:page', isLocked: false, opacity: 1, meta: {}, ...rest }];
+  const tldrawBoard = {
+    id: 'tldraw-board', title: 'Saved by tldraw', problemStatement: 'Saved by tldraw', problemImage: null, canvasStrokes: [], canvasImageBlob: null,
+    chatHistory: [], createdAt: 1, updatedAt: 1, sessionType: 'problem',
+    canvasDocument: { schema: {}, store: Object.fromEntries([
+      ['page:page', { id: 'page:page', typeName: 'page', name: 'Page 1', index: 'a1', meta: {} }],
+      shape('shape:line', 'draw', { x: 200, y: 200, props: { color: 'black', fill: 'none', dash: 'solid', size: 's', isComplete: true, isClosed: false, isPen: false, scale: 1, scaleX: 1, scaleY: 1,
+        segments: [{ type: 'free', path: encodePoints([{ x: 0, y: 0 }, { x: 70, y: 40 }, { x: 140, y: 80 }]), dim: 3 }] } }),
+      shape('shape:box', 'geo', { x: 400, y: 400, index: 'a2', props: { geo: 'rectangle', w: 100, h: 100 } }),
+    ]) },
+  };
+  await page.evaluate(async (session) => {
+    const db = await new Promise((resolve, reject) => { const open = indexedDB.open('math-tutor'); open.onsuccess = () => resolve(open.result); open.onerror = reject; });
+    await new Promise((resolve, reject) => { const tx = db.transaction('sessions', 'readwrite'); tx.objectStore('sessions').put(session); tx.oncomplete = resolve; tx.onerror = reject; });
+    db.close();
+    localStorage.setItem('math-tutor:currentSession', session.id);
+  }, tldrawBoard);
   await page.reload();
-  await problemBox().waitFor();
-  const tlCanvas = page.locator('.tl-canvas').first();
-  await tlCanvas.waitFor();
-  const tlBox = await tlCanvas.boundingBox();
-  await page.mouse.move(tlBox.x + 200, tlBox.y + 200, { steps: 4 });
-  await page.mouse.down();
-  await page.mouse.move(tlBox.x + 340, tlBox.y + 280, { steps: 12 });
-  await page.mouse.up();
-  const tlSession = await saved("Object.values(session.canvasDocument?.store ?? {}).some((record) => record.typeName === 'shape' && record.props.isComplete)");
-  const converted = boardFromTldraw(tlSession.canvasDocument);
-  assert.deepEqual(converted.leftovers, []);
-  assert.equal(converted.board.strokes.length, 1);
-  const [line] = converted.board.strokes;
-  const xs = line.points.filter((_, i) => i % 3 === 0);
-  const ys = line.points.filter((_, i) => i % 3 === 1);
-  // tldraw opens at zoom 1, so the stroke spans what the mouse moved: 140 by 80.
-  assert.ok(Math.abs(Math.max(...xs) - Math.min(...xs) - 140) < 6 && Math.abs(Math.max(...ys) - Math.min(...ys) - 80) < 6, `converted span ${Math.max(...xs) - Math.min(...xs)} × ${Math.max(...ys) - Math.min(...ys)}`);
-  assert.equal(line.width, 3);
-  assert.equal(line.color, 'black');
-  console.log('PASS a stroke tldraw drew converts to one ink stroke of the same span and width');
+  await waitCount('strokes', 1);
+  assert.equal(await problemBox().inputValue(), 'Saved by tldraw');
+  await page.waitForTimeout(1200);
+  const untouchedOld = await saved("session.id === 'tldraw-board'");
+  assert.ok(untouchedOld.canvasDocument && !untouchedOld.ink, 'opening it writes nothing');
+  await stroke(100, 500, 300, 500);
+  const convertedSave = await saved("session.id === 'tldraw-board' && session.ink?.strokes?.length === 2");
+  assert.equal(convertedSave.canvasDocument, null);
+  const [line] = convertedSave.ink.strokes;
+  assert.deepEqual([line.width, line.color, line.points.slice(0, 2), line.points.slice(-3, -1)], [3, 'black', [200, 200], [340, 280]]);
+  console.log('PASS a board saved by tldraw opens converted, without its rectangle, and is saved as ink once it changes');
 
-  // The choice is off by default; turning it on makes the open, still empty… board an ink board for new boards.
   await page.getByRole('button', { name: 'New', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New Problem' }).click();
-  await page.waitForFunction(() => !document.querySelector('[data-loading]') && document.querySelector('.tl-canvas'));
-  await boardMenu('Ink board');
-  await ink().waitFor();
-  assert.equal(await page.locator('.tl-canvas').count(), 0);
+  await page.waitForFunction(() => !document.querySelector('[data-loading]') && document.querySelector('[data-ink-board]')?.getAttribute('data-strokes') === '0');
 
   // Writing, the highlighter, erasing and undo.
   await problemBox().fill('Ink board check.');
@@ -372,63 +370,19 @@ try {
   }
   console.log('PASS the ink board keeps its controls in a left rail that folds away; full screen hides the header');
 
-  // Turned off, a new board is tldraw again; the ink board stays an ink board.
-  await boardMenu('Ink board');
-  await ink().waitFor();
-  await stroke(100, 300, 300, 300);
-  await saved('session.ink?.strokes?.length === 1');
+  // A board with only its problem typed is saved with no drawing.
   await page.getByRole('button', { name: 'New', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New Problem' }).click();
-  await page.locator('.tl-canvas').first().waitFor();
-  assert.equal(await ink().count(), 0);
-  console.log('PASS with the choice off, new boards are tldraw boards');
-
-  // A board with only its problem typed is saved with no drawing, so it stays new: with the
-  // choice back on it reopens as an ink board.
+  await page.waitForFunction(() => !document.querySelector('[data-loading]') && document.querySelector('[data-ink-board]')?.getAttribute('data-strokes') === '0');
+  await page.waitForFunction(() => document.querySelector('textarea')?.value === '');
   await problemBox().fill('Nothing drawn yet.');
   const untouched = await saved("session.problemStatement === 'Nothing drawn yet.'");
   assert.equal(untouched.canvasDocument, null);
   assert.equal(untouched.ink, undefined);
-  await boardMenu('Ink board');
-  await ink().waitFor();
   await page.reload();
   await ink().waitFor();
   assert.equal(await problemBox().inputValue(), 'Nothing drawn yet.');
-  console.log('PASS a board saved with nothing drawn follows the choice for new boards');
-
-  // With the ink board on, a tldraw board opens on it converted; one with a shape ink can't hold stays in tldraw.
-  await page.evaluate((id) => localStorage.setItem('math-tutor:currentSession', id), tlSession.id);
-  await page.reload();
-  await waitCount('strokes', 1);
-  assert.equal(await page.locator('.tl-canvas').count(), 0);
-  await boardMenu('Ink board');
-  await page.getByRole('button', { name: 'New', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New Problem' }).click();
-  await page.waitForFunction(() => !document.querySelector('[data-loading]') && document.querySelector('.tl-canvas'));
-  const geoCanvas = await page.locator('.tl-canvas').first().boundingBox();
-  await page.keyboard.press('r');
-  await page.mouse.move(geoCanvas.x + 200, geoCanvas.y + 200);
-  await page.mouse.down();
-  await page.mouse.move(geoCanvas.x + 320, geoCanvas.y + 280, { steps: 6 });
-  await page.mouse.up();
-  await saved("Object.values(session.canvasDocument?.store ?? {}).some((record) => record.type === 'geo')");
-  await boardMenu('Ink board');
-  await page.reload();
-  await page.locator('.tl-canvas').first().waitFor();
-  await page.waitForFunction(() => !document.querySelector('[data-loading]'));
-  assert.equal(await ink().count(), 0, 'a board with a rectangle stays in tldraw');
-  console.log('PASS with the ink board on, a tldraw board opens converted; one with shapes stays in tldraw');
-
-  // A device that never chose opens new boards on the ink board.
-  {
-    const fresh = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined });
-    const first = await fresh.newPage({ viewport: { width: 1280, height: 900 } });
-    await first.goto(`${origin}/board?new=problem`);
-    await first.locator('[data-ink-board]').waitFor();
-    assert.equal(await first.locator('.tl-canvas').count(), 0);
-    await fresh.close();
-  }
-  console.log('PASS the ink board is the default for a new device');
+  console.log('PASS a board saved with nothing drawn reopens empty');
 
   assert.deepEqual(errors, []);
 } finally {

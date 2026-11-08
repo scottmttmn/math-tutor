@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { makePdf } from './makePdf.mjs';
 import load from './load-typescript.mjs';
-import { keepTldraw } from './tldraw-boards.mjs';
 
 const { readZip } = load('src/lib/zip.ts');
 
@@ -25,7 +24,6 @@ const fakePicker = () => {
 
 async function openPage() {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
-  await context.addInitScript(keepTldraw);
   await context.addInitScript(fakePicker);
   const page = await context.newPage();
   page.on('pageerror', (error) => browserErrors.push(error.message));
@@ -61,8 +59,8 @@ try {
 
   await page.goto(`${origin}/board`);
   await page.getByPlaceholder("Type the math problem you're working on...").fill('Find x when 2x + 3 = 7');
-  await page.locator('.tl-canvas').waitFor();
-  const board = await page.locator('.tl-canvas').boundingBox();
+  await page.getByTestId('ink-board').waitFor();
+  const board = await page.getByTestId('ink-board').boundingBox();
   await page.mouse.move(board.x + 120, board.y + 120);
   await page.mouse.down();
   await page.mouse.move(board.x + 300, board.y + 200, { steps: 8 });

@@ -1,6 +1,6 @@
 import type { BoardImage, BoardInk, BoardPage, BoardStroke, InkColor } from '@/types';
 
-// The ink board: our own Notes-like canvas, replacing tldraw step by step. Board units are CSS px
+// The ink board: our own Notes-like canvas, which replaced tldraw. Board units are CSS px
 // at writing scale, so the pen SDK's points map straight in. Everything here is pure.
 
 /** A new board's page width, and the room kept around existing work when the page grows to fit it. */
