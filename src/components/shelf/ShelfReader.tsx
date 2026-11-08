@@ -28,7 +28,7 @@ import BottomToolbar from '@/components/layout/BottomToolbar';
 import AppBar from '@/components/layout/AppBar';
 import ChatPanel from '@/components/chat/ChatPanel';
 import MoreMenu from '@/components/common/MoreMenu';
-import { ChevronIcon, EraserIcon, FullScreenIcon, HighlightIcon, KindIcon, ListIcon, MarkIcon, PenIcon, SelectBoxIcon, SolvedCheck, TutorIcon, UndoIcon } from '@/components/common/Icons';
+import { ChevronIcon, CloseIcon, EraserIcon, FullScreenIcon, HighlightIcon, KindIcon, ListIcon, MarkIcon, PenIcon, SelectBoxIcon, SolvedCheck, TutorIcon, UndoIcon } from '@/components/common/Icons';
 import BoardFrame from '@/components/layout/BoardFrame';
 import { saveBoardAs } from '@/lib/exportBoard';
 import { addPictureFromFile, pasteCopiedPicture } from '@/lib/boardPicture';
@@ -686,6 +686,11 @@ export default function ShelfReader() {
     </button>
   ) : (
     <div role="group" aria-label="Text controls" className="flex flex-col items-center gap-1 w-12 shrink-0 py-1.5 overflow-y-auto overscroll-contain border-r border-gray-200 bg-white">
+      {/* The page swapped in for a board (narrow or full screen): back to it, mirroring the board rail's "p. 47". */}
+      {exercise && pageSwapped && (
+        <button onClick={() => setOpenings((count) => count + 1)} aria-label="Back to board" title="Back to board"
+          className="flex shrink-0 items-center justify-center min-h-11 w-11 text-xs font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Board</button>
+      )}
       {!exercise && (
         <button
           onClick={() => { if (askBox) stopAskBox(); else { setAskBox(true); setMarking(false); setPendingMark(null); setInkTool(null); stopCopyBox(); } }}
@@ -879,36 +884,41 @@ export default function ShelfReader() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      {!fullScreen && <AppBar place="book" locked={isStreaming} beforeLeave={saveNow} />}
-      <header className={`${fullScreen ? 'hidden' : 'flex'} flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 bg-white`}>
-        <div className="min-w-0">
-          <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-xs text-gray-500 min-w-0">
-            {/* The folders the book is in; its own folder lists every board made from it. */}
-            <Link href="/" className="text-gray-900 underline">Library</Link>
+      {!fullScreen && (
+        <AppBar place="book" locked={isStreaming} beforeLeave={saveNow} trail={(
+          // The folders the book is in (its own folder lists every board made from it), then the book.
+          <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 min-w-0 text-sm text-gray-500">
             {folderPath(library, bookFolder).map((step) => (
-              <span key={step.id} className="flex items-center gap-2 min-w-0">
+              <span key={step.id} className="flex items-center gap-1.5 min-w-0">
                 <span aria-hidden="true">›</span>
-                <Link href={folderHref(step.id)} className="text-gray-900 underline truncate">{step.name}</Link>
+                <Link href={folderHref(step.id)} className="text-gray-700 underline truncate">{step.name}</Link>
               </span>
             ))}
+            {folderPath(library, bookFolder).at(-1)?.name !== shelfDocument.title && (
+              <span className="flex items-center gap-1.5 min-w-0"><span aria-hidden="true">›</span><span className="text-gray-900 truncate">{shelfDocument.title}</span></span>
+            )}
+            <h1 className="sr-only">{shelfDocument.title}</h1>
           </nav>
-          <h1 className="font-semibold text-gray-900 truncate">{shelfDocument.title}</h1>
-        </div>
-        {exercise && (
-          <span className="text-xs text-gray-500" aria-live="polite">
-            {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'error' ? 'Not saved' : saveStatus === 'saved' ? 'Saved' : ''}
-          </span>
-        )}
-      </header>
+        )}>
+          {exercise && (
+            <span className="text-xs text-gray-500" aria-live="polite">
+              {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'error' ? 'Not saved' : saveStatus === 'saved' ? 'Saved' : ''}
+            </span>
+          )}
+        </AppBar>
+      )}
 
       {error && <div role="alert" className="px-4 py-2 text-sm text-red-700 bg-red-50 border-b border-red-100">{error}</div>}
 
       {exercise ? (
         <BoardFrame
           fullScreen={fullScreen}
-          source={{ label: 'Page', wide: true, toolbar: pageToolbar, content: pageView, swap: { label: `Page ${name}`, railLabel: `p. ${name}`, key: `${exercise.id}:${openings}`, onFlip: setPageSwapped } }}
+          source={{ label: 'Page', wide: true, toolbar: pageToolbar, content: pageView, swap: { railLabel: `p. ${pageName(labels, exercise.page)}`, key: `${exercise.id}:${openings}`, onFlip: setPageSwapped, onShow: () => setPage(exercise.page) } }}
           title={(
-            <>
+            <div className="flex items-start gap-2">
+            <button onClick={() => void closeExercise()} disabled={isStreaming} aria-label="Close board" title="Close board"
+              className="flex shrink-0 items-center justify-center min-h-11 w-11 text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"><CloseIcon /></button>
+            <div className="min-w-0 flex-1">
               {renaming !== null ? (
                 <form onSubmit={(event) => { event.preventDefault(); void saveRename(); }} className="flex flex-wrap items-center gap-2">
                   <label htmlFor="rename-mark" className="sr-only">Name</label>
@@ -928,21 +938,6 @@ export default function ShelfReader() {
               )}
               <p className="flex flex-wrap items-center gap-x-1 text-xs text-gray-600">
                 <KindIcon type={isNote(exercise) ? 'note' : 'problem'} />{isNote(exercise) ? 'Notes' : 'Problem'} · p. {pageName(labels, exercise.page)}
-                {!isNote(exercise) && <>{' · '}<label className="text-indigo-700">
-                  Tutor reads{' '}
-                  <select
-                    value={range?.from ?? 0}
-                    onChange={(event) => void changeReadFrom(exercise.id, Number(event.target.value))}
-                    title={range?.section ? `Section: ${range.section}` : undefined}
-                    className="px-1 py-0.5 text-xs text-gray-700 border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-gray-900"
-                  >
-                    <option value={0}>no pages</option>
-                    {Array.from({ length: Math.min(MAX_BOOK_PAGES, exercise.page) }, (_, index) => exercise.page - index).reverse().map((from) => (
-                      <option key={from} value={from}>{from === exercise.page ? `p. ${from}` : `pp. ${from}–${exercise.page}`}</option>
-                    ))}
-                  </select>
-                </label></>}
-                {range && !bookHasText && <span className="font-medium text-gray-900"> · no text in this PDF to read</span>}
               </p>
               {problems && problems.length > 1 && (
                 <div role="group" aria-label="Exercises on this board" className="mt-1 flex flex-wrap gap-1">
@@ -958,24 +953,17 @@ export default function ShelfReader() {
                   })}
                 </div>
               )}
-            </>
+            </div>
+            </div>
           )}
-          actions={(
-            <>
-              {problemImage && (
-                <button onClick={() => void canvasHandle.current?.placeProblemImage(problemImage, pictureKey(exercise))}
-                  title="Put the marked problem on the board to write on and around it"
-                  className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Put on board</button>
-              )}
-              {!fullScreen && exercise.page !== page && (
-                <button onClick={() => { setPage(exercise.page); setTutorOpen(false); }} className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Back to p. {pageName(labels, exercise.page)}</button>
-              )}
-              <button onClick={() => void closeExercise()} disabled={isStreaming} aria-label="Close board" className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">Close</button>
-              {!fullScreen && (
-                <MoreMenu label={`More for ${exercise.label}`} disabled={isStreaming}
-                  items={[{ label: 'Rename', onSelect: () => setRenaming(exercise.label) }, { label: isNote(exercise) ? 'Remove note page' : 'Remove exercise', onSelect: () => void removeMark(exercise) }]} />
-              )}
-            </>
+          actions={!fullScreen && (
+            <MoreMenu label={`More for ${exercise.label}`} disabled={isStreaming}
+              items={[
+                { label: 'Rename', onSelect: () => setRenaming(exercise.label) },
+                // It is put on an empty board by itself; this puts it back, e.g. after Clear.
+                ...(problemImage ? [{ label: 'Put on board', onSelect: () => void canvasHandle.current?.placeProblemImage(problemImage, pictureKey(exercise)) }] : []),
+                { label: isNote(exercise) ? 'Remove note page' : 'Remove exercise', onSelect: () => void removeMark(exercise) },
+              ]} />
           )}
           canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} onShowTools={toggleTools} paper={paper} />}
           toolbar={(
@@ -994,9 +982,33 @@ export default function ShelfReader() {
               onAddPicture={(file) => void addPictureFromFile(canvasHandle.current, file)}
               onPastePicture={() => void pasteCopiedPicture(canvasHandle.current)}
               favorite={<FavoriteButton favorite={favorite.favorite} failed={favorite.failed} onStar={(reason) => void favorite.star(reason)} onUnstar={() => void favorite.unstar()} />}
+              closeBoard={{ onClose: () => void closeExercise(), disabled: isStreaming }}
             />
           )}
-          tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: <ChatPanel visible={tutorOpen} getBoardImages={getBoardImages} getBookContext={getBookContext} onAskForHelp={askForHelp} /> }}
+          tutor={{ open: tutorOpen, onClose: () => setTutorOpen(false), content: (
+            <>
+              {/* What the tutor reads from the book with each question: a tutor setting, so it is here. */}
+              {!isNote(exercise) && (
+                <p className="flex flex-wrap items-center gap-x-1 px-3 py-1.5 text-xs text-gray-700 border-b border-gray-200">
+                  <label htmlFor="tutor-reads" className="text-indigo-700">Reads from the book</label>
+                  <select
+                    id="tutor-reads"
+                    value={range?.from ?? 0}
+                    onChange={(event) => void changeReadFrom(exercise.id, Number(event.target.value))}
+                    title={range?.section ? `Section: ${range.section}` : undefined}
+                    className="min-h-8 px-1 py-0.5 text-xs text-gray-700 border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-gray-900"
+                  >
+                    <option value={0}>no pages</option>
+                    {Array.from({ length: Math.min(MAX_BOOK_PAGES, exercise.page) }, (_, index) => exercise.page - index).reverse().map((from) => (
+                      <option key={from} value={from}>{from === exercise.page ? `p. ${from}` : `pp. ${from}–${exercise.page}`}</option>
+                    ))}
+                  </select>
+                  {range && !bookHasText && <span className="font-medium text-gray-900">· no text in this PDF to read</span>}
+                </p>
+              )}
+              <ChatPanel visible={tutorOpen} getBoardImages={getBoardImages} getBookContext={getBookContext} onAskForHelp={askForHelp} />
+            </>
+          ) }}
         />
       ) : readingFullScreen ? (
         // Reading full screen: the page and its rail (no bar above it), until a tap in the middle hides the rail.

@@ -19,6 +19,10 @@ export default function ProblemStatement({ onCaptureProblemImage, onPutOnBoard }
   const [enlarged, setEnlarged] = useState(false);
   const pictureInput = useRef<HTMLInputElement>(null);
   const [pictureError, setPictureError] = useState('');
+  // Empty and not being typed in, the box is one line beside its buttons, so the board keeps the room.
+  const [typing, setTyping] = useState(false);
+  const empty = !problemStatement && !problemImage;
+  const oneLine = empty && !typing;
   // Counts pictures picked and boards switched to, so a slow conversion lands only on the board, and
   // as the picture, it was picked for.
   const picture = useRef(0);
@@ -38,17 +42,22 @@ export default function ProblemStatement({ onCaptureProblemImage, onPutOnBoard }
   };
 
   return (
-    <div className="px-3 py-2">
-      <label className="block text-sm font-medium text-gray-700 mb-1">
+    <div className={`px-3 py-2 ${oneLine ? 'flex flex-wrap items-center gap-2' : ''}`}>
+      <label htmlFor="problem-statement" className={oneLine ? 'sr-only' : 'block text-sm font-medium text-gray-700 mb-1'}>
         Problem
       </label>
       <textarea
+        id="problem-statement"
         value={problemStatement}
         onChange={(e) => dispatch({ type: 'SET_PROBLEM', text: e.target.value })}
+        onFocus={() => setTyping(true)}
+        // Leaving for its own buttons keeps the layout still, so the tap lands where it was aimed.
+        onBlur={(event) => { if (!event.currentTarget.parentElement?.contains(event.relatedTarget as Node | null)) setTyping(false); }}
         placeholder="Type the math problem you're working on..."
-        className="w-full h-20 lg:h-40 px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+        rows={oneLine ? 1 : undefined}
+        className={`${oneLine ? 'flex-1 min-w-[12rem] h-11 py-2.5' : 'w-full h-20 lg:h-40 py-2'} px-3 text-sm border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent`}
       />
-      <div className={`mt-1 flex gap-2 ${enlarged && problemImage ? 'items-start' : 'items-center'}`}>
+      <div className={`${oneLine ? '' : 'mt-1'} flex gap-2 ${enlarged && problemImage ? 'items-start' : 'items-center'}`}>
         {problemImage ? (
           <>
             <button onClick={() => setEnlarged((on) => !on)} title={enlarged ? 'Make the problem figure small' : 'Show the problem figure larger'} className={enlarged ? 'min-w-0' : 'shrink-0'}>

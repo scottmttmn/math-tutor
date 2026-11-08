@@ -406,24 +406,25 @@ try {
   await page.getByTestId('page-overlay').waitFor({ state: 'hidden' });
   const boardBox = await board.boundingBox();
   assert.ok(boardBox.height > 600, `the board takes the screen (${boardBox.height}px tall)`);
-  await page.getByRole('button', { name: 'Page 3', exact: true }).click();
+  await page.getByRole('button', { name: /^p\. \S+: show the page$/ }).click();
   await page.getByTestId('page-overlay').waitFor();
   await board.waitFor({ state: 'hidden' });
   await page.getByRole('button', { name: 'Back to board' }).click();
   await board.waitFor();
   await page.getByTestId('page-overlay').waitFor({ state: 'hidden' });
-  await page.getByRole('button', { name: 'Page 3', exact: true }).click();
+  await page.getByRole('button', { name: /^p\. \S+: show the page$/ }).click();
   await page.getByRole('button', { name: 'Open Exercise 1' }).click();
   await board.waitFor();
   await page.getByTestId('page-overlay').waitFor({ state: 'hidden' });
   assert.equal(await page.locator('[data-ink-board]').getAttribute('data-images'), '1', 'put on the board once');
-  await page.getByRole('button', { name: 'Put on board', exact: true }).click();
+  await page.getByRole('button', { name: /^More for / }).click();
+  await page.getByRole('menuitem', { name: 'Put on board' }).click();
   await page.waitForTimeout(300);
   assert.equal(await page.locator('[data-ink-board]').getAttribute('data-images'), '1', 'Put on board does not add it again');
   console.log('PASS on an upright tablet the exercise opens on its board, swapping with the page');
 
   // On an upright tablet, Paste on this board swaps back from the page to the ink board, with the picture on it.
-  await page.getByRole('button', { name: 'Page 3', exact: true }).click();
+  await page.getByRole('button', { name: /^p\. \S+: show the page$/ }).click();
   await page.getByRole('button', { name: 'Mark', exact: true }).click();
   await markBox([0.1, 0.6], [0.7, 0.75]);
   await page.getByRole('radio', { name: 'Exercise' }).click();
@@ -431,7 +432,7 @@ try {
   await page.getByRole('button', { name: 'Save and open' }).click();
   const inkBoard = page.locator('[data-ink-board]');
   await page.locator('[data-ink-board][data-images="1"]').waitFor();
-  await page.getByRole('button', { name: 'Page 3', exact: true }).click();
+  await page.getByRole('button', { name: /^p\. \S+: show the page$/ }).click();
   await page.getByTestId('page-overlay').waitFor();
   await page.getByRole('button', { name: 'Select to copy', exact: true }).click();
   await markBox([0.1, 0.35], [0.8, 0.5]);

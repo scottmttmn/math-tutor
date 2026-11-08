@@ -119,7 +119,7 @@ try {
   assert.deepEqual(content.map((part) => part.type === 'text' ? part.text.split(/[ ,:]/)[0] + ' ' + part.text.split(/[ ,:]/)[1] : part.type),
     ['Problem figure', 'image_url', 'My board', 'image_url', 'The problem']);
   // The tutor reads the book up to the exercise's page, never past it.
-  assert.equal(await page.getByLabel('Tutor reads').inputValue(), '1');
+  assert.equal(await page.getByLabel('Reads from the book').inputValue(), '1');
   // The pages open the conversation as user text; only the rule about them is in the system prompt.
   const [system, pages] = requests.at(-1).messages;
   assert.equal(system.role, 'system');
@@ -225,7 +225,8 @@ try {
 
   // The marked problem is on the board once; Put on board finds it rather than adding another,
   // and Clear leaves it there.
-  await page.getByRole('button', { name: 'Put on board' }).click();
+  await page.getByRole('button', { name: /^More for / }).click();
+  await page.getByRole('menuitem', { name: 'Put on board' }).click();
   await page.waitForTimeout(300);
   assert.equal(await shapeCount(), 2, 'placed only once');
   await page.getByRole('button', { name: 'Clear board' }).click();
@@ -245,8 +246,9 @@ try {
   await page.getByRole('button', { name: 'Back to board' }).click();
   await page.getByTestId('ink-board').waitFor();
   await page.getByRole('button', { name: 'Page 1 of 2. Go to a page', exact: true }).waitFor({ state: 'hidden' });
+  assert.equal(await page.getByRole('button', { name: 'Close board' }).count(), 1, 'full screen has Close at the rail\'s foot');
   await page.getByRole('button', { name: 'Exit full screen' }).click();
-  assert.equal(await page.getByRole('button', { name: 'p. 1: show the page' }).count(), 0, 'beside the board, the page needs no button');
+  assert.equal(await page.getByRole('button', { name: 'p. 1: show the page' }).count(), 1, 'beside the page, it turns back to the exercise\'s page');
   await page.getByRole('button', { name: 'Page 1 of 2. Go to a page', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Full screen' }).click();
   await page.waitForTimeout(5000);

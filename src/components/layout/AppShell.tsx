@@ -164,6 +164,7 @@ function AppContent() {
             }
           : {
               label: 'Problem',
+              compact: true,
               content: (
                 <ProblemStatement
                   onCaptureProblemImage={handleSetProblemImage}

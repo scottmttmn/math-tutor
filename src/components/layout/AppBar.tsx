@@ -31,6 +31,8 @@ interface Props {
   folderId?: string | null;
   /** Offers New folder, which the page (Home, a folder) makes in place. */
   onNewFolder?: () => void;
+  /** Where the page is below Home (a book's folders), as a breadcrumb after the Home tab. */
+  trail?: ReactNode;
   /** Page-specific controls, shown before New. */
   children?: ReactNode;
 }
@@ -49,7 +51,7 @@ function takeRestoreResult(): { tab: SettingsTab; restored: string } | null {
 }
 
 /** The bar on every page: Home, New (a problem, notes, or a PDF to work from), and Settings. Full screen hides it. */
-export default function AppBar({ place, onNew, locked = false, beforeLeave, folderId = null, onNewFolder, children }: Props) {
+export default function AppBar({ place, onNew, locked = false, beforeLeave, folderId = null, onNewFolder, trail, children }: Props) {
   const router = useRouter();
   const [newOpen, setNewOpen] = useState(false);
   const [askingTutor, setAskingTutor] = useState(false);
@@ -128,7 +130,7 @@ export default function AppBar({ place, onNew, locked = false, beforeLeave, fold
         </Link>
       ))}
 
-      <div className="flex-1" />
+      {trail ? <div className="flex-1 min-w-0">{trail}</div> : <div className="flex-1" />}
       {children}
 
       {update.newer !== null && (
