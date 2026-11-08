@@ -28,7 +28,7 @@ import BottomToolbar from '@/components/layout/BottomToolbar';
 import AppBar from '@/components/layout/AppBar';
 import ChatPanel from '@/components/chat/ChatPanel';
 import MoreMenu from '@/components/common/MoreMenu';
-import { ChevronIcon, CloseIcon, EraserIcon, FullScreenIcon, HighlightIcon, KindIcon, ListIcon, MarkIcon, PenIcon, SelectBoxIcon, SolvedCheck, TutorIcon, UndoIcon } from '@/components/common/Icons';
+import { ChevronIcon, CloseIcon, EraserIcon, FullScreenIcon, HighlightIcon, KindIcon, ListIcon, MarkIcon, PenIcon, SelectBoxIcon, SolvedCheck, UndoIcon } from '@/components/common/Icons';
 import BoardFrame from '@/components/layout/BoardFrame';
 import { saveBoardAs } from '@/lib/exportBoard';
 import { addPictureFromFile, pasteCopiedPicture } from '@/lib/boardPicture';
@@ -86,13 +86,10 @@ export default function ShelfReader() {
   const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
   const [marking, setMarking] = useState(false);
-  // Asking about the page: dragging the box, the box drawn with its question form, then the conversation.
-  const [askBox, setAskBox] = useState(false);
-  const [askDraft, setAskDraft] = useState<{ page: number; rect: PageRect } | null>(null);
-  const [askQuestionText, setAskQuestionText] = useState('');
+  // Asking about a box on the page (Select's Explain): the conversation.
   const [pageAsk, setPageAsk] = useState<{ page: number; rect: PageRect; question: string; key: number } | null>(null);
   const [pendingMark, setPendingMark] = useState<PageRect | null>(null);
-  // Copying part of the page to paste on a board: the tool, the box drawn, and how the copy went.
+  // Select: a box on the page to explain (no board open) or copy to paste on a board: the tool, the box drawn, and how the copy went.
   const [copyBox, setCopyBox] = useState(false);
   const [copyDraft, setCopyDraft] = useState<{ page: number; rect: PageRect } | null>(null);
   const [copyState, setCopyState] = useState<'ready' | 'copying' | 'copied' | 'failed'>('ready');
@@ -209,8 +206,6 @@ export default function ShelfReader() {
       setOpenings((count) => count + 1);
       setOpenId(exercise.id);
       setPage(exercise.page);
-      setAskBox(false);
-      setAskDraft(null);
       setPageAsk(null);
       // Moving between a board's exercises keeps the tutor and Mark as they were.
       if (!onOpenBoard) { setMarking(false); setTutorOpen(false); }
@@ -597,7 +592,6 @@ export default function ShelfReader() {
 
   // The page and its controls: beside an open board, or beside the list of exercises.
   const smallButton = 'min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40';
-  const stopAskBox = () => { setAskBox(false); setAskDraft(null); };
   const stopCopyBox = () => { setCopyBox(false); setCopyDraft(null); setCopyState('ready'); };
   // Copy: the box's part of the page, kept for Paste on any board (and on the system clipboard where allowed).
   const copyBoxed = async () => {
@@ -610,6 +604,13 @@ export default function ShelfReader() {
     } catch {
       setCopyState('failed');
     }
+  };
+  // Explain: the tutor on the box, as a conversation in the list's place (follow-ups go in its chat box).
+  const explainBoxed = () => {
+    if (!copyDraft) return;
+    setPageAsk({ page: copyDraft.page, rect: copyDraft.rect, question: askQuestion('explain', 'note'), key: Date.now() });
+    stopCopyBox();
+    setPanelOpen(false);
   };
   const canPasteHere = Boolean(exercise);
   const copyForm = (
@@ -627,31 +628,16 @@ export default function ShelfReader() {
       ) : (
         <>
           {copyState === 'failed' && <p role="alert" className="w-full text-sm text-red-700">It could not be copied. Try again.</p>}
-          <button type="button" autoFocus onClick={() => void copyBoxed()} disabled={copyState === 'copying'}
+          {!exercise && (
+            <button type="button" autoFocus onClick={explainBoxed} disabled={copyState === 'copying'} title="Ask the tutor to explain the box"
+              className="min-h-11 px-3 text-sm font-medium text-indigo-700 border border-indigo-700 bg-white rounded-lg hover:bg-indigo-50 disabled:opacity-60">Explain</button>
+          )}
+          <button type="button" autoFocus={Boolean(exercise)} onClick={() => void copyBoxed()} disabled={copyState === 'copying'}
             className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700 disabled:opacity-60">{copyState === 'copying' ? 'Copying…' : 'Copy'}</button>
           <button type="button" onClick={() => setCopyDraft(null)} className="min-h-11 px-3 text-sm text-gray-600 border border-gray-300 bg-white rounded-lg hover:bg-gray-50">Cancel</button>
         </>
       )}
     </div>
-  );
-  // A box drawn to ask about: send the question (empty asks for an explanation) and open the conversation.
-  const submitAsk = () => {
-    if (!askDraft) return;
-    setPageAsk({ page: askDraft.page, rect: askDraft.rect, question: askQuestionText.trim() || askQuestion('explain', 'note'), key: Date.now() });
-    setAskQuestionText('');
-    stopAskBox();
-    setPanelOpen(false);
-  };
-  const askForm = (
-    <form onSubmit={(event) => { event.preventDefault(); submitAsk(); }}
-      onKeyDown={(event) => { if (event.key === 'Escape') setAskDraft(null); }}
-      className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-white border border-indigo-700 shadow-md w-max max-w-[22rem]">
-      <input autoFocus aria-label="Your question about the box" value={askQuestionText} onChange={(event) => setAskQuestionText(event.target.value)}
-        placeholder="Your question, or leave it to have it explained"
-        className="w-64 min-h-11 px-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-900" />
-      <button type="submit" className="min-h-11 px-3 text-sm font-medium text-white bg-indigo-700 rounded-lg hover:bg-indigo-800">Ask</button>
-      <button type="button" onClick={() => setAskDraft(null)} className="min-h-11 px-3 text-sm text-gray-600 border border-gray-300 bg-white rounded-lg hover:bg-gray-50">Cancel</button>
-    </form>
   );
   // Keeps the conversation about a box as a note page on it, and opens its board.
   const saveAskAsNote = async (chat: ChatMessage[]) => {
@@ -691,16 +677,8 @@ export default function ShelfReader() {
         <button onClick={() => setOpenings((count) => count + 1)} aria-label="Back to board" title="Back to board"
           className="flex shrink-0 items-center justify-center min-h-11 w-11 text-xs font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Board</button>
       )}
-      {!exercise && (
-        <button
-          onClick={() => { if (askBox) stopAskBox(); else { setAskBox(true); setMarking(false); setPendingMark(null); setInkTool(null); stopCopyBox(); } }}
-          aria-pressed={askBox} aria-label={askBox ? 'Cancel ask' : 'Ask'}
-          title={askBox ? 'Cancel ask' : 'Ask the tutor: drag a box around part of the page'}
-          className={`flex shrink-0 items-center justify-center min-h-11 w-11 rounded-lg border-2 border-indigo-700 ${askBox ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' : 'bg-indigo-700 text-white hover:bg-indigo-800'}`}
-        ><TutorIcon /></button>
-      )}
       <button
-        onClick={() => { setMarking((on) => !on); setPendingMark(null); setInkTool(null); stopAskBox(); stopCopyBox(); }}
+        onClick={() => { setMarking((on) => !on); setPendingMark(null); setInkTool(null); stopCopyBox(); }}
         aria-pressed={marking} aria-label={marking ? 'Done marking' : 'Mark'}
         title={marking ? 'Done marking' : 'Mark: box an exercise to work it, or a passage to take notes on'}
         className={railTool(marking)}
@@ -708,11 +686,11 @@ export default function ShelfReader() {
       <div role="group" aria-label="Write on the page" className="flex flex-col items-center gap-1">
         {INK_TOOLS.map(({ tool, label, icon: ToolIcon }) => (
           <button key={tool} aria-pressed={inkTool === tool} aria-label={label} title={label}
-            onClick={() => { setInkTool((current) => (current === tool ? null : tool)); setMarking(false); setPendingMark(null); stopAskBox(); stopCopyBox(); }}
+            onClick={() => { setInkTool((current) => (current === tool ? null : tool)); setMarking(false); setPendingMark(null); stopCopyBox(); }}
             className={railTool(inkTool === tool)}><ToolIcon /></button>
         ))}
-        <button aria-pressed={copyBox} aria-label="Select to copy" title="Select part of the page to copy onto a board"
-          onClick={() => { if (copyBox) stopCopyBox(); else { setCopyBox(true); setInkTool(null); setMarking(false); setPendingMark(null); stopAskBox(); } }}
+        <button aria-pressed={copyBox} aria-label="Select" title={exercise ? 'Select part of the page to copy onto a board' : 'Select part of the page to explain or copy onto a board'}
+          onClick={() => { if (copyBox) stopCopyBox(); else { setCopyBox(true); setInkTool(null); setMarking(false); setPendingMark(null); } }}
           className={railTool(copyBox)}><SelectBoxIcon /></button>
         {inkTool && <button onClick={undoInk} disabled={!inkUndo[page]?.length} aria-label="Undo" title="Undo" className={railTool(false)}><UndoIcon /></button>}
       </div>
@@ -761,13 +739,12 @@ export default function ShelfReader() {
   const pageView = (
     <div ref={pageArea} className="p-3">
       {goToForm}
-      {copyBox && <p className="mb-2 text-sm font-medium text-gray-900">{copyDraft?.page === page ? 'Copy it, or drag again to redraw the box.' : 'Drag a box around what you want on a board.'}</p>}
-      {askBox && <p className="mb-2 text-sm font-medium text-gray-900">{askDraft?.page === page ? 'Ask your question, or drag again to redraw the box.' : 'Drag a box around what you want to ask about.'}</p>}
+      {copyBox && <p className="mb-2 text-sm font-medium text-gray-900">{copyDraft?.page === page ? (exercise ? 'Copy it, or drag again to redraw the box.' : 'Explain or copy it, or drag again to redraw the box.') : (exercise ? 'Drag a box around what you want on a board.' : 'Drag a box around what you want explained or on a board.')}</p>}
       {marking && <p className="mb-2 text-sm font-medium text-gray-900">{markParts.length && !pendingMark ? `Drag a box around the rest of ${markLabel || 'the exercise'} on this page.` : pendingMark ? 'Choose Exercise or Note, name it and save, or drag again to redraw the box.' : canAddToBoard && markOnBoard ? 'Drag a box around the next exercise to add it to this board.' : 'Drag a box around an exercise, or around a passage to take notes on.'}</p>}
       <PdfPage
-        pdf={pdf} pageNumber={page} marks={marksOnPage} solvedIds={solvedIds} activeId={openId} marking={marking || askBox || copyBox}
-        pending={copyBox ? (copyDraft?.page === page ? copyDraft.rect : null) : askBox ? (askDraft?.page === page ? askDraft.rect : null) : marking ? pendingMark : pageAsk && pageAsk.page === page ? pageAsk.rect : null}
-        pendingForm={copyBox ? copyForm : askBox ? askForm : marking && (
+        pdf={pdf} pageNumber={page} marks={marksOnPage} solvedIds={solvedIds} activeId={openId} marking={marking || copyBox}
+        pending={copyBox ? (copyDraft?.page === page ? copyDraft.rect : null) : marking ? pendingMark : pageAsk && pageAsk.page === page ? pageAsk.rect : null}
+        pendingForm={copyBox ? copyForm : marking && (
           <form onSubmit={(event) => { event.preventDefault(); void saveMark(); }}
             onKeyDown={(event) => { if (event.key === 'Escape') { setPendingMark(null); setMarkParts([]); } }}
             className="flex flex-wrap items-center gap-2 p-2 rounded-lg bg-white border border-gray-900 shadow-md w-max max-w-[22rem]">
@@ -815,7 +792,6 @@ export default function ShelfReader() {
         )}
         onMark={(rect) => {
           if (copyBox) { setCopyDraft({ page, rect }); setCopyState('ready'); return; }
-          if (askBox) { setAskDraft({ page, rect }); return; }
           if (markParts.length) { setPendingMark(rect); return; }
           if (!pendingMark) { setMarkLabel(nextLabel(shelfDocument, markKind)); setMarkFolder(startingFolder()); }
           setPendingMark(rect);
@@ -965,7 +941,8 @@ export default function ShelfReader() {
                 { label: isNote(exercise) ? 'Remove note page' : 'Remove exercise', onSelect: () => void removeMark(exercise) },
               ]} />
           )}
-          canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} onShowTools={toggleTools} paper={paper} />}
+          canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} onShowTools={toggleTools} paper={paper}
+            ask={{ sessionType: exercise && isNote(exercise) ? 'note' : 'problem', onAsk: (question) => void askForHelp(question), disabled: isStreaming }} />}
           toolbar={(
             <BottomToolbar
               onAskForHelp={(question) => void askForHelp(question)}

@@ -178,7 +178,8 @@ function AppContent() {
             <h1 className="font-semibold text-gray-900 truncate">{checkIn ? checkInTitle(checkIn) : problemTitle || (sessionType === 'note' ? 'New notes' : 'New problem')}</h1>
           </>
         )}
-        canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} onShowTools={toggleTools} paper={paper} />}
+        canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} onShowTools={toggleTools} paper={paper}
+          ask={checkIn ? undefined : { sessionType, onAsk: (question) => void handleAskForHelp(question), disabled: isStreaming }} />}
         toolbar={(
           <BottomToolbar
             onAskForHelp={(question) => void handleAskForHelp(question)}

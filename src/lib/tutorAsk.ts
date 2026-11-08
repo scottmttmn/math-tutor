@@ -20,6 +20,13 @@ export function askChoices(sessionType: SessionType): AskChoice[] {
       ];
 }
 
+/** The short choices in the menu under a lasso selection (Scott, 2026-11-08): a hint or a check; on notes, an explanation. */
+export function selectionChoices(sessionType: SessionType): AskChoice[] {
+  return sessionType === 'note'
+    ? [{ intent: 'explain', label: 'Explain' }]
+    : [{ intent: 'hint', label: 'Hint' }, { intent: 'check', label: 'Check' }];
+}
+
 /** The question a choice sends, which is also what the chat shows as the student's message. */
 export function askQuestion(intent: TutorIntent, sessionType: SessionType): string {
   if (sessionType === 'note') {
