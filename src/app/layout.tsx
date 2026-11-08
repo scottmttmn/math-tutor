@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { GeistSans } from 'geist/font/sans';
 import DeviceAppearance from '@/components/layout/DeviceAppearance';
+import ErrorRecorder from '@/components/layout/ErrorRecorder';
 import './globals.css';
 import 'katex/dist/katex.min.css';
 
@@ -31,6 +32,7 @@ export default function RootLayout({
         </head>
       )}
       <body className={`${GeistSans.variable} font-sans antialiased`}>
+        <ErrorRecorder />
         <DeviceAppearance />
         {children}
       </body>

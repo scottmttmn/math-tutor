@@ -52,7 +52,8 @@ Every change goes through a branch and a PR (see CLAUDE.md, "Workflow and CI"). 
 - [x] Ink board controls in a left rail, header and rail collapsible, nothing at the foot of the board where the writing hand rests.
 - [ ] The same for the PDF reader's page toolbar (no board open).
 - [ ] Opening a board from a PDF and naming its problem feels cumbersome; look for fewer steps.
-- [ ] Diagnostics on the tablet for the random-seeming crashes and the board scrolling while writing: errors, WebView crashes, and finger gestures that moved the page, viewable in Settings.
+- [x] Error log on the tablet for the random-seeming crashes (2026-11-08): page errors, Java and native crashes, the WebView's page process dying, the app closed while in front or not responding, in Settings → Errors to copy or save.
+- [ ] If the log shows the page process dying: reload the page instead of closing the app. Finger gestures that moved the page, if the board scrolling while writing comes back.
 - [ ] An optional no-zoom mode (fingers only scroll).
 - [x] Scratch out to erase on the ink board (Board → Scratch out to erase, on by default).
 - [ ] **Print-book notebook** (design, after pages): a notes board with pages tied to a print book (one per book or per section). Lasso work or tap beside a number to **Label as problem** ("4.2 #55"): solved, favorite, the book's list and a jump back to the spot. The tutor gets the region plus book, section and number; it never sees the printed problem, so it asks for a line or a photo when it can't tell, and never recalls problems by number.

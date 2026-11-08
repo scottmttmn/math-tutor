@@ -11,6 +11,7 @@ import { TUTOR_DIRECT } from '@/lib/tutorRequest';
 import { DEVICE_KEY_LABELS, deviceKeyName } from '@/lib/deviceKeys';
 import { useDeviceKey } from '@/hooks/useDeviceKey';
 import BackupSettings from './BackupSettings';
+import ErrorLogSettings from './ErrorLogSettings';
 
 const PRESETS: { label: string; provider: Provider; model: string; baseUrl: string }[] = [
   { label: 'Anthropic (Claude)', provider: 'anthropic', model: DEFAULT_ANTHROPIC_MODEL, baseUrl: '' },
@@ -28,7 +29,7 @@ function findPresetIndex(config: ModelConfig): number {
   return idx >= 0 ? idx : PRESETS.length - 1; // fall back to Custom
 }
 
-export type SettingsTab = 'tutor' | 'backup';
+export type SettingsTab = 'tutor' | 'backup' | 'errors';
 
 interface Props {
   isOpen: boolean;
@@ -41,7 +42,7 @@ interface Props {
   restoredMessage?: string;
 }
 
-const TABS: { tab: SettingsTab; label: string }[] = [{ tab: 'tutor', label: 'Tutor' }, { tab: 'backup', label: 'Backup' }];
+const TABS: { tab: SettingsTab; label: string }[] = [{ tab: 'tutor', label: 'Tutor' }, { tab: 'backup', label: 'Backup' }, { tab: 'errors', label: 'Errors' }];
 
 export default function SettingsModal({ isOpen, tab = 'tutor', ...rest }: Props) {
   if (!isOpen) return null;
@@ -66,7 +67,9 @@ function SettingsDialog({ onClose, initialTab, saveOpenBoard, restoredMessage }:
             </button>
           ))}
         </div>
-        {tab === 'tutor' ? <SettingsForm onClose={onClose} saveOpenBoard={saveOpenBoard} /> : <BackupSettings onClose={onClose} saveOpenBoard={saveOpenBoard} restoredMessage={restoredMessage} />}
+        {tab === 'tutor' ? <SettingsForm onClose={onClose} saveOpenBoard={saveOpenBoard} />
+          : tab === 'backup' ? <BackupSettings onClose={onClose} saveOpenBoard={saveOpenBoard} restoredMessage={restoredMessage} />
+          : <ErrorLogSettings onClose={onClose} />}
         {TUTOR_DIRECT && <AppUpdateNote />}
       </div>
     </div>
