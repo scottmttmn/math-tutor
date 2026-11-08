@@ -41,8 +41,10 @@ export interface BoardStroke {
 /** A picture on an ink board: the problem (locked, placed once) or one kept from an old board. */
 /** Part of a PDF page copied to go on a board (Copy on the page, Paste in a board's rail). */
 export interface CopiedPicture {
-  /** PNG, base64 without the data: prefix. */
-  png: string;
+  /** PNG, base64 without the data: prefix: part of a PDF page (pasted once). */
+  png?: string;
+  /** Or ink copied from a board with the lasso (Copy, Ctrl+C or Ctrl+X), pasted as often as wanted. */
+  ink?: { strokes: BoardStroke[]; images: BoardImage[] };
   /** Where it came from, e.g. "Calculus, p. 47". */
   from: string;
   copiedAt: number;
@@ -403,6 +405,14 @@ export type UserPart = { type: 'text'; text: string } | { type: 'image'; data: s
 
 /** What a choice under Ask tutor asks for (see askChoices in src/lib/tutorAsk.ts). */
 export type TutorIntent = 'hint' | 'explain' | 'check' | 'feedback';
+
+/** The tutor from the menu under a lasso selection: the board's kind, and what sends a question (with the selection alone). */
+export interface SelectionAsk {
+  sessionType: SessionType;
+  onAsk: (question: string) => void;
+  /** A reply is streaming. */
+  disabled?: boolean;
+}
 
 /** Page bounds of one crop of the board. */
 export interface TutorImageBounds {

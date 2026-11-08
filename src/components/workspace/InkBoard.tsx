@@ -18,9 +18,13 @@ import { strokePoints, sweep } from '@/lib/booxPen';
 import { useBooxInk } from '@/hooks/useBooxInk';
 import { imageFileToPng } from '@/lib/pdf';
 import { MAX_BOARD_PICTURE } from '@/lib/shelf';
+import { copyPicture } from '@/lib/copiedPicture';
+import { pasteCopiedPicture } from '@/lib/boardPicture';
 import { useBoardRail } from '@/components/layout/BoardRail';
-import { EraserIcon, FitWidthIcon, HighlightIcon, LassoIcon, PenIcon, RedoIcon, UndoIcon } from '@/components/common/Icons';
-import type { BoardImage, BoardInk, BoardStroke, InkColor, Paper } from '@/types';
+import { CopyIcon, EraserIcon, FitWidthIcon, HighlightIcon, LassoIcon, PenIcon, RedoIcon, TrashIcon, UndoIcon } from '@/components/common/Icons';
+import type { BoardImage, BoardInk, BoardStroke, InkColor, Paper, SelectionAsk } from '@/types';
+import { askQuestion, selectionChoices } from '@/lib/tutorAsk';
+import { getTutorWaitMs } from '@/hooks/useRateLimit';
 import type { DrawingCanvasHandle } from './DrawingCanvas';
 
 // The ink board: our own Notes-like canvas (it replaced tldraw). One long page of fixed width; the
@@ -58,6 +62,8 @@ const SCROLL_LOCK = 24;
 const SELECTION_PAD = 8;
 // The resize handle at the selection box's bottom right corner: drawn this big, taken within this reach (screen px).
 const HANDLE_SIZE = 14;
+/** Screen px between the selection menu and the board's edges (or the selection above it). */
+const MENU_GAP = 8;
 const HANDLE_REACH = 26;
 // A resized selection stays at least this big along its box's width plus height (board units), and at most this many times larger.
 const MIN_RESIZE = 16;
@@ -104,7 +110,7 @@ const canvasBlob = (canvas: HTMLCanvasElement, type: string, quality?: number) =
 const typing = (target: EventTarget | null) =>
   target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
 
-export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden: boolean; paper: Paper }) {
+export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden: boolean; paper: Paper; ask?: SelectionAsk }) {
   const { ink: mirrored, pendingLoad } = useCanvasState();
   const dispatch = useCanvasDispatch();
   const container = useRef<HTMLDivElement>(null);
@@ -114,6 +120,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   const selectionArea = useRef<HTMLDivElement>(null);
   // Over its resize handle's reach, likewise left to the page.
   const handleArea = useRef<HTMLDivElement>(null);
+  // The selection's menu (tutor, Delete, Copy, Done), placed under the selection, or above it near the foot.
+  const selectionMenu = useRef<HTMLDivElement>(null);
   // Undo/redo availability for the toolbar; the ink itself is drawn directly, without re-rendering.
   const [steps, setSteps] = useState({ undo: false, redo: false });
   const [tool, setTool] = useState<Tool>('pen');
@@ -262,6 +270,19 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     const pad = SELECTION_PAD / z;
     place(selectionArea.current, box && { left: (box.minX - pad - x) * z, top: (box.minY - pad - y) * z, width: (box.maxX - box.minX + pad * 2) * z, height: (box.maxY - box.minY + pad * 2) * z });
     place(handleArea.current, box && { left: (box.maxX + pad - x) * z - HANDLE_REACH, top: (box.maxY + pad - y) * z - HANDLE_REACH, width: HANDLE_REACH * 2, height: HANDLE_REACH * 2 });
+    const menu = selectionMenu.current;
+    if (menu) {
+      if (!box) menu.style.visibility = 'hidden';
+      else {
+        const menuW = menu.offsetWidth;
+        const menuH = menu.offsetHeight;
+        const left = Math.min(Math.max(MENU_GAP, (box.minX - pad - x) * z), w - menuW - MENU_GAP);
+        const below = (box.maxY + pad - y) * z + HANDLE_REACH;
+        const above = (box.minY - pad - y) * z - menuH - MENU_GAP;
+        const top = below + menuH + MENU_GAP <= h || above < MENU_GAP ? Math.min(below, h - menuH - MENU_GAP) : above;
+        Object.assign(menu.style, { left: `${Math.max(MENU_GAP, left)}px`, top: `${Math.max(MENU_GAP, top)}px`, visibility: 'visible' });
+      }
+    }
     if (box) {
       context.save();
       context.strokeStyle = '#111827';
@@ -380,6 +401,30 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     apply(copy.board);
     select(copy.ids);
   }, [apply, select]);
+
+  /** Copy (Ctrl+C): the selection's ink and pictures onto the app's clipboard, for Paste on any board; false when it failed. */
+  const copySelection = useCallback(async (): Promise<boolean> => {
+    const ids = selection.current;
+    const current = board();
+    const ink = { strokes: current.strokes.filter((stroke) => ids.has(stroke.id)), images: current.images.filter((image) => ids.has(image.id) && !image.problem) };
+    const items = ink.strokes.length + ink.images.length;
+    if (items === 0) return false;
+    try {
+      await copyPicture({ ink, from: `${items} item${items === 1 ? '' : 's'} from a board`, copiedAt: Date.now() });
+      return true;
+    } catch (error) {
+      console.error('Could not copy the selection', error);
+      return false;
+    }
+  }, []);
+
+  /** Cut (Ctrl+X): the selection goes only once it is safely on the clipboard. */
+  const cutSelection = useCallback(async () => {
+    const ids = selection.current;
+    if (ids.size === 0 || !(await copySelection())) return;
+    if (selection.current === ids) select(new Set());
+    apply(removeItems(board(), ids));
+  }, [apply, copySelection, select]);
 
   // A finished BOOX stroke becomes ink in the pen's style; an eraser pass takes the strokes it crossed.
   useEffect(() => {
@@ -566,18 +611,21 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       if (key === 'z' && !event.shiftKey) { event.preventDefault(); doUndo(); }
       else if ((key === 'z' && event.shiftKey) || key === 'y') { event.preventDefault(); doRedo(); }
       else if (key === 'd' && selection.current.size > 0) { event.preventDefault(); duplicateSelection(); }
+      else if (key === 'c' && selection.current.size > 0) { event.preventDefault(); void copySelection(); }
+      else if (key === 'x' && selection.current.size > 0) { event.preventDefault(); void cutSelection(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [doUndo, doRedo, deleteSelection, duplicateSelection, select]);
+  }, [doUndo, doRedo, deleteSelection, duplicateSelection, copySelection, cutSelection, select]);
 
-  // Ctrl+V with a picture on the clipboard (copied from a PDF or another app) puts it on the board, like Add picture.
+  // Ctrl+V with a picture on the system clipboard (from a PDF or another app) puts it on the board, like Add
+  // picture; otherwise the app's own copy (ink copied with the lasso, or part of a PDF page) is pasted.
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
       if (typing(event.target) || !container.current?.offsetParent) return;
       const file = [...(event.clipboardData?.files ?? [])].find((item) => item.type.startsWith('image/'));
-      if (!file) return;
       event.preventDefault();
+      if (!file) { void pasteCopiedPicture(handleRef.current); return; }
       void handleRef.current?.addPicture(imageFileToPng(file, MAX_BOARD_PICTURE)).catch((error) => console.error('Could not paste the picture', error));
     };
     window.addEventListener('paste', onPaste);
@@ -1046,6 +1094,23 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       select(new Set([image.id]));
       return true;
     },
+    pasteInk: (ink) => {
+      if (loadPending.current) return false;
+      const copied = addItems(emptyBoard(), ink.strokes, ink.images.filter((image) => !image.problem));
+      const box = boardBounds(copied);
+      if (!box) return false;
+      // Into the middle of the view, as new items.
+      const { x, y, z } = camera.current;
+      const { w, h } = view.current;
+      const dx = Math.round(x + w / z / 2 - (box.minX + box.maxX) / 2);
+      const dy = Math.round(y + h / z / 2 - (box.minY + box.maxY) / 2);
+      const pasted = copyItems(copied, new Set([...copied.strokes, ...copied.images].map((item) => item.id)), dx, dy, uuidv4);
+      const added = { strokes: pasted.board.strokes.filter((stroke) => pasted.ids.has(stroke.id)), images: pasted.board.images.filter((image) => pasted.ids.has(image.id)) };
+      apply(addItems(board(), added.strokes, added.images));
+      chooseTool('lasso');
+      select(pasted.ids);
+      return true;
+    },
     getRevision: () => inkRevision,
     getInk: () => (loadPending.current ? null : board()),
     // Clear leaves the problem picture, as it is locked.
@@ -1086,18 +1151,31 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         </div>,
         rail.tools,
       )}
-      {!toolsHidden && (tool === 'lasso' || ((tool === 'pen' || tool === 'highlighter') && optionsOpen)) && (
+      {/* Under the selection (placed in paint): the tutor on just these items, Delete, Copy and Done. */}
+      <div ref={selectionMenu} role="toolbar" aria-label="Selection" data-testid="selection-menu" style={{ visibility: 'hidden' }}
+        className="absolute flex items-center gap-1 p-1 bg-white border border-gray-300 rounded-xl shadow-md">
+        {tool === 'lasso' && selected > 0 && (
+          <>
+            {ask && selectionChoices(ask.sessionType).map((choice) => (
+              <button key={choice.intent} disabled={ask.disabled}
+                className="flex items-center justify-center min-h-11 px-3 text-sm font-medium rounded-lg border border-indigo-700 text-indigo-700 bg-white hover:bg-indigo-50 disabled:opacity-40"
+                title={`Ask the tutor about the selection: ${askQuestion(choice.intent, ask.sessionType)}`}
+                onClick={() => { if (!ask.disabled && getTutorWaitMs() === 0) ask.onAsk(askQuestion(choice.intent, ask.sessionType)); }}>
+                {choice.label}
+              </button>
+            ))}
+            {ask && <span className="w-px h-7 mx-0.5 bg-gray-300" aria-hidden="true" />}
+            <button className={pressed(false)} aria-label="Copy" title="Copy, to paste on any board (Ctrl+C)" onClick={() => void copySelection()}><CopyIcon /></button>
+            <button className={pressed(false)} aria-label="Delete" title="Delete (Delete)" onClick={deleteSelection}><TrashIcon /></button>
+            <button className={pressed(false)} title="Let go of the selection (Esc)" onClick={() => select(new Set())}>Done</button>
+          </>
+        )}
+      </div>
+      {!toolsHidden && ((tool === 'lasso' && selected === 0) || ((tool === 'pen' || tool === 'highlighter') && optionsOpen)) && (
         <div role="toolbar" aria-label={tool === 'lasso' ? 'Selection' : 'Pen options'} className="absolute top-2 left-2 right-2 flex flex-wrap items-center gap-1.5 pointer-events-none [&>*]:pointer-events-auto">
           {tool === 'lasso' && (
             <div className="flex items-center gap-1 p-1 bg-white/95 border border-gray-200 rounded-xl shadow-sm" role="group" aria-label="Selection">
-              {selected === 0 && <span className="px-2 text-sm text-gray-600">Circle ink to select it</span>}
-              {selected > 0 && (
-                <>
-                  <button className={pressed(false)} title="Delete the selection (Delete)" onClick={deleteSelection}>Delete</button>
-                  <button className={pressed(false)} title="Put a copy beside it (Ctrl+D)" onClick={duplicateSelection}>Duplicate</button>
-                  <button className={pressed(false)} title="Let go of the selection (Esc)" onClick={() => select(new Set())}>Done</button>
-                </>
-              )}
+              <span className="px-2 text-sm text-gray-600">Circle ink to select it</span>
             </div>
           )}
           {tool === 'pen' && (

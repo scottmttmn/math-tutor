@@ -58,8 +58,8 @@ try {
     }));
     assert.ok(buttons.every((button) => button.w >= 44 && button.h >= 44), JSON.stringify(buttons));
     assert.equal(new Set(buttons.map((button) => Math.round(button.x))).size, 1, `one rail down the page's left at ${width}px: ${JSON.stringify(buttons)}`);
-    // Ask, then Mark, at the rail's top, away from a writing hand at the bottom right.
-    assert.deepEqual(buttons.slice(0, 2).map((button) => button.name), ['Ask', 'Mark']);
+    // Mark at the rail's top, away from a writing hand at the bottom right.
+    assert.equal(buttons[0].name, 'Mark');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     for (const name of ['Previous page', 'Next page', 'Pen', 'Highlight', 'Eraser', 'Full screen', 'Text menu']) {
       assert.equal(buttons.find((button) => button.name === name)?.title, name);
@@ -338,7 +338,7 @@ try {
   await atPage('p. 3 (5 of 5)');
   console.log('PASS search finds words by section and lights them on the page');
 
-  // Ask about the page: Ask, drag a box, ask; the tutor gets the box and explains it as on a note page.
+  // Ask about the page: Select, drag a box, Explain; the tutor gets the box and explains it as on a note page.
   // Closing drops the conversation; Save as note page keeps it on a new note page.
   const asked = [];
   const reply = (text) => [{ type: 'text_delta', content: text }, { type: 'message_stop' }].map((event) => `data: ${JSON.stringify(event)}\n\n`).join('');
@@ -346,23 +346,22 @@ try {
     asked.push(route.request().postDataJSON());
     return route.fulfill({ contentType: 'text/event-stream', body: reply(`Reply ${asked.length} about the box.`) });
   });
-  const askAbout = async (question) => {
-    await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  const askAbout = async () => {
+    await page.getByRole('button', { name: 'Select', exact: true }).click();
     await markBox([0.1, 0.35], [0.8, 0.5]);
-    if (question) await page.getByLabel('Your question about the box').fill(question);
-    await page.getByRole('button', { name: 'Ask', exact: true }).last().click();
+    await page.getByRole('button', { name: 'Explain', exact: true }).click();
   };
   const askPanel = page.getByRole('region', { name: 'Tutor' });
-  await askAbout('Why do the angles add?');
+  await askAbout();
   await askPanel.getByText('Reply 1 about the box.').waitFor();
   assert.equal(asked[0].sessionType, 'note');
-  assert.equal(asked[0].userQuestion, 'Why do the angles add?');
+  assert.equal(asked[0].userQuestion, 'Can you explain this?');
   assert.ok(asked[0].problemImage?.length > 100, 'the box goes as the figure');
   assert.equal(asked[0].canvasImage, '');
   assert.equal(asked[0].bookContext, undefined);
   await askPanel.getByRole('button', { name: 'Close tutor' }).click();
   await page.getByRole('tab', { name: 'Your list' }).waitFor();
-  await askAbout('');
+  await askAbout();
   await askPanel.getByText('Reply 2 about the box.').waitFor({ timeout: 15000 });
   assert.equal(asked[1].userQuestion, 'Can you explain this?');
   await askPanel.getByRole('button', { name: 'Save as note page' }).click();
@@ -375,8 +374,8 @@ try {
   await page.unroute('**/api/tutor');
   console.log('PASS asking about a box on the page, closed or saved as a note page');
 
-  // Copy: drag a box with Select to copy, Copy it, and Paste in any ink board's rail puts it on the board.
-  await page.getByRole('button', { name: 'Select to copy', exact: true }).click();
+  // Copy: drag a box with Select, Copy it, and Paste in any ink board's rail puts it on the board.
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
   await markBox([0.1, 0.35], [0.8, 0.5]);
   await page.getByRole('button', { name: 'Copy', exact: true }).click();
   await page.getByText(/^Copied\./).waitFor();
@@ -392,7 +391,7 @@ try {
   await paste.waitFor({ state: 'detached' });
   await page.goto(readerUrl);
   await page.getByTestId('page-overlay').waitFor();
-  console.log('PASS Select to copy, then Paste on a board puts the box on it, once');
+  console.log('PASS Select, Copy, then Paste on a board puts the box on it, once');
 
   // An upright tablet: an exercise opens on its board, which takes the screen with the exercise
   // put on it; the page button swaps the page in, and Back to board (or its mark) swaps back.
@@ -434,7 +433,7 @@ try {
   await page.locator('[data-ink-board][data-images="1"]').waitFor();
   await page.getByRole('button', { name: /^p\. \S+: show the page$/ }).click();
   await page.getByTestId('page-overlay').waitFor();
-  await page.getByRole('button', { name: 'Select to copy', exact: true }).click();
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
   await markBox([0.1, 0.35], [0.8, 0.5]);
   await page.getByRole('button', { name: 'Copy', exact: true }).click();
   await page.getByRole('button', { name: 'Paste on this board' }).click();

@@ -153,3 +153,13 @@ export function FavoriteStar({ filled = false, size = 16 }: { filled?: boolean; 
     </svg>
   );
 }
+
+/** Copy: two overlapping sheets. */
+export function CopyIcon({ size = 18 }: { size?: number }) {
+  return <Icon size={size}><rect x="5.5" y="5.5" width="8" height="8.5" rx="1.2" /><path d="M10.5 3.2V3a1 1 0 0 0-1-1H3.2a1 1 0 0 0-1 1v7.3a1 1 0 0 0 1 1h.3" /></Icon>;
+}
+
+/** Delete: a bin. */
+export function TrashIcon({ size = 18 }: { size?: number }) {
+  return <Icon size={size}><path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9.5a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L12 4M6.8 6.8v4.8M9.2 6.8v4.8" /></Icon>;
+}

@@ -37,7 +37,7 @@ interface Props {
   onWriteUp?: () => void;
   /** Shows Add picture… on an ink board: an image or a PDF's first page, put on the board. */
   onAddPicture?: (file: File) => void;
-  /** Shows Paste in an ink board's rail while part of a PDF page is copied: puts it on the board. */
+  /** Shows Paste in an ink board's rail while something is copied (part of a PDF page, or ink): puts it on the board. */
   onPastePicture?: () => void;
   /** Shows Paper, which picks the board's paper: blank, lined or grid. */
   paper?: { value: Paper; onChange: (paper: Paper) => void };
@@ -59,7 +59,7 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
   const askClass = 'flex items-center gap-1.5 min-h-11 px-4 text-sm font-semibold text-white bg-indigo-700 rounded-lg hover:bg-indigo-800 disabled:bg-gray-200 disabled:text-gray-500 disabled:cursor-not-allowed';
   const plain = 'flex shrink-0 items-center justify-center gap-1.5 min-h-11 min-w-11 px-3 text-sm text-gray-800 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 disabled:opacity-40';
   const square = `${plain} w-11 p-0`;
-  // Part of a PDF page copied on the page: Paste puts it on this board.
+  // Part of a PDF page, or ink copied with the lasso: Paste puts it on this board.
   const pasteButton = copied && onPastePicture && (
     <button onClick={onPastePicture} disabled={isStreaming} className={square} aria-label="Paste" title={`Paste: ${copied.from}`} data-testid="paste-picture">
       <PasteIcon />

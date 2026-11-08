@@ -176,9 +176,16 @@ try {
   await page.getByRole('button', { name: 'Lasso', exact: true }).click();
   await lasso([[70, 170], [430, 170], [430, 260], [70, 260], [70, 170]]);
   await waitCount('selected', 1);
-  await openTutor(page);
+  // The selection's menu sits just under its box, with the tutor's short choices first.
+  const menu = page.getByTestId('selection-menu');
+  await menu.getByRole('button', { name: 'Hint', exact: true }).waitFor();
+  assert.deepEqual(await menu.getByRole('button').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label') || button.textContent.trim())), ['Hint', 'Check', 'Copy', 'Delete', 'Done']);
+  const menuBox = await menu.boundingBox();
+  // Just below the resize handle's reach at the box's bottom corner, so neither covers the other.
+  const handleBox = await page.getByTestId('resize-handle').boundingBox();
+  assert.ok(Math.abs(menuBox.y - (handleBox.y + handleBox.height)) < 2, `the menu is under the selection (${menuBox.y}, handle ${handleBox.y + handleBox.height})`);
   const asked = requests.length;
-  await chooseTutor(page);
+  await menu.getByRole('button', { name: 'Hint', exact: true }).click();
   while (requests.length === asked) await new Promise((resolve) => setTimeout(resolve, 50));
   await page.getByText('Ink hint.', { exact: true }).last().waitFor();
   const selectedPng = Buffer.from(requests.at(-1).messages.at(-1).content.find((part) => part.type === 'image_url').image_url.url.split(',')[1], 'base64');
@@ -190,9 +197,11 @@ try {
   assert.equal(shifts.filter((shift) => shift > 40 && shift < 80).length, 1, `one line moved by the drag (${shifts})`);
   assert.equal(shifts.filter((shift) => shift === 0).length, 2, 'the others stayed');
   assert.equal(await count('selected'), 1, 'the moved ink stays selected');
-  await page.getByRole('button', { name: 'Duplicate', exact: true }).click();
+  // Copy puts it on the app's clipboard; the rail's Paste puts it in the middle of the view, selected.
+  await menu.getByRole('button', { name: 'Copy', exact: true }).click();
+  await page.getByTestId('paste-picture').click();
   await waitCount('strokes', 4);
-  assert.equal(await count('selected'), 1, 'the copy is selected');
+  assert.equal(await count('selected'), 1, 'the pasted copy is selected');
   await page.keyboard.press('Delete');
   await waitCount('strokes', 3);
   await waitCount('selected', 0);
@@ -204,10 +213,26 @@ try {
   await saved(`session.ink?.strokes?.length === 3 && session.ink.strokes.every((s, n) => Math.min(...s.points.filter((_, i) => i % 3 === 1)) === ${JSON.stringify(startTops)}[n])`);
   await lasso([[70, 170], [430, 170], [430, 260], [70, 260], [70, 170]]);
   await waitCount('selected', 1);
+  await menu.getByRole('button', { name: 'Done', exact: true }).click();
+  await waitCount('selected', 0);
+  assert.equal(await menu.getByRole('button').count(), 0, 'the menu goes with the selection');
+  // Ctrl+X cuts; the copy stays on the clipboard for another paste.
+  await lasso([[70, 170], [430, 170], [430, 260], [70, 260], [70, 170]]);
+  await waitCount('selected', 1);
+  await page.keyboard.press('ControlOrMeta+x');
+  await waitCount('strokes', 2);
+  await page.getByTestId('paste-picture').click();
+  await waitCount('strokes', 3);
+  await page.getByTestId('paste-picture').click();
+  await waitCount('strokes', 4);
+  for (let n = 0; n < 3; n += 1) await page.keyboard.press('ControlOrMeta+z');
+  await waitCount('strokes', 3);
+  await lasso([[70, 170], [430, 170], [430, 260], [70, 260], [70, 170]]);
+  await waitCount('selected', 1);
   await page.keyboard.press('Escape');
   await waitCount('selected', 0);
   await page.getByRole('button', { name: 'Pen', exact: true }).click();
-  console.log('PASS the lasso selects, moves, duplicates and deletes, one undo step each; the tutor reads the selection');
+  console.log('PASS the lasso menu: the tutor reads the selection; it moves, copies, cuts, pastes and deletes, one undo step each');
 
   // Paper, zoom and Fit width.
   await page.getByRole('button', { name: 'Paper: Blank' }).click();

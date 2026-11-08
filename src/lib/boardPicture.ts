@@ -14,12 +14,17 @@ export async function addPictureFromFile(handle: DrawingCanvasHandle | null, fil
   }
 }
 
-/** Paste in a board's rail: the copied part of a PDF page, put on the open ink board, after which the copy is used up. */
+/**
+ * Paste in a board's rail (and Ctrl+V): the copied part of a PDF page, put on the open ink board, after
+ * which the copy is used up; or copied ink, which stays for another paste.
+ */
 export async function pasteCopiedPicture(handle: DrawingCanvasHandle | null): Promise<boolean> {
   if (!handle?.addPicture) return false;
   try {
     const copied = await loadCopiedPicture();
     if (!copied) return false;
+    if (copied.ink) return handle.pasteInk(copied.ink);
+    if (!copied.png) return false;
     const pasted = await handle.addPicture(Promise.resolve(copied.png));
     if (pasted) await clearCopiedPicture();
     return pasted;
