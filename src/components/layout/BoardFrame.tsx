@@ -30,13 +30,15 @@ interface Props {
   source?: {
     /** `toolbar` is a column of controls, shown down the source's left. */
     label: string; content: ReactNode; toolbar?: ReactNode; wide?: boolean;
+    /** Above the board on a narrow screen, take only the room the content needs (at most 40%). */
+    compact?: boolean;
     /**
-     * On a narrow screen, swap rather than stack: the board gets the screen, and a button named
-     * `label` (e.g. "Page 47") flips to the source, which has a way back. `key` names the open
-     * board, so another one opens on its board. Full screen swaps at any width. `railLabel` is
-     * its short name on the board's rail ("p. 47").
+     * On a narrow screen, swap rather than stack: the board gets the screen, and the board's rail
+     * has a button, `railLabel` ("p. 47"), that brings the source (`onShow`, e.g. turning back to
+     * the exercise's page) and flips to it there; the source's own rail has the way back (a new
+     * `key`). `key` names the open board, so another one opens on its board. Full screen swaps at any width.
      */
-    swap?: { label: string; railLabel?: string; key: string; onFlip?: (flipped: boolean) => void };
+    swap?: { railLabel: string; key: string; onFlip?: (flipped: boolean) => void; onShow?: () => void };
   };
   /** The board's name and details, at the top of the board column. */
   title: ReactNode;
@@ -76,15 +78,18 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
   const sourceName = source?.label;
   const closeTutor = useRef(tutor.onClose);
   useEffect(() => { closeTutor.current = tutor.onClose; });
-  const sourceOut = Boolean(source) && !flipped && (swapping || sourceHidden || sourceCovered);
-  const railSource = useMemo(() => (sourceOut && sourceName && railLabel ? {
+  // The rail's button is always there beside the board: it brings the source back into view, or
+  // (onShow) back to what the board was made from, e.g. the exercise's page after turning pages.
+  const onShow = source?.swap?.onShow;
+  const railSource = useMemo(() => (!flipped && sourceName && railLabel ? {
     label: railLabel, title: `Show the ${sourceName.toLowerCase()}`,
     show: () => {
-      closeTutor.current();
-      if (swapping) setFlippedFor(swapKey);
-      else setSourceHidden(false);
+      onShow?.();
+      if (swapping) { closeTutor.current(); setFlippedFor(swapKey); return; }
+      if (sourceCovered) closeTutor.current();
+      setSourceHidden(false);
     },
-  } : null), [sourceOut, sourceName, railLabel, swapping, swapKey]);
+  } : null), [flipped, sourceName, railLabel, swapping, swapKey, sourceCovered, onShow]);
   const railSlots = useMemo(() => ({ tools: railTools, header: railHeader, setTools: setRailTools, setHeader: setRailHeader, source: railSource }), [railTools, railHeader, railSource]);
 
   return (
@@ -94,16 +99,10 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
           aria-label={source.label}
           // Below a very wide screen the tutor takes the source's place, so the board keeps its room.
           // Keep lg:flex-1's zero basis for a wide PDF; its rendered width must not crowd out the board.
-          className={`${showTutor ? 'hidden 2xl:flex' : 'flex'} flex-col min-w-0 min-h-0 ${flipped ? 'flex-1' : 'basis-[40%] shrink-0'} ${
+          className={`${showTutor ? 'hidden 2xl:flex' : 'flex'} flex-col min-w-0 min-h-0 ${flipped ? 'flex-1' : source.compact ? 'max-h-[40%] lg:max-h-none shrink-0 overflow-y-auto' : 'basis-[40%] shrink-0'} ${
             flipped ? '' : source.wide ? 'lg:flex-1' : 'lg:w-[22rem] lg:flex-none'
           } ${!flipped ? 'boox:max-lg:basis-auto boox:max-lg:max-h-[35%]' : ''} border-b lg:border-b-0 lg:border-r border-gray-200 bg-gray-50`}
         >
-          {flipped && (
-            <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-white border-b border-gray-200">
-              <button onClick={() => setFlippedFor(null)}
-                className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Back to board</button>
-            </div>
-          )}
           {/* The source's toolbar is a rail down its left, like an ink board's. */}
           <div className="relative flex-1 min-h-0 flex">
             {source.toolbar}
@@ -117,14 +116,11 @@ export default function BoardFrame({ fullScreen, source, title, actions, canvas,
         <BoardRailContext.Provider value={railSlots}>
         <div className={`${fullScreen ? 'hidden' : 'flex'} flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-200`}>
           {/* The title keeps room to read; the buttons wrap below it on a narrow board. */}
-          <div className="min-w-[min(100%,16rem)] flex-1">{title}</div>
+          <div className="min-w-[min(100%,10rem)] flex-1">{title}</div>
           {actions}
           <div ref={setRailHeader} className="contents" />
-          {source?.swap && swapping ? !fullScreen && (
-            <button onClick={() => { tutor.onClose(); setFlippedFor(source.swap?.key ?? null); }}
-              title={`Show the ${source.label.toLowerCase()} in the board's place`}
-              className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">{source.swap.label}</button>
-          ) : source && !fullScreen && (
+          {/* Swapping, the rail's button shows the source; side by side, this hides it or brings it back. */}
+          {source && !swapping && !fullScreen && (
             <button
               onClick={() => {
                 if (sourceCovered) { tutor.onClose(); setSourceHidden(false); }

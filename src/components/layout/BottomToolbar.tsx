@@ -11,7 +11,7 @@ import type { Paper, SessionType } from '@/types';
 import { PAPERS } from '@/lib/paper';
 import MoreMenu from '@/components/common/MoreMenu';
 import { useCopiedPicture } from '@/hooks/useCopiedPicture';
-import { BroomIcon, FullScreenIcon, PaperIcon, PasteIcon, SolvedCheck, TutorIcon, UnsolvedCheck } from '@/components/common/Icons';
+import { BroomIcon, CloseIcon, FullScreenIcon, PaperIcon, PasteIcon, SolvedCheck, TutorIcon, UnsolvedCheck } from '@/components/common/Icons';
 import { InBoardHeader, useBoardRail } from './BoardRail';
 
 // The board's rail (BoardFrame): the tutor, InkBoard's tools (portaled in), paper, clear and the Board menu.
@@ -43,9 +43,11 @@ interface Props {
   paper?: { value: Paper; onChange: (paper: Paper) => void };
   /** The Favorite button (FavoriteButton), shown beside Mark solved on problems. */
   favorite?: ReactNode;
+  /** Closes the board (a book's exercise); in full screen it is at the rail's foot, since the header with Close is hidden. */
+  closeBoard?: { onClose: () => void; disabled?: boolean };
 }
 
-export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp, onAddPicture, onPastePicture, paper, favorite }: Props) {
+export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isStreaming, isSolved, onToggleSolved, sessionType, fullScreen, tools, tutor, onSaveAs, onWriteUp, onAddPicture, onPastePicture, paper, favorite, closeBoard }: Props) {
   const pictureInput = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const { hasContent } = useCanvasState();
@@ -209,6 +211,11 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
           {clearButton}
           {boardMenu}
           {fullScreen?.on && fullScreenButton}
+          {fullScreen?.on && closeBoard && (
+            <button onClick={closeBoard.onClose} disabled={closeBoard.disabled} className={square} aria-label="Close board" title="Close board">
+              <CloseIcon />
+            </button>
+          )}
         </div>
       )}
       {rail?.header && createPortal(

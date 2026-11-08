@@ -50,6 +50,10 @@ export function FullScreenIcon() {
   return <Icon><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" /></Icon>;
 }
 
+export function CloseIcon() {
+  return <Icon><path d="M4 4l8 8M12 4l-8 8" /></Icon>;
+}
+
 export function ChevronIcon({ direction }: { direction: 'left' | 'right' }) {
   return <Icon size={20}><path d={direction === 'left' ? 'm10 3-5 5 5 5' : 'm6 3 5 5-5 5'} /></Icon>;
 }

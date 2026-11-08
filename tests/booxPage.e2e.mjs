@@ -148,7 +148,7 @@ try {
   let starts = (await calls('start')).length;
   await startsWith(starts + 1).catch(() => undefined);
   starts = (await calls('start')).length;
-  await page.getByRole('button', { name: /^Page \d+$/ }).click();
+  await page.getByRole('button', { name: /^p\. \S+: show the page$/ }).click();
   await overlay.waitFor();
   await page.getByRole('button', { name: 'Pen', exact: true }).click();
   await startsWith(starts + 1);
