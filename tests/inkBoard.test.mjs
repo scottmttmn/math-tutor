@@ -37,6 +37,22 @@ test('the page grows to fit work beyond its sides or top, and otherwise stays th
   assert.deepEqual(model.pageAround(page, { minX: -100, minY: -50, maxX: 1000, maxY: 10 }), { left: -132, top: -82, width: 1164 });
 });
 
+test('scaleItems resizes strokes (points and width) and pictures about a corner, and grows the page', () => {
+  const a = line('a', 100, 100, 200, 100);
+  const b = line('b', 0, 0, 10, 0);
+  const picture = { id: 'p', x: 100, y: 120, w: 100, h: 50, src: 'data:' };
+  const board = edits.addItems(model.emptyBoard(), [a, b], [picture]);
+  const half = edits.scaleItems(board, new Set(['a', 'p']), 100, 100, 0.5);
+  assert.deepEqual(half.strokes[0].points, [100, 100, 0.5, 150, 100, 0.5]);
+  assert.equal(half.strokes[0].width, Math.round(a.width * 50) / 100);
+  assert.equal(half.strokes[1], board.strokes[1], 'an unselected stroke is shared');
+  assert.deepEqual(half.images[0], { ...picture, x: 100, y: 110, w: 50, h: 25 });
+  const big = edits.scaleItems(board, new Set(['p']), 100, 120, 20);
+  assert.ok(big.page.width >= 2000 + 100, 'the page grows to fit');
+  assert.equal(edits.scaleItems(board, new Set(['a']), 0, 0, 1), board, 'by 1 is no change');
+  assert.equal(edits.scaleItems(board, new Set(['gone']), 0, 0, 2), board, 'nothing selected is no change');
+});
+
 test('edits make new boards and keep untouched strokes; undo and redo step through them', () => {
   const a = line('a', 0, 0, 10, 0);
   const b = line('b', 0, 50, 10, 50);

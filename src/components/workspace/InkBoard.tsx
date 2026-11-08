@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
 import { GRID_SPACING, LINE_SPACING, PAPER_LINE } from '@/lib/paper';
 import { HIGHLIGHTER_WIDTH, HIGHLIGHT_ALPHA, INK_COLORS, PEN_WIDTHS, boardBounds, emptyBoard, pushPoint, type PenSize } from '@/lib/inkBoard/model';
-import { addItems, commit, copyItems, moveItems, redo, removeItems, startHistory, undo, type BoardHistory } from '@/lib/inkBoard/edits';
+import { addItems, commit, copyItems, moveItems, redo, removeItems, scaleItems, startHistory, undo, type BoardHistory } from '@/lib/inkBoard/edits';
 import { GridIndex, itemsInLasso, strokesHitByPath } from '@/lib/inkBoard/hitTest';
 import { scratchedOut } from '@/lib/inkBoard/scratchOut';
 import { useScratchOutOff } from '@/hooks/useInkBoardMode';
@@ -56,6 +56,12 @@ const PINCH_START = 0.15;
 const SCROLL_LOCK = 24;
 // The selection's box sits this far outside its ink, in screen px; a duplicate lands this far off, in board units.
 const SELECTION_PAD = 8;
+// The resize handle at the selection box's bottom right corner: drawn this big, taken within this reach (screen px).
+const HANDLE_SIZE = 14;
+const HANDLE_REACH = 26;
+// A resized selection stays at least this big along its box's width plus height (board units), and at most this many times larger.
+const MIN_RESIZE = 16;
+const MAX_RESIZE = 8;
 // The lasso's loop as Onyx's pen draws it on a BOOX: thin and gray.
 const LASSO_PREVIEW = { width: 1.5, color: '#6b7280', marker: false, dash: true };
 const DUPLICATE_OFFSET = 24;
@@ -63,6 +69,18 @@ const DUPLICATE_OFFSET = 24;
 const OPEN_TOP = 80;
 const COLORS: InkColor[] = ['black', 'gray', 'blue', 'red', 'green'];
 const DESK = '#e5e7eb';
+
+/** The selection box's resize handle: a filled square on its bottom right corner (the box padded by SELECTION_PAD). */
+function drawHandle(context: CanvasRenderingContext2D, box: { maxX: number; maxY: number }, z: number) {
+  const pad = SELECTION_PAD / z;
+  const size = HANDLE_SIZE / z;
+  context.setLineDash([]);
+  context.fillStyle = '#111827';
+  context.fillRect(box.maxX + pad - size / 2, box.maxY + pad - size / 2, size, size);
+  context.strokeStyle = '#ffffff';
+  context.lineWidth = 1.5 / z;
+  context.strokeRect(box.maxX + pad - size / 2, box.maxY + pad - size / 2, size, size);
+}
 
 function loadPicture(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -94,6 +112,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   const liveCanvas = useRef<HTMLCanvasElement>(null);
   // Over the lasso's selection, for a BOOX: Onyx's pen leaves it to the page, which drags it.
   const selectionArea = useRef<HTMLDivElement>(null);
+  // Over its resize handle's reach, likewise left to the page.
+  const handleArea = useRef<HTMLDivElement>(null);
   // Undo/redo availability for the toolbar; the ink itself is drawn directly, without re-rendering.
   const [steps, setSteps] = useState({ undo: false, redo: false });
   const [tool, setTool] = useState<Tool>('pen');
@@ -131,7 +151,9 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   // The lasso: what it holds, the loop being drawn, and a drag of the selection (shown before it becomes one undo step).
   const selection = useRef<Set<string>>(new Set());
   const lassoing = useRef<{ pointer: number; path: number[] } | null>(null);
-  const moving = useRef<{ pointer: number; fromX: number; fromY: number; dx: number; dy: number } | null>(null);
+  // A drag of the selection: moved by (dx, dy), or, from its corner handle, scaled by `factor` about
+  // the box's top left (`scale`: that corner and the box's width plus height).
+  const moving = useRef<{ pointer: number; fromX: number; fromY: number; dx: number; dy: number; factor: number; scale?: { x: number; y: number; size: number } } | null>(null);
   const touches = useRef(new Map<number, { x: number; y: number }>());
   // When the pen was last near or on the screen (hovering, writing, or a BOOX stroke arriving).
   const penSeen = useRef(-Infinity);
@@ -140,6 +162,10 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
   // On a BOOX, a gesture's frames are spaced out (frameGap): when the last one was painted, and the wait for the next.
   const lastPaint = useRef(0);
   const paced = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The board as the drag would leave it: the selection moved, or resized from its corner.
+  const dragged = (current: BoardInk, drag: NonNullable<typeof moving.current>) => (drag.scale
+    ? scaleItems(current, selection.current, drag.scale.x, drag.scale.y, drag.factor)
+    : moveItems(current, selection.current, drag.dx, drag.dy));
   // The lasso's loop and a dragged selection are drawn on the live canvas, paced the same way;
   // `liveDrag` says it holds a dragged selection, cleared once the board under it is painted again.
   const liveFrame = useRef(0);
@@ -229,19 +255,20 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       images: current.images.filter((image) => shown(image.id)),
     }, loaded());
     const box = !drag && selection.current.size > 0 ? boardBounds(current, selection.current) : null;
-    const skip = selectionArea.current;
-    if (skip) {
-      const pad = SELECTION_PAD / z;
-      const shown = box ? { left: (box.minX - pad - x) * z, top: (box.minY - pad - y) * z, width: (box.maxX - box.minX + pad * 2) * z, height: (box.maxY - box.minY + pad * 2) * z } : null;
-      Object.assign(skip.style, shown ? { left: `${shown.left}px`, top: `${shown.top}px`, width: `${shown.width}px`, height: `${shown.height}px` } : { width: '0px', height: '0px' });
-    }
+    // The page's hit areas exactly (inSelection, onHandle), so Onyx's pen leaves both to the page and nothing else.
+    const place = (element: HTMLDivElement | null, area: { left: number; top: number; width: number; height: number } | null) => {
+      if (element) Object.assign(element.style, area ? { left: `${area.left}px`, top: `${area.top}px`, width: `${area.width}px`, height: `${area.height}px` } : { width: '0px', height: '0px' });
+    };
+    const pad = SELECTION_PAD / z;
+    place(selectionArea.current, box && { left: (box.minX - pad - x) * z, top: (box.minY - pad - y) * z, width: (box.maxX - box.minX + pad * 2) * z, height: (box.maxY - box.minY + pad * 2) * z });
+    place(handleArea.current, box && { left: (box.maxX + pad - x) * z - HANDLE_REACH, top: (box.maxY + pad - y) * z - HANDLE_REACH, width: HANDLE_REACH * 2, height: HANDLE_REACH * 2 });
     if (box) {
-      const pad = SELECTION_PAD / z;
       context.save();
       context.strokeStyle = '#111827';
       context.lineWidth = 1.5 / z;
       context.setLineDash([6 / z, 4 / z]);
       context.strokeRect(box.minX - pad, box.minY - pad, box.maxX - box.minX + pad * 2, box.maxY - box.minY + pad * 2);
+      drawHandle(context, box, z);
       context.restore();
     }
     // The drag has landed: the selection is on the board again, so the live canvas lets it go.
@@ -577,7 +604,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     if (stroke) drawBoardStroke(context, stroke);
     if (drag) {
       liveDrag.current = true;
-      const moved = moveItems(history.current.board, selection.current, drag.dx, drag.dy);
+      const moved = dragged(history.current.board, drag);
       const ids = selection.current;
       drawBoard(context, { ...moved, strokes: moved.strokes.filter((item) => ids.has(item.id)), images: moved.images.filter((item) => ids.has(item.id)) }, loaded());
       const box = boardBounds(moved, ids);
@@ -588,6 +615,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         context.setLineDash([6 / z, 4 / z]);
         context.strokeRect(box.minX - pad, box.minY - pad, box.maxX - box.minX + pad * 2, box.maxY - box.minY + pad * 2);
         context.setLineDash([]);
+        drawHandle(context, box, z);
       }
     }
     if (loop && loop.length >= 4) {
@@ -660,11 +688,20 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
       const pad = SELECTION_PAD / camera.current.z;
       return Boolean(box && at.x >= box.minX - pad && at.x <= box.maxX + pad && at.y >= box.minY - pad && at.y <= box.maxY + pad);
     };
+    // Whether a board point is on the resize handle at the box's bottom right corner.
+    const onHandle = (at: { x: number; y: number }) => {
+      const box = selection.current.size > 0 ? boardBounds(board(), selection.current) : null;
+      if (!box) return false;
+      const { z } = camera.current;
+      const pad = SELECTION_PAD / z;
+      return Math.max(Math.abs(at.x - (box.maxX + pad)), Math.abs(at.y - (box.maxY + pad))) <= HANDLE_REACH / z;
+    };
 
     const booxPen = (event: PointerEvent) => {
       if (event.pointerType !== 'pen' || !booxOwns() || moving.current) return false;
       // Onyx's pen leaves the lasso's selection to the page, which drags it.
-      if (style.current.tool === 'lasso' && inSelection(toBoard(camera.current, local(event).x, local(event).y))) return false;
+      const point = toBoard(camera.current, local(event).x, local(event).y);
+      if (style.current.tool === 'lasso' && (inSelection(point) || onHandle(point))) return false;
       event.preventDefault();
       return true;
     };
@@ -724,13 +761,15 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         return;
       }
       if (style.current.tool === 'lasso') {
-        // Inside the selection's box drags it; anywhere else starts a new loop.
-        if (inSelection(at)) {
+        // The corner handle resizes the selection, inside its box drags it; anywhere else starts a new loop.
+        const handle = onHandle(at);
+        if (handle || inSelection(at)) {
           // Paced like a finger gesture on a BOOX: the panel can't keep up with every move.
           gesture(true);
           // The SDK lets go of the pen until it lifts, or it takes the drag once it leaves the box.
           holdPen(true);
-          moving.current = { pointer: event.pointerId, fromX: at.x, fromY: at.y, dx: 0, dy: 0 };
+          const box = handle ? boardBounds(board(), selection.current) : null;
+          moving.current = { pointer: event.pointerId, fromX: at.x, fromY: at.y, dx: 0, dy: 0, factor: 1, scale: box ? { x: box.minX, y: box.minY, size: Math.max(1, box.maxX - box.minX + box.maxY - box.minY) } : undefined };
           repaint();
           paintLive();
           return;
@@ -798,6 +837,11 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         const at = toBoard(camera.current, local(event).x, local(event).y);
         drag.dx = at.x - drag.fromX;
         drag.dy = at.y - drag.fromY;
+        if (drag.scale) {
+          // The corner follows the pen along the box's diagonal: its width plus height grows by what the pen adds to both.
+          const { size } = drag.scale;
+          drag.factor = Math.min(MAX_RESIZE, Math.max(MIN_RESIZE / size, (size + drag.dx + drag.dy) / size));
+        }
         repaintLive();
         return;
       }
@@ -840,7 +884,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
         holdPen(false);
         gesture(false);
         // The selection keeps its ids, so it stays selected where it landed.
-        if (event.type !== 'pointercancel' && (drag.dx !== 0 || drag.dy !== 0)) apply(moveItems(board(), selection.current, drag.dx, drag.dy));
+        if (event.type !== 'pointercancel' && (drag.dx !== 0 || drag.dy !== 0)) apply(dragged(board(), drag));
         else repaint();
         return;
       }
@@ -1020,6 +1064,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper }: { handleRef:
     <div ref={container} className="absolute inset-0 overflow-hidden" data-ink-board="true" data-strokes="0" data-images="0" data-selected="0">
       <canvas ref={inkCanvas} className="absolute inset-0" aria-hidden="true" />
       <div ref={selectionArea} data-pen-skip className="absolute pointer-events-none" aria-hidden="true" />
+      <div ref={handleArea} data-pen-skip data-testid="resize-handle" className="absolute pointer-events-none" aria-hidden="true" />
       <canvas
         ref={liveCanvas}
         className={`absolute inset-0 touch-none ${tool === 'eraser' ? 'cursor-cell' : tool === 'lasso' ? 'cursor-default' : 'cursor-crosshair'}`}

@@ -295,14 +295,32 @@ try {
   assert.ok(added.w <= withPicture.ink.page.width - 64 && Math.abs(added.w / added.h - 2) < 0.01, `picture ${added.w} × ${added.h}`);
   const stored = Buffer.from(added.src.split(',')[1], 'base64');
   assert.ok(stored.readUInt32BE(16) <= 1920, 'a large photo is stored at most 1920 px wide');
+  // The selection's corner handle resizes it: dragged in by a quarter of its width plus height, half
+  // the size, the same shape, one undo step, and still selected.
+  // The handle's area (left to the page on a BOOX) is centered on the corner of the box, 8 px outside the picture.
+  const handle = await page.getByTestId('resize-handle').boundingBox();
+  const handleX = handle.x + handle.width / 2, handleY = handle.y + handle.height / 2;
+  const boxArea = await page.locator('[data-ink-board] [data-pen-skip]').first().boundingBox();
+  assert.ok(Math.abs(boxArea.x + boxArea.width - handleX) < 1 && Math.abs(boxArea.y + boxArea.height - handleY) < 1, 'the handle sits on the box corner');
+  const inward = ((boxArea.width - 16) + (boxArea.height - 16)) / 4;
+  await page.mouse.move(handleX, handleY);
+  await page.mouse.down();
+  await page.mouse.move(handleX - inward, handleY - inward, { steps: 10 });
+  await page.mouse.up();
+  const resized = (await saved(`session.ink?.images?.some((item) => !item.problem && item.w < ${added.w} * 0.75)`)).ink.images.find((item) => !item.problem);
+  assert.ok(Math.abs(resized.w / added.w - 0.5) < 0.03 && Math.abs(resized.w / resized.h - 2) < 0.01, `resized to ${resized.w} × ${resized.h} from ${added.w} × ${added.h}`);
+  assert.ok(Math.abs(resized.x - added.x) < 0.5 && Math.abs(resized.y - added.y) < 0.5, 'its top left stays put');
+  assert.equal(await ink().getAttribute('data-selected'), '1', 'it stays selected');
   await page.keyboard.press('Delete');
   await waitCount('images', 1);
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await waitCount('images', 2);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await saved(`session.ink?.images?.some((item) => !item.problem && item.w === ${added.w})`);
   await page.getByRole('button', { name: 'Clear board' }).click();
   await waitCount('images', 1);
   await page.getByRole('button', { name: 'Pen', exact: true }).click();
-  console.log('PASS Add picture puts it below the work, chosen with the lasso; Delete, undo and Clear');
+  console.log('PASS Add picture puts it below the work, chosen with the lasso; the corner handle resizes it; Delete, undo and Clear');
 
   // Ctrl+V with a picture on the clipboard pastes it the same way.
   await page.evaluate(async (png) => {
