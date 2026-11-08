@@ -723,3 +723,29 @@ export interface AppUpdatePlugin {
 export interface StylusTouch extends Touch {
   touchType?: 'direct' | 'stylus';
 }
+
+/**
+ * Something that went wrong, kept on this device for the student to read or send
+ * (src/lib/errorLog.ts, Settings → Errors). `kind`: the page's own uncaught `error` or
+ * `promise` rejection, or from the Android app (CrashLogPlugin): a Java `crash`, a
+ * `native-crash`, `not-responding`, the WebView's `page-process` dying, or another unusual `exit`.
+ */
+export interface ErrorLogEntry {
+  at: number;
+  kind: 'error' | 'promise' | 'crash' | 'native-crash' | 'not-responding' | 'page-process' | 'exit';
+  message: string;
+  /** A stack trace, or what Android said. */
+  detail?: string;
+  /** The page's path and query, for the page's own errors. */
+  page?: string;
+  /** The app build it happened in, when known. */
+  build?: string;
+}
+
+/** The Android app's native crash log (android/…/CrashLogPlugin.java): JSON lines, read, then cleared once stored. */
+export interface CrashLogPlugin {
+  /** Everything recorded so far, and its length in bytes. */
+  read(): Promise<{ lines: string; size: number }>;
+  /** Drops the first `size` bytes (what was read and stored), keeping anything added since. */
+  clear(options: { size: number }): Promise<void>;
+}
