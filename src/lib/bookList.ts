@@ -27,6 +27,8 @@ export interface BookSection {
   title: string | null;
   from: number;
   to: number;
+  /** The bookmark's place in the contents, when the section is one. */
+  index?: number;
 }
 
 /**
@@ -42,7 +44,7 @@ export function sectionAt(contents: ContentsEntry[], page: number, pageCount: nu
   contents.forEach((entry, index) => { if (entry.page <= page && (found < 0 || entry.page >= contents[found].page)) found = index; });
   if (found < 0) return { key: 'before', title: null, from: 1, to: Math.max(1, contents[0].page - 1) };
   const next = contents.find((entry) => entry.page > contents[found].page);
-  return { key: `section-${found}`, title: contents[found].title, from: contents[found].page, to: next ? Math.max(contents[found].page, next.page - 1) : pageCount };
+  return { key: `section-${found}`, index: found, title: contents[found].title, from: contents[found].page, to: next ? Math.max(contents[found].page, next.page - 1) : pageCount };
 }
 
 // The top of a stroke, so a highlight sorts among the marks by where it is on the page.

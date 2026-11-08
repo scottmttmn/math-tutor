@@ -15,7 +15,7 @@ import { listFolders, loadInk, loadProfile, loadShelfDocument, savePageInk, save
 import { folderHref, folderIndex, folderPath, folderTree, isWithin } from '@/lib/folders';
 import { cropPage, cropParts, openPdf, trimmedArea } from '@/lib/pdf';
 import { pageTextBoxes, sectionAt } from '@/lib/bookList';
-import { exerciseNumberIn, printedLabel, sectionNumber } from '@/lib/exerciseLabel';
+import { exerciseNumberIn, printedLabel, sectionNumberAt } from '@/lib/exerciseLabel';
 import { findPage, pageName } from '@/lib/reader';
 import { MAX_BOARD_PICTURE, cropMark, ensureExerciseBoard, exerciseStatement, isNote, markBoardId, markExercise, marksOn, nextLabel, renameMark, setReadFrom, solvedExercises, unmarkExercise } from '@/lib/shelf';
 import { boardMarkOf, pictureKey, sameBoard } from '@/lib/boardProblems';
@@ -349,7 +349,8 @@ export default function ShelfReader() {
     if (!pdf || !shelfDocument) return;
     const { boxes } = await pageTextBoxes(pdf, markPage);
     const number = exerciseNumberIn(boxes, rect);
-    const found = number ? printedLabel(number, sectionNumber(sectionAt(contents, markPage, pdf.numPages).title)) : null;
+    const section = sectionAt(contents, markPage, pdf.numPages);
+    const found = number ? printedLabel(number, section.index === undefined ? null : sectionNumberAt(contents, section.index)) : null;
     const before = printedRef.current;
     printedRef.current = found;
     setPrintedName(found);
