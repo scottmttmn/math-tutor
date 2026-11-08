@@ -16,7 +16,11 @@ export async function loadCopiedPicture(): Promise<CopiedPicture | null> {
 export async function copyPicture(picture: CopiedPicture): Promise<void> {
   await setSetting(KEY, picture);
   window.dispatchEvent(new Event(EVENT));
-  if (!picture.png) return;
+  if (!picture.png) {
+    // Copied ink: the system clipboard gets text, so an image copied earlier no longer wins Ctrl+V.
+    try { await navigator.clipboard?.writeText?.(`Ink from Math Tutor (${picture.from})`); } catch { /* Paste in the rail still works. */ }
+    return;
+  }
   try {
     const blob = await (await fetch(`data:image/png;base64,${picture.png}`)).blob();
     await navigator.clipboard?.write?.([new ClipboardItem({ 'image/png': blob })]);

@@ -402,16 +402,29 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
     select(copy.ids);
   }, [apply, select]);
 
-  /** Copy (Ctrl+C): the selection's ink and pictures onto the app's clipboard, for Paste on any board. */
-  const copySelection = useCallback(() => {
-    if (selection.current.size === 0) return;
+  /** Copy (Ctrl+C): the selection's ink and pictures onto the app's clipboard, for Paste on any board; false when it failed. */
+  const copySelection = useCallback(async (): Promise<boolean> => {
     const ids = selection.current;
     const current = board();
     const ink = { strokes: current.strokes.filter((stroke) => ids.has(stroke.id)), images: current.images.filter((image) => ids.has(image.id) && !image.problem) };
-    if (ink.strokes.length + ink.images.length === 0) return;
-    void copyPicture({ ink, from: `${ink.strokes.length + ink.images.length} item${ink.strokes.length + ink.images.length === 1 ? '' : 's'} from a board`, copiedAt: Date.now() })
-      .catch((error) => console.error('Could not copy the selection', error));
+    const items = ink.strokes.length + ink.images.length;
+    if (items === 0) return false;
+    try {
+      await copyPicture({ ink, from: `${items} item${items === 1 ? '' : 's'} from a board`, copiedAt: Date.now() });
+      return true;
+    } catch (error) {
+      console.error('Could not copy the selection', error);
+      return false;
+    }
   }, []);
+
+  /** Cut (Ctrl+X): the selection goes only once it is safely on the clipboard. */
+  const cutSelection = useCallback(async () => {
+    const ids = selection.current;
+    if (ids.size === 0 || !(await copySelection())) return;
+    if (selection.current === ids) select(new Set());
+    apply(removeItems(board(), ids));
+  }, [apply, copySelection, select]);
 
   // A finished BOOX stroke becomes ink in the pen's style; an eraser pass takes the strokes it crossed.
   useEffect(() => {
@@ -598,12 +611,12 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
       if (key === 'z' && !event.shiftKey) { event.preventDefault(); doUndo(); }
       else if ((key === 'z' && event.shiftKey) || key === 'y') { event.preventDefault(); doRedo(); }
       else if (key === 'd' && selection.current.size > 0) { event.preventDefault(); duplicateSelection(); }
-      else if (key === 'c' && selection.current.size > 0) { event.preventDefault(); copySelection(); }
-      else if (key === 'x' && selection.current.size > 0) { event.preventDefault(); copySelection(); deleteSelection(); }
+      else if (key === 'c' && selection.current.size > 0) { event.preventDefault(); void copySelection(); }
+      else if (key === 'x' && selection.current.size > 0) { event.preventDefault(); void cutSelection(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [doUndo, doRedo, deleteSelection, duplicateSelection, copySelection, select]);
+  }, [doUndo, doRedo, deleteSelection, duplicateSelection, copySelection, cutSelection, select]);
 
   // Ctrl+V with a picture on the system clipboard (from a PDF or another app) puts it on the board, like Add
   // picture; otherwise the app's own copy (ink copied with the lasso, or part of a PDF page) is pasted.
@@ -1152,7 +1165,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
               </button>
             ))}
             {ask && <span className="w-px h-7 mx-0.5 bg-gray-300" aria-hidden="true" />}
-            <button className={pressed(false)} aria-label="Copy" title="Copy, to paste on any board (Ctrl+C)" onClick={copySelection}><CopyIcon /></button>
+            <button className={pressed(false)} aria-label="Copy" title="Copy, to paste on any board (Ctrl+C)" onClick={() => void copySelection()}><CopyIcon /></button>
             <button className={pressed(false)} aria-label="Delete" title="Delete (Delete)" onClick={deleteSelection}><TrashIcon /></button>
             <button className={pressed(false)} title="Let go of the selection (Esc)" onClick={() => select(new Set())}>Done</button>
           </>
