@@ -747,7 +747,10 @@ export interface ErrorLogEntry {
   build?: string;
 }
 
-/** The Android app's native crash log (android/…/CrashLogPlugin.java): JSON lines, emptied by take(). */
+/** The Android app's native crash log (android/…/CrashLogPlugin.java): JSON lines, read, then cleared once stored. */
 export interface CrashLogPlugin {
-  take(): Promise<{ lines: string }>;
+  /** Everything recorded so far, and its length in bytes. */
+  read(): Promise<{ lines: string; size: number }>;
+  /** Drops the first `size` bytes (what was read and stored), keeping anything added since. */
+  clear(options: { size: number }): Promise<void>;
 }

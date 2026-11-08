@@ -115,11 +115,13 @@ export function installErrorLog() {
 async function takeNativeLog() {
   if (!Capacitor.isNativePlatform() || !Capacitor.isPluginAvailable('CrashLog')) return;
   try {
-    const { lines } = await CrashLog.take();
+    const { lines, size } = await CrashLog.read();
     const entries = parseNativeLog(lines);
     if (entries.length) await update((log) => entries.reduce(withEntry, log));
+    // Only once they're stored: a failed write leaves them in the native log for the next start.
+    if (size > 0) await CrashLog.clear({ size });
   } catch {
-    // Nothing to add.
+    // Nothing added now; whatever wasn't stored stays in the native log.
   }
 }
 

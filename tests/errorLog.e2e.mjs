@@ -13,12 +13,13 @@ function fakeCrashLog() {
     JSON.stringify({ at: Date.now() - 7_200_000, kind: 'crash', message: 'java.lang.IllegalStateException: test', detail: 'at com.scottmttmn.mathtutor.Test', build: '41' }),
   ].join('\n');
   window.Capacitor = {
-    PluginHeaders: [{ name: 'CrashLog', methods: [{ name: 'take', rtype: 'promise' }] }],
-    async nativePromise(plugin, method) {
-      if (plugin === 'CrashLog' && method === 'take') {
-        const taken = lines;
-        lines = '';
-        return { lines: taken };
+    PluginHeaders: [{ name: 'CrashLog', methods: [{ name: 'read', rtype: 'promise' }, { name: 'clear', rtype: 'promise' }] }],
+    async nativePromise(plugin, method, options) {
+      if (plugin === 'CrashLog' && method === 'read') return { lines, size: new TextEncoder().encode(lines).length };
+      if (plugin === 'CrashLog' && method === 'clear') {
+        window.crashLogCleared = options.size;
+        lines = new TextDecoder().decode(new TextEncoder().encode(lines).slice(options.size));
+        return {};
       }
       if (plugin === 'BooxPen' && method === 'status') return { onyx: false, active: false };
       throw new Error(`${plugin}.${method} is not stood in for`);
@@ -79,6 +80,8 @@ try {
     assert.equal(await entries.count(), 2);
     assert.match(await entries.nth(0).innerText(), /Page stopped\s+Android stopped the page’s process/);
     assert.match(await entries.nth(1).innerText(), /App crashed\s+java\.lang\.IllegalStateException: test[\s\S]*build 41/);
+    // Cleared natively once stored, all of it.
+    assert.ok(await page.evaluate(() => window.crashLogCleared) > 0);
     await page.getByRole('button', { name: 'Done' }).click();
     // Taken once: a reload doesn't add them again.
     await page.reload();
