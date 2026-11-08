@@ -17,7 +17,7 @@ const shelf = load('src/lib/shelf.ts', {
     shelfSessionId: (documentId, exerciseId) => `shelf:${documentId}:${exerciseId}`,
     bookFolder: () => ({}), bookFolderId: (id) => `book:${id}`, deleteShelfDocument: async () => {}, loadShelfDocument: async () => undefined, saveFolder: async () => {},
   },
-  '@/lib/pdf': { cropPage: async () => 'crop' },
+  '@/lib/pdf': { cropPage: async () => 'crop', cropParts: async (pdf, parts) => (parts.length > 1 ? `crop of ${parts.length}` : 'crop') },
   '@/lib/sessionRecovery': { discardRecoveryCopy: () => {} },
 });
 
@@ -129,4 +129,37 @@ test('without a shared board nothing changes', () => {
   const session = board();
   assert.equal(withoutProblem(session, '11'), session);
   assert.equal(toHistoryItem(board({ chatHistory: [{ id: 'm', role: 'user', content: 'hi', timestamp: 1 }] })).problems, undefined);
+});
+
+test('renaming an exercise on a board of several renames its entry and, when worked on, the problem text', () => {
+  let state = sessionReducer(initialState, {
+    type: 'LOAD_SESSION', sessionId: 'shelf:doc:11', problemStatement: 'stale', problemImage: null, chatHistory: [], isSolved: false,
+    problems: [problem('11'), problem('12')], currentProblem: '12',
+  });
+  state = sessionReducer(state, { type: 'RENAME_PROBLEM', id: '12', label: '4.2 #55', problemStatement: '4.2 #55 · Book, p. 4' });
+  assert.equal(state.problems[1].label, '4.2 #55');
+  assert.equal(state.problemStatement, '4.2 #55 · Book, p. 4');
+  state = sessionReducer(state, { type: 'RENAME_PROBLEM', id: '11', label: '4.2 #53', problemStatement: '4.2 #53 · Book, p. 4' });
+  assert.equal(state.problemStatement, '4.2 #55 · Book, p. 4', 'the one worked on keeps its text');
+  assert.equal(state.problems[0].label, '4.2 #53');
+  // A board of one: only its text.
+  const one = sessionReducer(sessionReducer(initialState, { type: 'LOAD_SESSION', sessionId: 'shelf:doc:9', problemStatement: 'Exercise 1 · Book, p. 4', problemImage: null, chatHistory: [] }),
+    { type: 'RENAME_PROBLEM', id: '9', label: '1.1 #9', problemStatement: '1.1 #9 · Book, p. 4' });
+  assert.equal(one.problemStatement, '1.1 #9 · Book, p. 4');
+  assert.equal(one.problems, null);
+});
+
+test('an exercise continued on the next page shows on both pages and is pictured whole', async () => {
+  const document = { id: 'doc', title: 'Book', exercises: [], pageCount: 9 };
+  const first = { x: 0.1, y: 0.8, width: 0.6, height: 0.15 };
+  const rest = { x: 0.1, y: 0.05, width: 0.6, height: 0.1 };
+  const { document: marked, exercise } = await shelf.markExercise({}, document, 4, first, '4.2 #55', 'exercise', [], undefined, undefined, [{ page: 5, rect: rest }]);
+  assert.deepEqual(exercise.more, [{ page: 5, rect: rest }]);
+  assert.equal(sessions.get('shelf:doc:' + exercise.id).problemImage, 'crop of 2');
+  assert.deepEqual(shelf.marksOn(marked, 4).map((mark) => mark.rect), [first]);
+  assert.deepEqual(shelf.marksOn(marked, 5).map((mark) => [mark.id, mark.rect]), [[exercise.id, rest]]);
+  assert.deepEqual(shelf.marksOn(marked, 6), []);
+  const renamed = await shelf.renameMark(marked, exercise.id, '  4.2 #56 ');
+  assert.equal(renamed.exercises[0].label, '4.2 #56');
+  assert.equal(await shelf.renameMark(marked, exercise.id, '  '), marked, 'an empty name changes nothing');
 });

@@ -95,6 +95,40 @@ export async function cropPage(pdf: PDFDocumentProxy, pageNumber: number, rect: 
   return toBase64(crop);
 }
 
+/**
+ * Several boxes, usually an exercise and its continuation on the next page, as one PNG (base64):
+ * stacked top to bottom in order, at the same scale, left-aligned. One box is `cropPage`.
+ */
+export async function cropParts(pdf: PDFDocumentProxy, parts: { page: number; rect: PageRect }[], maxSide = Infinity): Promise<string> {
+  if (parts.length === 1) return cropPage(pdf, parts[0].page, parts[0].rect, maxSide);
+  const pieces: { canvas: HTMLCanvasElement; sx: number; sy: number; width: number; height: number }[] = [];
+  for (const { page: pageNumber, rect } of parts) {
+    const canvas = await drawPage(await pdf.getPage(pageNumber), CROP_PAGE_WIDTH);
+    pieces.push({
+      canvas, sx: Math.round(rect.x * canvas.width), sy: Math.round(rect.y * canvas.height),
+      width: Math.max(1, Math.round(rect.width * canvas.width)), height: Math.max(1, Math.round(rect.height * canvas.height)),
+    });
+  }
+  const gap = 12;
+  const width = Math.max(...pieces.map((piece) => piece.width));
+  const height = pieces.reduce((sum, piece) => sum + piece.height, 0) + gap * (pieces.length - 1);
+  const scale = Math.min(1, maxSide / Math.max(width, height));
+  const out = document.createElement('canvas');
+  out.width = Math.max(1, Math.round(width * scale));
+  out.height = Math.max(1, Math.round(height * scale));
+  const context = out.getContext('2d');
+  if (context) {
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, out.width, out.height);
+    let y = 0;
+    for (const piece of pieces) {
+      context.drawImage(piece.canvas, piece.sx, piece.sy, piece.width, piece.height, 0, Math.round(y * scale), Math.round(piece.width * scale), Math.round(piece.height * scale));
+      y += piece.height + gap;
+    }
+  }
+  return toBase64(out);
+}
+
 /** A whole page as a PNG (base64), for a problem figure taken from a PDF. */
 export async function pageImage(pdf: PDFDocumentProxy, pageNumber = 1, maxSide = Infinity): Promise<string> {
   const page = await pdf.getPage(pageNumber);

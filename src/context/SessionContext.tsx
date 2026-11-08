@@ -24,7 +24,9 @@ type SessionAction =
   // A board of several exercises: add one (the board's own becomes the first, named `first`) and work on it, or switch to one.
   | { type: 'ADD_PROBLEM'; problem: BoardProblem; first: Pick<BoardProblem, 'id' | 'label'> }
   | { type: 'SELECT_PROBLEM'; id: string }
-  | { type: 'REMOVE_PROBLEM'; id: string };
+  | { type: 'REMOVE_PROBLEM'; id: string }
+  // A Shelf exercise renamed on its board: its entry (on a board of several) and, if it's the one worked on, the problem text.
+  | { type: 'RENAME_PROBLEM'; id: string; label: string; problemStatement: string };
 
 interface SessionState {
   /** Changes on opening/new board, but not on its first autosave; resets transient chat drafts. */
@@ -177,6 +179,12 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
       const problems = synced(state).problems?.filter((problem) => problem.id !== action.id);
       if (!problems?.length) return state;
       return select(state, problems, state.currentProblem === action.id ? problems[0].id : state.currentProblem);
+    }
+    case 'RENAME_PROBLEM': {
+      const problems = synced(state).problems;
+      if (!problems) return { ...state, problemStatement: action.problemStatement };
+      const renamed = problems.map((problem) => (problem.id === action.id ? { ...problem, label: action.label, problemStatement: action.problemStatement } : problem));
+      return select(state, renamed, state.currentProblem ?? renamed[0].id);
     }
     case 'SET_TUTOR_PROBLEM': {
       if (!state.tutorProblem) return state;

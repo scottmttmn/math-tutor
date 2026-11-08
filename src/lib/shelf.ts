@@ -1,10 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { bookFolder, bookFolderId, deleteSession, deleteShelfDocument, loadSession, saveFolder, saveSession, saveShelfDocument, shelfSessionId } from '@/lib/db';
-import { cropPage, imageFileToPng, openPdf, pageImage, renderCover } from '@/lib/pdf';
+import { cropParts, imageFileToPng, openPdf, pageImage, renderCover } from '@/lib/pdf';
 import { discardRecoveryCopy } from '@/lib/sessionRecovery';
 import { boardMarkOf, markSolved, sameBoard, withoutProblem } from '@/lib/boardProblems';
-import type { ChatMessage, PageRect, ShelfDocument, ShelfExercise, ShelfMarkKind } from '@/types';
+import type { ChatMessage, MarkPart, PageRect, ShelfDocument, ShelfExercise, ShelfMarkKind } from '@/types';
 
 
 const isPdf = (file: File) => file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
@@ -47,6 +47,17 @@ export const isNote = (mark: ShelfExercise) => mark.kind === 'note';
 export const exerciseStatement = (document: ShelfDocument, exercise: ShelfExercise) =>
   `${exercise.label} · ${document.title}, p. ${exercise.page}`;
 
+/** Every box of a mark, in order: its own, then the rest on later pages. */
+export const markParts = (mark: Pick<ShelfExercise, 'page' | 'rect' | 'more'>): MarkPart[] => [{ page: mark.page, rect: mark.rect }, ...(mark.more ?? [])];
+
+/** The picture of a mark for its board and the tutor: its box, or all its boxes stacked. */
+export const cropMark = (pdf: PDFDocumentProxy, mark: Pick<ShelfExercise, 'page' | 'rect' | 'more'>) => cropParts(pdf, markParts(mark));
+
+/** The marks with a box on `page`, each shown with that box (a continued exercise shows on both pages). */
+export function marksOn(document: ShelfDocument, page: number): ShelfExercise[] {
+  return document.exercises.flatMap((mark) => markParts(mark).filter((part) => part.page === page).map((part) => (part.page === mark.page && part.rect === mark.rect ? mark : { ...mark, page: part.page, rect: part.rect })));
+}
+
 /** The session a mark is worked on: its own board, or the board it was added to. */
 export const markBoardId = (document: Pick<ShelfDocument, 'id'>, mark: Pick<ShelfExercise, 'id' | 'boardOf'>) => shelfSessionId(document.id, boardMarkOf(mark));
 
@@ -59,7 +70,7 @@ export async function ensureExerciseBoard(pdf: PDFDocumentProxy, document: Shelf
   if (await loadSession(id)) return id;
   const now = Date.now();
   const problemStatement = exerciseStatement(document, exercise);
-  const problemImage = await cropPage(pdf, exercise.page, exercise.rect);
+  const problemImage = await cropMark(pdf, exercise);
   await saveSession({
     id, title: problemStatement.slice(0, 50), problemStatement, problemImage,
     canvasStrokes: [], canvasDocument: null, canvasImageBlob: null, chatHistory, createdAt: now, updatedAt: now,
@@ -75,15 +86,15 @@ export async function ensureExerciseBoard(pdf: PDFDocumentProxy, document: Shelf
  * `chatHistory`, as when a question about the page is saved as a note page). With `folder`, the
  * board is filed there (a folder other than the book's) and the next mark starts on it. With
  * `boardOf`, an exercise goes on that mark's board instead, which the open board adds it to (no
- * board is made here). Returns the updated document.
+ * board is made here). `more` is the rest of an exercise continued on later pages. Returns the updated document.
  */
 export async function markExercise(
   pdf: PDFDocumentProxy, document: ShelfDocument, page: number, rect: PageRect, label: string, kind: ShelfMarkKind = 'exercise',
-  chatHistory: ChatMessage[] = [], folder?: string, boardOf?: string,
+  chatHistory: ChatMessage[] = [], folder?: string, boardOf?: string, more: MarkPart[] = [],
 ): Promise<{ document: ShelfDocument; exercise: ShelfExercise }> {
   const exercise: ShelfExercise = {
     id: uuidv4(), ...(kind === 'note' ? { kind } : {}), label: label.trim() || nextLabel(document, kind), page, rect, createdAt: Date.now(),
-    ...(boardOf ? { boardOf } : {}),
+    ...(boardOf ? { boardOf } : {}), ...(more.length ? { more } : {}),
   };
   const ownFolder = !folder || folder === document.folderId;
   if (!boardOf) await ensureExerciseBoard(pdf, document, exercise, chatHistory, ownFolder ? undefined : folder);
@@ -94,6 +105,18 @@ export async function markExercise(
   }
   await saveShelfDocument(updated);
   return { document: updated, exercise };
+}
+
+/** Renames a mark (its board's problem text follows, `exerciseStatement`). Returns the updated document. */
+export async function renameMark(document: ShelfDocument, markId: string, label: string): Promise<ShelfDocument> {
+  const name = label.trim();
+  if (!name) return document;
+  const updated = {
+    ...document, updatedAt: Date.now(),
+    exercises: document.exercises.map((item) => (item.id === markId ? { ...item, label: name } : item)),
+  };
+  await saveShelfDocument(updated);
+  return updated;
 }
 
 /** Sets the first page the tutor reads for an exercise (0 for none). Returns the updated document. */

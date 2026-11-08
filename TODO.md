@@ -13,7 +13,7 @@ Every change goes through a branch and a PR (see CLAUDE.md, "Workflow and CI"). 
 ### PDF reading and writing
 
 - [ ] **Open as note:** move ink from a passage on a PDF page onto a new note board. Marking a passage as a note page already works.
-- [ ] Edit a saved mark's box and label in the reader. Boards can already be renamed from the library; that does not edit the original mark's label or bounds.
+- [x] Marks are named from the book's number ("4.2 #55") and renamed on their board; an exercise can go on over the page. Still open: redrawing a saved mark's box.
 - [ ] Dedicated PDF zoom controls beyond the current fit-to-width page and browser pinch zoom. The board zooms with two fingers or Ctrl+wheel and has Fit width.
 - [ ] Save a PDF with its page ink and highlights included. Board PNG/PDF export and full backups already exist.
 - [ ] An optional default paper setting for new boards. Today each board remembers its paper; new Problems start Blank and Notes start Lined.
