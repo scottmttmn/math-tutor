@@ -174,7 +174,9 @@ export function useBooxInk({ container, enabled = true, exclude: excluded, sdk, 
       }
       if (key !== lastRegion) {
         lastRegion = key;
-        void BooxPen.setRegion(area).catch(() => undefined);
+        // Refused (the pen not up yet on an older build): measured again next frame, so the pen
+        // never keeps a stale region (full screen moved the page up and its top strip took no pen).
+        void BooxPen.setRegion(area).catch(() => { if (!stopped && lastRegion === key) { lastRegion = ''; schedule(); } });
         // A region change drops a refresh still waiting natively: a stroke's ink, drawn just
         // before the page shifted, stayed hidden until the next stroke (Go 10.3, 2026-10-23).
         painted();

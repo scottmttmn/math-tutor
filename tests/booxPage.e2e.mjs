@@ -168,6 +168,38 @@ try {
   await page.waitForFunction(() => document.querySelector('[data-ink-board]')?.getAttribute('data-strokes') === '1');
   assert.deepEqual(errors, []);
   console.log('PASS on an upright tablet the swapped-in page takes the BOOX pen, and the board takes it back');
+
+  {
+    // Full screen moves the page up as the pen starts: a region change refused while the SDK was
+    // still coming up left the pen in the old place, and the page's top strip took no pen.
+    const page = await browser.newPage({ viewport: { width: 824, height: 1100 } });
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.addInitScript(fakeBooxBridge);
+    await page.addInitScript(() => { window.__startDelay = 400; });
+    await page.goto(`${origin}/`);
+    await page.locator('input[aria-label="Add a PDF"]').setInputFiles(pdfPath);
+    await page.getByRole('link', { name: 'Start reading' }).click();
+    const overlay = page.getByTestId('page-overlay');
+    await overlay.waitFor();
+    await page.getByRole('button', { name: 'Pen', exact: true }).click();
+    await page.getByRole('button', { name: 'Full screen' }).click();
+    await page.getByRole('button', { name: 'Exit full screen' }).waitFor();
+    const shown = async () => {
+      const box = await overlay.boundingBox();
+      const view = await page.evaluate(() => innerHeight);
+      return { x: Math.round(box.x), y: Math.round(box.y), w: Math.round(box.width), bottom: Math.round(Math.min(box.y + box.height, view)) };
+    };
+    const matches = async () => {
+      const want = await shown();
+      const region = await page.evaluate(() => window.__boox.region);
+      return region && Math.abs(region.x - want.x) <= 1 && Math.abs(region.y - want.y) <= 1 && Math.abs(region.w - want.w) <= 1 && Math.abs(region.y + region.h - want.bottom) <= 1;
+    };
+    for (let tries = 0; tries < 40 && !(await matches()); tries += 1) await page.waitForTimeout(100);
+    assert.ok(await matches(), `the pen has the page as shown in full screen: ${JSON.stringify(await page.evaluate(() => window.__boox.region))} vs ${JSON.stringify(await shown())}`);
+    assert.deepEqual(errors, []);
+    console.log('PASS full screen gives the BOOX pen the page where it now is, even while the SDK comes up');
+  }
 } finally {
   await browser.close();
 }
