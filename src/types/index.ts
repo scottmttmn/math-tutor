@@ -67,6 +67,11 @@ export interface BoardPage {
   left: number;
   top: number;
   width: number;
+  /**
+   * Notes boards: the page is cut into this many pages of PAGE_HEIGHT from `top`, shown one at a
+   * time like BOOX Notes. Unset: one long page with no bottom.
+   */
+  pages?: number;
 }
 
 /** An ink board's drawing as saved with a session. Strokes are in drawing order; images sit under them. */

@@ -306,3 +306,30 @@ test('a copy is new items beside the originals, never the problem picture, and o
   assert.equal(edits.copyItems(before, new Set(['gone']), 24, 24, () => 'x').board, before);
   assert.equal(edits.copyItems(before, new Set(['p']), 24, 24, () => 'x').board, before);
 });
+
+test('a notes board is cut into pages that never move, and work below the last adds pages', () => {
+  const H = model.PAGE_HEIGHT;
+  assert.equal(model.paginate(board([])).page.pages, 1);
+  const long = model.paginate(board([line('a', 10, 10, 20, 20), line('b', 10, 2 * H + 100, 20, 2 * H + 120)]));
+  assert.equal(long.page.pages, 3);
+  assert.equal(model.paginate(long), long, 'already paged');
+  assert.deepEqual(model.pageSpan(long.page, 1), { top: H, bottom: 2 * H });
+  assert.equal(model.pageAt(long.page, H + 5), 1);
+  assert.equal(model.pageAt(long.page, 99 * H), 2);
+  assert.equal(model.pageAt(long.page, -50), 0);
+  // Work above the first page doesn't move the pages; work below the last adds them.
+  assert.equal(model.pageAround(long.page, { minX: 100, minY: -200, maxX: 200, maxY: 50 }).top, 0);
+  assert.equal(model.pageAround(long.page, { minX: 100, minY: 3 * H + 10, maxX: 200, maxY: 4 * H + 10 }).pages, 5);
+  assert.equal(edits.addItems(long, [line('c', 10, 5 * H + 10, 20, 5 * H + 20)]).page.pages, 6);
+});
+
+test('on a page the camera stays between its top and bottom', () => {
+  const camera = load('src/lib/inkBoard/camera.ts', {}, loaded);
+  const page = { left: 0, top: 0, width: 960, pages: 3 };
+  const view = { w: 992, h: 600 };
+  const span = model.pageSpan(page, 1);
+  assert.equal(camera.clampCamera({ x: -16, y: 0, z: 1 }, page, view, span).y, span.top - 16);
+  assert.equal(camera.clampCamera({ x: -16, y: 1e6, z: 1 }, page, view, span).y, span.bottom + 16 - 600);
+  // A page shorter than the view sits at its top.
+  assert.equal(camera.clampCamera({ x: -16, y: 5000, z: 1 }, page, { w: 992, h: 2000 }, span).y, span.top - 16);
+});

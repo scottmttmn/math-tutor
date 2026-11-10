@@ -179,7 +179,8 @@ function AppContent() {
           </>
         )}
         canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} onShowTools={toggleTools} paper={paper}
-          ask={checkIn ? undefined : { sessionType, onAsk: (question) => void handleAskForHelp(question), disabled: isStreaming }} />}
+          ask={checkIn ? undefined : { sessionType, onAsk: (question) => void handleAskForHelp(question), disabled: isStreaming }}
+          paged={sessionType === 'note'} />}
         toolbar={(
           <BottomToolbar
             onAskForHelp={(question) => void handleAskForHelp(question)}

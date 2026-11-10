@@ -942,7 +942,8 @@ export default function ShelfReader() {
               ]} />
           )}
           canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} onShowTools={toggleTools} paper={paper}
-            ask={{ sessionType: exercise && isNote(exercise) ? 'note' : 'problem', onAsk: (question) => void askForHelp(question), disabled: isStreaming }} />}
+            ask={{ sessionType: exercise && isNote(exercise) ? 'note' : 'problem', onAsk: (question) => void askForHelp(question), disabled: isStreaming }}
+            paged={Boolean(exercise && isNote(exercise))} />}
           toolbar={(
             <BottomToolbar
               onAskForHelp={(question) => void askForHelp(question)}
