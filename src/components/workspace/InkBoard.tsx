@@ -559,6 +559,9 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = f
     showSteps();
   }, [fitTo, loadPictures, holdPen]);
 
+  // Before the load below: + New changes the board's kind and loads it in one render, and the load
+  // must cut the new board into pages (or not) by its own kind.
+  useEffect(() => { pagedRef.current = paged; }, [paged]);
   useEffect(() => {
     loadPending.current = Boolean(pendingLoad);
     if (pendingLoad) loads.current += 1;
@@ -603,7 +606,6 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = f
 
   // A board that turns out to be notes once open (its kind arrived after the board) is cut into pages then.
   useEffect(() => {
-    pagedRef.current = paged;
     if (paged && !loadPending.current && !board().page.pages) open(paginate(board()));
   }, [paged, open]);
 

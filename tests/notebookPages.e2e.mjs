@@ -123,14 +123,23 @@ try {
   await waitAttr('page', 2);
   console.log('PASS a notebook reopens on its last page');
 
-  // A problem board is still one long page.
-  await page.goto(`${origin}/board?new=problem`);
-  await page.getByPlaceholder("Type the math problem you're working on...").waitFor();
-  await page.waitForFunction(() => document.querySelector('[data-ink-board]') && !document.querySelector('[data-loading]'));
+  // A problem board is still one long page, also when + New switches to it from notes, and back.
+  const switchTo = async (item, placeholder) => {
+    await page.getByRole('button', { name: 'New', exact: true }).click();
+    await page.getByRole('menuitem', { name: item }).click();
+    await page.getByPlaceholder(placeholder).waitFor();
+    await page.waitForFunction(() => document.querySelector('[data-ink-board]')?.getAttribute('data-strokes') === '0' && !document.querySelector('[data-loading]'));
+  };
+  await switchTo('New Problem', "Type the math problem you're working on...");
   assert.equal(await attr('pages'), null);
   assert.equal(await page.getByTestId('page-number').count(), 0);
+  await stroke(100, 150, 400, 160);
+  await waitAttr('strokes', 1);
+  await switchTo(/New Notes/, "Topic or concept you're studying...");
+  await waitAttr('pages', 1);
+  assert.equal(await page.getByTestId('page-number').textContent(), '1/1');
   assert.deepEqual(errors, []);
-  console.log('PASS problem boards keep one long page; no browser exceptions');
+  console.log('PASS problem boards keep one long page, also switched to with + New; no browser exceptions');
 } finally {
   await context.close();
   provider.close();
