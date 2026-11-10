@@ -111,6 +111,7 @@ try {
   await page.keyboard.press('ControlOrMeta+z');
   await waitAttr('pages', 1);
   await waitAttr('page', 1);
+  assert.ok(Number(await attr('view-y')) < PAGE_HEIGHT / 2, `undoing the new page shows page 1 (${await attr('view-y')})`);
   await page.keyboard.press('ControlOrMeta+Shift+z');
   await page.keyboard.press('ControlOrMeta+Shift+z');
   await waitAttr('strokes', 2);

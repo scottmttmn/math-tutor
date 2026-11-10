@@ -394,6 +394,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = f
     container.current?.setAttribute('data-images', String(board().images.length));
     clearTimeout(mirrorTimer.current);
     mirrorTimer.current = setTimeout(mirror, MIRROR_DELAY_MS);
+    // Undoing a new page while on it leaves the view below the pages left: bring it back onto one.
+    if (board().page.pages) camera.current = clampCamera(camera.current, board().page, view.current, span());
     repaint();
     showSteps();
   }, [loadPictures, mirror, repaint]);
