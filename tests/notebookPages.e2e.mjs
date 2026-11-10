@@ -132,6 +132,9 @@ try {
     await page.waitForFunction(() => document.querySelector('[data-ink-board]')?.getAttribute('data-strokes') === '0' && !document.querySelector('[data-loading]'));
   };
   await switchTo('New Problem', "Type the math problem you're working on...");
+  // The page attributes follow on the next painted frame, after the load's stroke count.
+  await page.waitForFunction(() => !document.querySelector('[data-ink-board]')?.hasAttribute('data-pages'));
+  await page.waitForTimeout(300);
   assert.equal(await attr('pages'), null);
   assert.equal(await page.getByTestId('page-number').count(), 0);
   await stroke(100, 150, 400, 160);
