@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
 import { GRID_SPACING, LINE_SPACING, PAPER_LINE } from '@/lib/paper';
-import { HIGHLIGHTER_WIDTH, HIGHLIGHT_ALPHA, INK_COLORS, PEN_WIDTHS, boardBounds, emptyBoard, pushPoint, type PenSize } from '@/lib/inkBoard/model';
+import { HIGHLIGHTER_WIDTH, HIGHLIGHT_ALPHA, INK_COLORS, PEN_WIDTHS, boardBounds, emptyBoard, imageBounds, overlaps, pageAt, pageSpan, paginate, pushPoint, strokeBounds, type PenSize } from '@/lib/inkBoard/model';
 import { addItems, commit, copyItems, moveItems, redo, removeItems, scaleItems, startHistory, undo, type BoardHistory } from '@/lib/inkBoard/edits';
 import { GridIndex, itemsInLasso, strokesHitByPath } from '@/lib/inkBoard/hitTest';
 import { scratchedOut } from '@/lib/inkBoard/scratchOut';
@@ -21,7 +21,7 @@ import { MAX_BOARD_PICTURE } from '@/lib/shelf';
 import { copyPicture } from '@/lib/copiedPicture';
 import { pasteCopiedPicture } from '@/lib/boardPicture';
 import { useBoardRail } from '@/components/layout/BoardRail';
-import { CopyIcon, EraserIcon, FitWidthIcon, HighlightIcon, LassoIcon, PenIcon, RedoIcon, TrashIcon, UndoIcon } from '@/components/common/Icons';
+import { ChevronIcon, CopyIcon, EraserIcon, NewPageIcon, FitWidthIcon, HighlightIcon, LassoIcon, PenIcon, RedoIcon, TrashIcon, UndoIcon } from '@/components/common/Icons';
 import type { BoardImage, BoardInk, BoardStroke, InkColor, Paper, SelectionAsk } from '@/types';
 import { askQuestion, selectionChoices } from '@/lib/tutorAsk';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
@@ -110,7 +110,24 @@ const canvasBlob = (canvas: HTMLCanvasElement, type: string, quality?: number) =
 const typing = (target: EventTarget | null) =>
   target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
 
-export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden: boolean; paper: Paper; ask?: SelectionAsk }) {
+/** The items on page `index` of a paged board (anything reaching onto it). */
+function onPage(current: BoardInk, index: number): Set<string> {
+  const { top, bottom } = pageSpan(current.page, index);
+  const sheet = { minX: -Infinity, maxX: Infinity, minY: top, maxY: bottom };
+  return new Set([
+    ...current.strokes.filter((stroke) => overlaps(strokeBounds(stroke), sheet)).map((stroke) => stroke.id),
+    ...current.images.filter((image) => overlaps(imageBounds(image), sheet)).map((image) => image.id),
+  ]);
+}
+
+/** What a capture pictures: the lasso's selection still on the board, else the page in view on a paged board, else null for the whole board. */
+function selectedIds(current: BoardInk, selection: ReadonlySet<string>, page: number): Set<string> | null {
+  const ids = new Set([...current.strokes, ...current.images].map((item) => item.id).filter((id) => selection.has(id)));
+  if (ids.size > 0) return ids;
+  return current.page.pages ? onPage(current, page) : null;
+}
+
+export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = false }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden: boolean; paper: Paper; ask?: SelectionAsk; paged?: boolean }) {
   const { ink: mirrored, pendingLoad } = useCanvasState();
   const dispatch = useCanvasDispatch();
   const container = useRef<HTMLDivElement>(null);
@@ -153,6 +170,10 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
   const loadPending = useRef(Boolean(pendingLoad));
   const loads = useRef(0);
   const paperRef = useRef(paper);
+  // Notes boards are cut into pages, shown one at a time (BoardPage.pages); which one is in view.
+  const pagedRef = useRef(paged);
+  const pageIndex = useRef(0);
+  const [pageInfo, setPageInfo] = useState<{ index: number; count: number } | null>(null);
   // A pass of the eraser shows its result before it becomes one undo step.
   const erasing = useRef<{ before: BoardInk; shown: BoardInk; path: number[] } | null>(null);
   const writing = useRef<{ pointer: number; stroke: BoardStroke; lastX: number; lastY: number } | null>(null);
@@ -197,6 +218,13 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
   });
 
   const board = () => history.current.board;
+  /** The page in view on a paged board (kept within its pages), else undefined: the view may go anywhere below the top. */
+  const span = () => {
+    const { page } = history.current.board;
+    if (!page.pages) return undefined;
+    pageIndex.current = Math.min(page.pages - 1, Math.max(0, pageIndex.current));
+    return pageSpan(page, pageIndex.current);
+  };
   const showSteps = () => setSteps({ undo: history.current.past.length > 0, redo: history.current.future.length > 0 });
 
   const loaded = useCallback(() => {
@@ -227,20 +255,24 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
     context.fillStyle = DESK;
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.setTransform(ratio * z, 0, 0, ratio * z, -x * z * ratio, -y * z * ratio);
-    const bottom = y + h / z;
-    const top = Math.max(page.top, y);
+    const sheet = span();
+    const bottom = sheet ? Math.min(y + h / z, sheet.bottom) : y + h / z;
+    const top = Math.max(sheet ? sheet.top : page.top, y);
     context.fillStyle = '#ffffff';
     context.fillRect(page.left, top, page.width, Math.max(0, bottom - top));
     context.strokeStyle = '#9ca3af';
     context.lineWidth = 1 / z;
-    context.strokeRect(page.left, page.top, page.width, Math.max(0, bottom - page.top + 2 / z));
+    if (sheet) context.strokeRect(page.left, sheet.top, page.width, sheet.bottom - sheet.top);
+    else context.strokeRect(page.left, page.top, page.width, Math.max(0, bottom - page.top + 2 / z));
     const lines = paperRef.current;
     if (lines !== 'blank') {
       const gap = lines === 'grid' ? GRID_SPACING : LINE_SPACING;
       if (gap * z >= 8) {
         context.strokeStyle = PAPER_LINE;
         context.beginPath();
-        for (let line = Math.ceil(top / gap) * gap; line <= bottom; line += gap) {
+        // A page's lines start from its own top; one long page keeps them where they always were.
+        const origin = sheet ? sheet.top : 0;
+        for (let line = origin + Math.ceil((top - origin) / gap) * gap; line <= bottom; line += gap) {
           context.moveTo(page.left, line);
           context.lineTo(page.left + page.width, line);
         }
@@ -257,11 +289,19 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
     // Only what is in view; the index was built from the board, and erasing only removes strokes.
     const visible = index.current.query(area);
     const shown = (id: string) => visible.has(id);
+    // On a page, work running past its edge shows only on the page it was written on.
+    context.save();
+    if (sheet) {
+      context.beginPath();
+      context.rect(page.left - page.width, sheet.top, page.width * 3, sheet.bottom - sheet.top);
+      context.clip();
+    }
     drawBoard(context, {
       ...current,
       strokes: current.strokes.filter((stroke) => shown(stroke.id)),
       images: current.images.filter((image) => shown(image.id)),
     }, loaded());
+    context.restore();
     const box = !drag && selection.current.size > 0 ? boardBounds(current, selection.current) : null;
     // The page's hit areas exactly (inSelection, onHandle), so Onyx's pen leaves both to the page and nothing else.
     const place = (element: HTMLDivElement | null, area: { left: number; top: number; width: number; height: number } | null) => {
@@ -302,6 +342,15 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
     container.current?.setAttribute('data-zoom', String(Math.round(scale * 100) / 100));
     setZoomedAway(Math.abs(scale - 1) > 0.01);
     container.current?.setAttribute('data-view-y', String(Math.round(y)));
+    if (page.pages) {
+      container.current?.setAttribute('data-page', String(pageIndex.current + 1));
+      container.current?.setAttribute('data-pages', String(page.pages));
+    } else {
+      container.current?.removeAttribute('data-page');
+      container.current?.removeAttribute('data-pages');
+    }
+    const info = page.pages ? { index: pageIndex.current, count: page.pages } : null;
+    setPageInfo((last) => (last?.index === info?.index && last?.count === info?.count ? last : info));
     setZoom(z);
     painted();
   }, [loaded, painted]);
@@ -345,6 +394,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
     container.current?.setAttribute('data-images', String(board().images.length));
     clearTimeout(mirrorTimer.current);
     mirrorTimer.current = setTimeout(mirror, MIRROR_DELAY_MS);
+    // Undoing a new page while on it leaves the view below the pages left: bring it back onto one.
+    if (board().page.pages) camera.current = clampCamera(camera.current, board().page, view.current, span());
     repaint();
     showSteps();
   }, [loadPictures, mirror, repaint]);
@@ -368,7 +419,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
   }, [apply]);
 
   const setCamera = useCallback((next: Camera) => {
-    camera.current = clampCamera(next, board().page, view.current);
+    camera.current = clampCamera(next, board().page, view.current, span());
     repaint();
   }, [repaint]);
 
@@ -476,7 +527,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
   /** Writing scale with the board's `top` (board units) at the top of the view. */
   const fitTo = useCallback((top: number) => {
     fitted.current = true;
-    camera.current = fitCamera(board().page, view.current, top);
+    camera.current = fitCamera(board().page, view.current, top, span());
     repaint();
   }, [repaint]);
 
@@ -498,7 +549,10 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
     const content = boardBounds(next);
     const z = fitZoom(next.page, view.current);
     placed.current = view.current.w > 0;
-    fitTo(content ? content.minY - OPEN_TOP / z : next.page.top - VIEW_MARGIN / z);
+    // A notebook opens on its last page, where the writing left off.
+    pageIndex.current = (next.page.pages ?? 1) - 1;
+    if (next.page.pages) fitTo(pageSpan(next.page, pageIndex.current).top - VIEW_MARGIN / z);
+    else fitTo(content ? content.minY - OPEN_TOP / z : next.page.top - VIEW_MARGIN / z);
     inkRevision += 1;
     index.current.update(next);
     void loadPictures(next);
@@ -507,6 +561,9 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
     showSteps();
   }, [fitTo, loadPictures, holdPen]);
 
+  // Before the load below: + New changes the board's kind and loads it in one render, and the load
+  // must cut the new board into pages (or not) by its own kind.
+  useEffect(() => { pagedRef.current = paged; }, [paged]);
   useEffect(() => {
     loadPending.current = Boolean(pendingLoad);
     if (pendingLoad) loads.current += 1;
@@ -516,7 +573,9 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
   useEffect(() => { open(history.current.board); }, [open]);
   useEffect(() => {
     if (!pendingLoad) return;
-    const show = (next: BoardInk) => {
+    const show = (loadedInk: BoardInk) => {
+      // A notes board saved as one long page is cut into pages as it opens.
+      const next = pagedRef.current ? paginate(loadedInk) : loadedInk;
       // Loading resets the tools and undo, which the toolbar shows.
       open(next);
       dispatch({ type: 'LOADED', ink: next, hasContent: next.strokes.length > 0 || next.images.length > 0 });
@@ -547,6 +606,21 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
     repaint();
   }, [paper, repaint]);
 
+  // A board that turns out to be notes once open (its kind arrived after the board) is cut into pages then.
+  useEffect(() => {
+    if (paged && !loadPending.current && !board().page.pages) open(paginate(board()));
+  }, [paged, open]);
+
+  /** Shows page `index` from its top at writing scale; past the last page adds a new one (one undo step). */
+  const goToPage = useCallback((index: number) => {
+    const { page } = board();
+    if (!page.pages || index < 0) return;
+    if (index >= page.pages) apply({ ...board(), page: { ...page, pages: index + 1 } });
+    select(new Set());
+    pageIndex.current = index;
+    fitTo(pageSpan(board().page, index).top - VIEW_MARGIN / fitZoom(board().page, view.current));
+  }, [apply, fitTo, select]);
+
   // Follow the view's size; at writing scale it stays there, a close-up keeps its zoom.
   useEffect(() => {
     const element = container.current;
@@ -564,7 +638,9 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
         placed.current = true;
         const content = boardBounds(board());
         const z = fitZoom(board().page, view.current);
-        fitTo(content ? content.minY - OPEN_TOP / z : board().page.top - VIEW_MARGIN / z);
+        const sheet = span();
+        if (sheet) fitTo(sheet.top - VIEW_MARGIN / z);
+        else fitTo(content ? content.minY - OPEN_TOP / z : board().page.top - VIEW_MARGIN / z);
       } else if (wasFit) fitTo(camera.current.y);
       else setCamera(camera.current);
     });
@@ -603,6 +679,12 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
       if (typing(event.target) || !container.current?.offsetParent) return;
       const key = event.key.toLowerCase();
       if (!(event.metaKey || event.ctrlKey)) {
+        // Page Up / Page Down turn a notebook's pages (Page Down past the last adds one).
+        if ((key === 'pagedown' || key === 'pageup') && board().page.pages) {
+          event.preventDefault();
+          goToPage(pageIndex.current + (key === 'pagedown' ? 1 : -1));
+          return;
+        }
         if (selection.current.size === 0) return;
         if (key === 'delete' || key === 'backspace') { event.preventDefault(); deleteSelection(); }
         else if (key === 'escape') select(new Set());
@@ -616,7 +698,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [doUndo, doRedo, deleteSelection, duplicateSelection, copySelection, cutSelection, select]);
+  }, [doUndo, doRedo, deleteSelection, duplicateSelection, copySelection, cutSelection, select, goToPage]);
 
   // Ctrl+V with a picture on the system clipboard (from a PDF or another app) puts it on the board, like Add
   // picture; otherwise the app's own copy (ink copied with the lasso, or part of a PDF page) is pasted.
@@ -864,7 +946,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
           }
           if (pinch.mode === 'zoom') {
             fitted.current = false;
-            const zoomed = zoomAbout(camera.current, distance / pinch.distance, mid, board().page, view.current);
+            const zoomed = zoomAbout(camera.current, distance / pinch.distance, mid, board().page, view.current, span());
             setCamera({ ...zoomed, x: zoomed.x - (mid.x - pinch.mid.x) / zoomed.z, y: zoomed.y - (mid.y - pinch.mid.y) / zoomed.z });
           } else {
             setCamera({ ...camera.current, x: camera.current.x - (mid.x - pinch.mid.x) / camera.current.z, y: camera.current.y - (mid.y - pinch.mid.y) / camera.current.z });
@@ -969,7 +1051,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
       const at = local(event);
       if (event.ctrlKey || event.metaKey) {
         fitted.current = false;
-        setCamera(zoomAbout(camera.current, Math.exp(-event.deltaY * 0.002), at, board().page, view.current));
+        setCamera(zoomAbout(camera.current, Math.exp(-event.deltaY * 0.002), at, board().page, view.current, span()));
         return;
       }
       const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? view.current.h : 1;
@@ -998,11 +1080,6 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
     };
   }, [apply, addStroke, paintLive, repaint, repaintLive, setCamera, booxOwns, gesture, select, holdPen]);
 
-  /** The lasso's selection still on the board, or null for the whole board. */
-  const selectedIds = (current: BoardInk) => {
-    const ids = new Set([...current.strokes, ...current.images].map((item) => item.id).filter((id) => selection.current.has(id)));
-    return ids.size > 0 ? ids : null;
-  };
 
   useImperativeHandle(handleRef, () => ({
     captureForTutor: async () => {
@@ -1010,7 +1087,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
       const load = loads.current;
       const revision = inkRevision;
       const current = board();
-      const ids = selectedIds(current);
+      const ids = selectedIds(current, selection.current, pageIndex.current);
       await loadPictures(current);
       if (loads.current !== load || loadPending.current || inkRevision !== revision) throw new Error('The board changed during capture');
       try {
@@ -1024,13 +1101,14 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
     captureImage: async () => {
       const current = board();
       await loadPictures(current);
-      const picture = renderItems(current, loaded(), selectedIds(current), TUTOR_IMAGE_PADDING, TUTOR_IMAGE_SIDE, 2);
+      const picture = renderItems(current, loaded(), selectedIds(current, selection.current, pageIndex.current), TUTOR_IMAGE_PADDING, TUTOR_IMAGE_SIDE, 2);
       return picture ? picture.canvas.toDataURL('image/png').split(',')[1] ?? '' : '';
     },
     captureThumbnail: async () => {
       const current = board();
       await loadPictures(current);
-      const picture = renderItems(current, loaded(), null, TUTOR_IMAGE_PADDING, THUMBNAIL_SIDE, 1);
+      // A notebook's card shows its first page.
+      const picture = renderItems(current, loaded(), current.page.pages ? onPage(current, 0) : null, TUTOR_IMAGE_PADDING, THUMBNAIL_SIDE, 1);
       return picture ? canvasBlob(picture.canvas, 'image/png') : null;
     },
     exportImage: async (format) => {
@@ -1046,6 +1124,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
       const load = loads.current;
       const existing = problemImage(board(), key);
       if (existing) {
+        if (board().page.pages) pageIndex.current = pageAt(board().page, existing.y);
         fitTo(existing.y - PROBLEM_MARGIN);
         return false;
       }
@@ -1060,7 +1139,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
       const w = picture.naturalWidth * scale;
       const h = picture.naturalHeight * scale;
       const content = boardBounds(current);
-      const y = !content ? camera.current.y + PROBLEM_TOP / camera.current.z
+      // A notebook's page takes it where the view is (its pages never move up to make room).
+      const y = !content || page.pages ? camera.current.y + PROBLEM_TOP / camera.current.z
         : key === true ? content.minY - h - PROBLEM_MARGIN : content.maxY + PROBLEM_MARGIN * 2;
       const image: BoardImage = { id: uuidv4(), x: page.left + PROBLEM_MARGIN, y, w, h, src, problem: key };
       pictures.current.set(image.id, { src, image: picture, ready: Promise.resolve() });
@@ -1084,7 +1164,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
       const w = picture.naturalWidth * scale;
       const h = picture.naturalHeight * scale;
       const content = boardBounds(current);
-      const y = content ? content.maxY + PROBLEM_MARGIN * 2 : camera.current.y + PROBLEM_TOP / camera.current.z;
+      const y = content && !page.pages ? content.maxY + PROBLEM_MARGIN * 2 : camera.current.y + PROBLEM_TOP / camera.current.z;
       const image: BoardImage = { id: uuidv4(), x: page.left + PROBLEM_MARGIN, y, w, h, src };
       pictures.current.set(image.id, { src, image: picture, ready: Promise.resolve() });
       apply(addItems(current, [], [image]));
@@ -1147,6 +1227,16 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask }: { handl
           <button className={railButton(tool === 'lasso')} aria-pressed={tool === 'lasso'} aria-label="Lasso" title="Lasso: circle ink to select it" onClick={() => pickTool('lasso')}><LassoIcon /></button>
           <button className={railButton(false)} disabled={!steps.undo} aria-label="Undo" title="Undo (Ctrl+Z)" onClick={doUndo}><UndoIcon /></button>
           <button className={railButton(false)} disabled={!steps.redo} aria-label="Redo" title="Redo (Ctrl+Shift+Z)" onClick={doRedo}><RedoIcon /></button>
+          {pageInfo && (
+            // A notebook's pages: back, where you are, and on (a new page after the last).
+            <div role="group" aria-label="Pages" className="flex flex-col items-center gap-1 py-1 border-y border-gray-200">
+              <button className={railButton(false)} disabled={pageInfo.index === 0} aria-label="Previous page" title="Previous page (Page Up)" onClick={() => goToPage(pageInfo.index - 1)}><ChevronIcon direction="up" /></button>
+              <span className="text-xs text-gray-700 tabular-nums" aria-live="polite" data-testid="page-number">{pageInfo.index + 1}/{pageInfo.count}</span>
+              {pageInfo.index + 1 < pageInfo.count
+                ? <button className={railButton(false)} aria-label="Next page" title="Next page (Page Down)" onClick={() => goToPage(pageInfo.index + 1)}><ChevronIcon direction="down" /></button>
+                : <button className={railButton(false)} aria-label="New page" title="Add a page after this one (Page Down)" onClick={() => goToPage(pageInfo.index + 1)}><NewPageIcon /></button>}
+            </div>
+          )}
           {zoomedAway && <button className={railButton(false)} aria-label="Fit width" title="Back to writing size: the page fills the width" onClick={() => fitTo(camera.current.y)}><FitWidthIcon /></button>}
         </div>,
         rail.tools,

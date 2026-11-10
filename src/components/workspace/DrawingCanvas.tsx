@@ -39,13 +39,16 @@ export interface DrawingCanvasHandle {
 const InkBoard = dynamic(() => import('./InkBoard'), { ssr: false });
 
 /** Fills its nearest positioned ancestor; give that element a size. */
-/** `ask`: the tutor choices in the lasso selection's menu, which ask about the selection alone. */
-export default function DrawingCanvas({ handleRef, toolsHidden = false, onShowTools, paper = 'blank', ask }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden?: boolean; onShowTools?: () => void; paper?: Paper; ask?: SelectionAsk }) {
+/**
+ * `ask`: the tutor choices in the lasso selection's menu, which ask about the selection alone.
+ * `paged`: a notes board, cut into pages shown one at a time.
+ */
+export default function DrawingCanvas({ handleRef, toolsHidden = false, onShowTools, paper = 'blank', ask, paged = false }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden?: boolean; onShowTools?: () => void; paper?: Paper; ask?: SelectionAsk; paged?: boolean }) {
   // data-loading: the board still shows the previous drawing (the browser tests wait for it to go).
   const { pendingLoad } = useCanvasState();
   return (
     <div className="absolute inset-0 isolate" data-loading={pendingLoad ? 'true' : undefined}>
-      <InkBoard handleRef={handleRef} toolsHidden={toolsHidden} paper={paper} ask={ask} />
+      <InkBoard handleRef={handleRef} toolsHidden={toolsHidden} paper={paper} ask={ask} paged={paged} />
       {toolsHidden && onShowTools && (
         // The rail folds away to the left; a tab at that edge brings it back.
         <button onClick={onShowTools} data-testid="show-tools" aria-label="Show tools" title="Show tools"

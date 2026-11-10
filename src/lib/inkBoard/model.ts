@@ -6,6 +6,8 @@ import type { BoardImage, BoardInk, BoardPage, BoardStroke, InkColor } from '@/t
 /** A new board's page width, and the room kept around existing work when the page grows to fit it. */
 export const PAGE_WIDTH = 960;
 export const PAGE_MARGIN = 32;
+/** A notes board's page height: with PAGE_WIDTH, the shape of a BOOX Go 10.3's screen (3:4). */
+export const PAGE_HEIGHT = 1280;
 
 /** Pen widths, the same as tldraw's solid pen at S, M and L, so converted boards keep their weight. */
 export const PEN_WIDTHS = { s: 3, m: 4.5, l: 6 } as const;
@@ -88,6 +90,25 @@ export function hasWork(board: BoardInk): boolean {
   return board.strokes.length > 0 || board.images.some((image) => !image.problem);
 }
 
+/** Page `index` of a paged board, top and bottom in board units. */
+export function pageSpan(page: BoardPage, index: number): { top: number; bottom: number } {
+  const top = page.top + index * PAGE_HEIGHT;
+  return { top, bottom: top + PAGE_HEIGHT };
+}
+
+/** The page of a paged board that `y` falls on (the first or last when outside them). */
+export function pageAt(page: BoardPage, y: number): number {
+  return Math.min((page.pages ?? 1) - 1, Math.max(0, Math.floor((y - page.top) / PAGE_HEIGHT)));
+}
+
+/** The board cut into pages (a notes board saved as one long page gets as many as its work needs). */
+export function paginate(board: BoardInk): BoardInk {
+  if (board.page.pages) return board;
+  const content = boardBounds(board);
+  const pages = content ? Math.max(1, Math.ceil((content.maxY - board.page.top) / PAGE_HEIGHT)) : 1;
+  return { ...board, page: { ...board.page, pages } };
+}
+
 /**
  * The page with room for `content`: the same page when it already fits, else wider (either side) or
  * with a higher top. Work is never moved to fit the page.
@@ -96,6 +117,12 @@ export function pageAround(page: BoardPage, content: Bounds | null): BoardPage {
   if (!content) return page;
   const left = Math.min(page.left, content.minX - PAGE_MARGIN);
   const right = Math.max(page.left + page.width, content.maxX + PAGE_MARGIN);
+  if (page.pages) {
+    // Pages keep their top, so none of them moves; work below the last page adds pages.
+    const pages = Math.max(page.pages, Math.ceil((content.maxY - page.top) / PAGE_HEIGHT));
+    if (left === page.left && right === page.left + page.width && pages === page.pages) return page;
+    return { left, top: page.top, width: right - left, pages };
+  }
   const top = Math.min(page.top, content.minY - PAGE_MARGIN);
   if (left === page.left && right === page.left + page.width && top === page.top) return page;
   return { left, top, width: right - left };

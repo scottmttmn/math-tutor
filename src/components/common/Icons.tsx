@@ -54,8 +54,10 @@ export function CloseIcon() {
   return <Icon><path d="M4 4l8 8M12 4l-8 8" /></Icon>;
 }
 
-export function ChevronIcon({ direction }: { direction: 'left' | 'right' }) {
-  return <Icon size={20}><path d={direction === 'left' ? 'm10 3-5 5 5 5' : 'm6 3 5 5-5 5'} /></Icon>;
+const CHEVRONS = { left: 'm10 3-5 5 5 5', right: 'm6 3 5 5-5 5', up: 'm3 10 5-5 5 5', down: 'm3 6 5 5 5-5' };
+
+export function ChevronIcon({ direction }: { direction: 'left' | 'right' | 'up' | 'down' }) {
+  return <Icon size={20}><path d={CHEVRONS[direction]} /></Icon>;
 }
 
 export function PenIcon() {
@@ -162,4 +164,9 @@ export function CopyIcon({ size = 18 }: { size?: number }) {
 /** Delete: a bin. */
 export function TrashIcon({ size = 18 }: { size?: number }) {
   return <Icon size={size}><path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.7 9.5a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L12 4M6.8 6.8v4.8M9.2 6.8v4.8" /></Icon>;
+}
+
+/** New page: a sheet with a plus. */
+export function NewPageIcon({ size = 20 }: { size?: number }) {
+  return <Icon size={size}><path d="M4 2h5.5L12 4.5V14H4zM8 7v5M5.5 9.5h5" /></Icon>;
 }
