@@ -26,6 +26,19 @@ export function fakeBooxBridge() {
       if (plugin !== 'BooxPen') throw new Error(`${plugin} is not stood in for`);
       calls.push({ method, options });
       if (method === 'start' && window.__failStart) throw new Error('The BOOX pen couldn\'t start.');
+      // window.__startDelay (ms): the SDK takes that long to come up, and calls meanwhile are
+      // refused, as the native side did before it checked on the main thread. window.__boox.region
+      // is the region the pen really has.
+      if (method === 'start') {
+        window.__boox.starting = true;
+        if (window.__startDelay) await new Promise((resolve) => setTimeout(resolve, window.__startDelay));
+        window.__boox.starting = false;
+        window.__boox.region = options.region;
+      } else if (['setWidth', 'setRegion', 'pause', 'resume', 'refresh'].includes(method) && window.__boox.starting) {
+        throw new Error('The BOOX pen isn\'t started.');
+      }
+      if (method === 'setRegion') window.__boox.region = options.region;
+      if (method === 'stop') window.__boox.region = null;
       return method === 'status' ? { onyx: true, active: false } : undefined;
     },
     nativeCallback(plugin, method, options, callback) {

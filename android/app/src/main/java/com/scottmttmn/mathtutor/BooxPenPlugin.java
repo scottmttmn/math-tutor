@@ -161,7 +161,7 @@ public class BooxPenPlugin extends Plugin {
     /** The preview follows the board's pen size, zoom and (optionally) ink without interrupting the input reader. */
     @PluginMethod
     public void setWidth(PluginCall call) {
-        if (!started(call)) return;
+        if (!onyx(call)) return;
         Float width = call.getFloat("width");
         if (width == null || !Float.isFinite(width) || width <= 0) {
             call.reject("A positive pen width is needed.");
@@ -170,11 +170,10 @@ public class BooxPenPlugin extends Plugin {
         Integer color = color(call.getString("color"));
         int style = style(call);
         getBridge().executeOnMainThread(() -> {
-            if (touchHelper != null) {
-                touchHelper.setStrokeStyle(style);
-                touchHelper.setStrokeWidth(width * density());
-                if (color != null) touchHelper.setStrokeColor(color);
-            }
+            if (!started(call)) return;
+            touchHelper.setStrokeStyle(style);
+            touchHelper.setStrokeWidth(width * density());
+            if (color != null) touchHelper.setStrokeColor(color);
             call.resolve();
         });
     }
@@ -182,7 +181,7 @@ public class BooxPenPlugin extends Plugin {
     /** { region, exclude? }: the board moved or something now sits over part of it. */
     @PluginMethod
     public void setRegion(PluginCall call) {
-        if (!started(call)) return;
+        if (!onyx(call)) return;
         Rect region = rect(call.getObject("region"));
         if (region == null) {
             call.reject("A region is needed.");
@@ -190,6 +189,7 @@ public class BooxPenPlugin extends Plugin {
         }
         List<Rect> exclude = rects(call.getArray("exclude"));
         getBridge().executeOnMainThread(() -> {
+            if (!started(call)) return;
             fastRefresh.end();
             refreshes.cancel();
             touchHelper.setRawDrawingEnabled(false);
@@ -201,8 +201,9 @@ public class BooxPenPlugin extends Plugin {
 
     @PluginMethod
     public void pause(PluginCall call) {
-        if (!started(call)) return;
+        if (!onyx(call)) return;
         getBridge().executeOnMainThread(() -> {
+            if (!started(call)) return;
             refreshes.cancel();
             wanted = false;
             rawWriting = false;
@@ -214,8 +215,9 @@ public class BooxPenPlugin extends Plugin {
 
     @PluginMethod
     public void resume(PluginCall call) {
-        if (!started(call)) return;
+        if (!onyx(call)) return;
         getBridge().executeOnMainThread(() -> {
+            if (!started(call)) return;
             fastRefresh.reset();
             wanted = true;
             touchHelper.setRawDrawingEnabled(true);
@@ -226,8 +228,9 @@ public class BooxPenPlugin extends Plugin {
     /** Requests a page refresh after writing pauses; never stops a stroke to show page ink. */
     @PluginMethod
     public void refresh(PluginCall call) {
-        if (!started(call)) return;
+        if (!onyx(call)) return;
         getBridge().executeOnMainThread(() -> {
+            if (!started(call)) return;
             if (wanted && !fastRefresh.isActive()) refreshes.request();
             call.resolve();
         });
@@ -363,8 +366,12 @@ public class BooxPenPlugin extends Plugin {
         return false;
     }
 
+    /**
+     * Whether start() has run. Checked on the main thread, where start() makes the helper: a call
+     * sent right after start() (a setRegion as the page settles into full screen) used to be checked
+     * before start() had run there, refused, and the pen kept the region it started with.
+     */
     private boolean started(PluginCall call) {
-        if (!onyx(call)) return false;
         if (touchHelper != null) return true;
         call.reject("The BOOX pen isn't started.");
         return false;
