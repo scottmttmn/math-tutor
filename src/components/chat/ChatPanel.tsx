@@ -28,7 +28,7 @@ export default function ChatPanel({ visible, getBoardImages, getBookContext, onA
 
   return (
     // Sits in the board's tutor column, which carries the heading.
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex-1 min-h-0 flex flex-col bg-white">
 
       <div ref={scrollRef} aria-busy={isStreaming} className="flex-1 overflow-y-auto px-3 py-3">
         {chatHistory.length === 0 ? (
