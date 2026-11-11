@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { bookFolderId, deleteSession, listFolders, listSessions, listShelf, loadProfile, renameSession } from '@/lib/db';
+import { bookFolderId, deleteSession, listFolders, listSessions, listShelf, loadProfile, loadSession, renameSession, saveSession } from '@/lib/db';
+import { changeMark, removeMark } from '@/lib/inkBoard/edits';
 import { isProfileEmpty } from '@/lib/learnerProfile';
-import { folderSummaries, libraryView, queryHistory, toHistoryItem } from '@/lib/history';
+import { folderSummaries, libraryView, markedItems, queryHistory, toHistoryItem } from '@/lib/history';
 import { bookLocation, folderHref, folderIndex, folderPath, itemFolder } from '@/lib/folders';
 import { createFolder, deleteFolder, moveBoard, moveBook, moveFolder, renameFolder } from '@/lib/folderActions';
 import { removeFromShelf, removeMarkedBoard } from '@/lib/shelf';
@@ -20,7 +21,7 @@ import FolderCard from '@/components/home/FolderCard';
 import MoveDialog from '@/components/home/MoveDialog';
 import BookHero from '@/components/book/BookHero';
 import { BookCard } from '@/components/shelf/BookCard';
-import type { Folder, HistoryItem, HistoryShow, HistorySort, ShelfDocument } from '@/types';
+import type { BoardInk, Folder, HistoryItem, HistoryShow, HistorySort, ShelfDocument } from '@/types';
 
 const SHOW_OPTIONS: { value: HistoryShow; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -42,7 +43,9 @@ const loadLibrary = async (): Promise<Library> => {
   // Favorites live in the tutor memory; without it, nothing shows as starred.
   const [sessions, books, folders, profile] = await Promise.all([listSessions(), listShelf(), listFolders(), loadProfile().catch(() => undefined)]);
   const favoriteIds = new Set((profile?.favorites ?? []).map((favorite) => favorite.id));
-  const items = sessions.map((session) => toHistoryItem(session, favoriteIds, { untouched: true })).filter((item): item is HistoryItem => item !== null);
+  const boards = sessions.map((session) => toHistoryItem(session, favoriteIds, { untouched: true })).filter((item): item is HistoryItem => item !== null);
+  // Problems marked in notebooks list on their own too (searching or filtering).
+  const items = [...boards, ...sessions.flatMap((session) => markedItems(session, favoriteIds))];
   return { items, books, folders };
 };
 
@@ -97,11 +100,13 @@ export default function Home({ folderId = null }: { folderId?: string | null }) 
     [library, folderId, search, show, sort],
   );
   const summaries = useMemo(() => folderSummaries(library?.items ?? [], library?.books ?? [], library?.folders ?? []), [library]);
-  const latest = useMemo(() => queryHistory((library?.items ?? []).filter((item) => item.hasWork), { search: '', show: 'all', sort: 'updated' })[0], [library]);
+  const latest = useMemo(() => queryHistory((library?.items ?? []).filter((item) => item.hasWork && !item.mark), { search: '', show: 'all', sort: 'updated' })[0], [library]);
   const browsing = !search.trim() && show === 'all';
   const nameOf = (id: string | null) => (id ? index.folders.get(id)?.name ?? 'the Library' : 'the Library');
 
   const open = (item: HistoryItem) => {
+    // A marked problem on a free notebook: that notebook, shown at the mark.
+    if (item.mark && item.source === 'board') setBoardToOpen(item.mark.boardId);
     if (item.href) { router.push(item.href); return; }
     setBoardToOpen(item.id);
     router.push('/board');
@@ -118,6 +123,14 @@ export default function Home({ folderId = null }: { folderId?: string | null }) 
     try { await change(); } catch { setError('That could not be saved. Try again.'); }
     await reload().catch(() => setFailed(true));
   };
+
+  // A marked problem's name and mark live in its notebook's ink.
+  const changeMarkOn = (item: HistoryItem, change: (ink: BoardInk) => BoardInk) => run(async () => {
+    if (!item.mark) return;
+    const session = await loadSession(item.mark.boardId);
+    if (!session?.ink) return;
+    await saveSession({ ...session, ink: change(session.ink), updatedAt: Date.now() });
+  });
 
   const removeBoard = (item: HistoryItem) => run(async () => {
     // A book's board belongs to its marks: deleting it removes them too, or the reader would make it again.
@@ -365,10 +378,14 @@ export default function Home({ folderId = null }: { folderId?: string | null }) 
                         item={item}
                         bookTitle={bookTitle(item)}
                         onOpen={() => open(item)}
-                        onRename={(name) => run(() => renameSession(item.id, name))}
-                        onMove={() => setMoving({ kind: 'board', item })}
-                        onDelete={() => removeBoard(item)}
-                        deleteQuestion={item.exerciseId ? (item.problems ? 'Delete it and its marks?' : 'Delete it and its mark?') : undefined}
+                        onRename={(name) => (item.mark
+                          ? changeMarkOn(item, (ink) => changeMark(ink, item.mark!.markId, { label: name.trim() || item.mark!.label }))
+                          : run(() => renameSession(item.id, name)))}
+                        onMove={item.mark ? undefined : () => setMoving({ kind: 'board', item })}
+                        onDelete={() => (item.mark ? changeMarkOn(item, (ink) => removeMark(ink, item.mark!.markId)) : removeBoard(item))}
+                        deleteLabel={item.mark ? 'Unmark' : undefined}
+                        renameValue={item.mark?.label}
+                        deleteQuestion={item.mark ? 'Unmark it? The writing stays.' : item.exerciseId ? (item.problems ? 'Delete it and its marks?' : 'Delete it and its mark?') : undefined}
                       />
                     ))}
                   </ul>

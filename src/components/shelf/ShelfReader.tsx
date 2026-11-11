@@ -21,7 +21,7 @@ import { MAX_BOARD_PICTURE, cropMark, ensureExerciseBoard, exerciseStatement, is
 import { boardMarkOf, pictureKey, sameBoard } from '@/lib/boardProblems';
 import { paperFor } from '@/lib/paper';
 import { MAX_BOOK_PAGES, loadContents, loadSectionStarts, readBookPages, readingRange, type ContentsEntry, type ReadingRange, type SectionStart } from '@/lib/bookContext';
-import type { BookContext, ChatMessage, Folder, InkStroke, InkTool, MarkPart, PageRect, ShelfDocument, ShelfExercise, ShelfMarkKind, TutorBoardImages } from '@/types';
+import type { BoardMark, BookContext, ChatMessage, Folder, InkStroke, InkTool, MarkPart, PageRect, ShelfDocument, ShelfExercise, ShelfMarkKind } from '@/types';
 import { askQuestion } from '@/lib/tutorAsk';
 import DrawingCanvas, { type DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import BottomToolbar from '@/components/layout/BottomToolbar';
@@ -38,7 +38,8 @@ import BookList from './BookList';
 import BookSearch from './BookSearch';
 import PageAsk from './PageAsk';
 import { useBookSearch } from '@/hooks/useBookSearch';
-import { useFavorite } from '@/hooks/useFavorite';
+import { useFavorite, useMarkFavorites } from '@/hooks/useFavorite';
+import { markAbout, useMarkConversation } from '@/hooks/useMarkConversation';
 import FavoriteButton from '@/components/layout/FavoriteButton';
 
 // Whether the list beside the page is hidden, so the page gets the width.
@@ -140,7 +141,7 @@ export default function ShelfReader() {
   const book = useRef<{ pdf: PDFDocumentProxy; document: ShelfDocument; range: ReadingRange } | null>(null);
 
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
-  const { isStreaming, isSolved, currentSessionId, problemImage, paper: chosenPaper, problems } = useSessionState();
+  const { isStreaming, isSolved, currentSessionId, problemImage, paper: chosenPaper, problems, conversationKey } = useSessionState();
   const sessionDispatch = useSessionDispatch();
   // An exercise opened on an empty board is put on it, once it has loaded (so the tutor also reads
   // anything written on the figure). A board with work keeps it as it is.
@@ -153,6 +154,13 @@ export default function ShelfReader() {
     setPlaceOn(null);
     if (!hasContent && problemImage) void canvasHandle.current?.placeProblemImage(problemImage, placeOn.key);
   }, [placeOn, currentSessionId, pendingLoad, hasContent, problemImage]);
+  // Home opens a problem marked on a note page with &mark=<id>: once its board has loaded, show it.
+  const markToShow = useRef<string | null>(null);
+  useEffect(() => { markToShow.current = new URLSearchParams(window.location.search).get('mark'); }, []);
+  useEffect(() => {
+    if (pendingLoad || !markToShow.current || !currentSessionId || !canvasHandle.current) return;
+    if (canvasHandle.current.showMark(markToShow.current)) markToShow.current = null;
+  }, [pendingLoad, currentSessionId]);
   // The pages before the open exercise, read when a question is sent (each page's text is kept).
   // A note page sends none: the tutor explains directly there, and book pages would make it hold back.
   const getBookContext = useCallback(async (): Promise<BookContext | null> => {
@@ -160,6 +168,7 @@ export default function ShelfReader() {
     return current ? readBookPages(current.pdf, current.document, current.range) : null;
   }, []);
   const { sendHelp } = useTutorChat(getBookContext);
+  const markConversation = useMarkConversation(canvasHandle, conversationKey);
   const { status: saveStatus, saveNow, openSession, startNew } = useSessionAutosave(canvasHandle, { reopenLast: false });
 
   const updateDocument = useCallback((next: ShelfDocument) => {
@@ -540,6 +549,7 @@ export default function ShelfReader() {
     // The reply shows beside the board.
     setTutorOpen(true);
     setError('');
+    markConversation.end();
     try {
       if (!canvasHandle.current) throw new Error('The board is still loading. Please try again.');
       await sendHelp(await canvasHandle.current.captureForTutor(), question);
@@ -548,10 +558,24 @@ export default function ShelfReader() {
     }
   };
 
-  const getBoardImages = useCallback(async (): Promise<TutorBoardImages> => {
-    if (!canvasHandle.current) throw new Error('The board is still loading. Please try again.');
-    return canvasHandle.current.captureForTutor();
-  }, []);
+  // Hint or Check on a problem marked on a note page: its work alone, asked as a problem.
+  const askAboutMark = async (question: string, mark: BoardMark, items: string[]) => {
+    if (getTutorWaitMs() > 0) return;
+    setTutorOpen(true);
+    setError('');
+    try {
+      if (!canvasHandle.current) throw new Error('The board is still loading. Please try again.');
+      // Follow-ups stay on this problem until something else is asked.
+      markConversation.start(mark);
+      await sendHelp(await canvasHandle.current.captureForTutor(items), question, markAbout(mark));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'The board image could not be captured. Please try again.');
+    }
+  };
+  const noteBoard = shelfDocument && openExerciseForBook && isNote(openExerciseForBook) ? markBoardId(shelfDocument, openExerciseForBook) : null;
+  const markFavorites = useMarkFavorites(noteBoard, openExerciseForBook ? `${openExerciseForBook.label}, ${shelfDocument?.title ?? ''}` : '');
+
+  const getBoardImages = markConversation.followUpImages;
 
   if (loadError) {
     return (
@@ -942,8 +966,8 @@ export default function ShelfReader() {
               ]} />
           )}
           canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} onShowTools={toggleTools} paper={paper}
-            ask={{ sessionType: exercise && isNote(exercise) ? 'note' : 'problem', onAsk: (question) => void askForHelp(question), disabled: isStreaming }}
-            paged={Boolean(exercise && isNote(exercise))} />}
+            ask={{ sessionType: exercise && isNote(exercise) ? 'note' : 'problem', onAsk: (question) => void askForHelp(question), onAskMark: (question, mark, items) => void askAboutMark(question, mark, items), disabled: isStreaming }}
+            paged={Boolean(exercise && isNote(exercise))} markFavorites={markFavorites} />}
           toolbar={(
             <BottomToolbar
               onAskForHelp={(question) => void askForHelp(question)}

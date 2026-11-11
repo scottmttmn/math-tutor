@@ -1,4 +1,4 @@
-import type { BoardImage, BoardInk, BoardPage, BoardStroke, InkColor } from '@/types';
+import type { BoardImage, BoardInk, BoardMark, BoardPage, BoardStroke, InkColor } from '@/types';
 
 // The ink board: our own Notes-like canvas, which replaced tldraw. Board units are CSS px
 // at writing scale, so the pen SDK's points map straight in. Everything here is pure.
@@ -83,6 +83,21 @@ export function boardBounds(board: BoardInk, ids?: ReadonlySet<string>): Bounds 
   for (const image of board.images) if (!ids || ids.has(image.id)) result = union(result, imageBounds(image));
   for (const stroke of board.strokes) if (!ids || ids.has(stroke.id)) result = union(result, strokeBounds(stroke));
   return result;
+}
+
+/** The marked problems whose work is still on the board, each with where that work is. */
+export function liveMarks(board: BoardInk): { mark: BoardMark; bounds: Bounds }[] {
+  const live: { mark: BoardMark; bounds: Bounds }[] = [];
+  for (const mark of board.marks ?? []) {
+    const bounds = boardBounds(board, new Set(mark.items));
+    if (bounds) live.push({ mark, bounds });
+  }
+  return live;
+}
+
+/** How a marked problem reads on its tag and on Home: "#55 · Stewart 4.2". */
+export function markTitle(mark: { label: string; book?: string }): string {
+  return mark.book ? `${mark.label} · ${mark.book}` : mark.label;
 }
 
 /** Whether the board holds work: any stroke, or a picture other than the problem. */

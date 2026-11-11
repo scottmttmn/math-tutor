@@ -74,12 +74,29 @@ export interface BoardPage {
   pages?: number;
 }
 
+/**
+ * A problem marked in a notebook (lasso → Mark problem): the work it holds, named. It follows its
+ * strokes and pictures wherever they move, and shows only while at least one of them is on the board.
+ */
+export interface BoardMark {
+  id: string;
+  /** The problem's name, as the student gave it ("#55"). */
+  label: string;
+  /** Where it comes from, optional ("Stewart, Calculus 4.2"). */
+  book?: string;
+  /** Ids of the strokes and pictures it holds. */
+  items: string[];
+  solved?: boolean;
+}
+
 /** An ink board's drawing as saved with a session. Strokes are in drawing order; images sit under them. */
 export interface BoardInk {
   version: 1;
   page: BoardPage;
   strokes: BoardStroke[];
   images: BoardImage[];
+  /** Problems marked on a notes board, in the order they were marked. */
+  marks?: BoardMark[];
 }
 
 // === Chat Types ===
@@ -239,6 +256,8 @@ export interface HistoryItem {
   problems?: { total: number; solved: number };
   /** Something was done on it; false for a Shelf exercise only opened (listed only where its book is). */
   hasWork: boolean;
+  /** A problem marked in a notebook, listed on its own: its board, the mark and the ink to picture it. */
+  mark?: { boardId: string; markId: string; label: string; ink: BoardInk };
 }
 
 /** History's filter: everything, problems, notes, problems not yet solved, solved problems, or favorites. */
@@ -415,8 +434,16 @@ export type TutorIntent = 'hint' | 'explain' | 'check' | 'feedback';
 export interface SelectionAsk {
   sessionType: SessionType;
   onAsk: (question: string) => void;
+  /** Hint or Check on a marked problem in notes: only its items, asked as a problem (see BoardMark). */
+  onAskMark?: (question: string, mark: BoardMark, items: string[]) => void;
   /** A reply is streaming. */
   disabled?: boolean;
+}
+
+/** A notes board's favorite marked problems (by mark id), and starring one: kept in the tutor memory. */
+export interface MarkFavorites {
+  ids: ReadonlySet<string>;
+  onToggle: (mark: BoardMark, on: boolean) => void;
 }
 
 /** Page bounds of one crop of the board. */
@@ -431,6 +458,17 @@ export interface TutorImageBounds {
 export interface TutorBoardImages {
   canvasImage: string;
   canvasDetails?: string[];
+}
+
+/** What a question is asked as, when not the board's own problem: a problem marked in notes. */
+export interface TutorAbout {
+  sessionType: SessionType;
+  problemStatement: string;
+}
+
+/** A follow-up's pictures of the board, and what it is about when that is not the board's problem. */
+export interface TutorFollowUp extends TutorBoardImages {
+  about?: TutorAbout;
 }
 
 export interface TutorRequest extends TutorBoardImages {

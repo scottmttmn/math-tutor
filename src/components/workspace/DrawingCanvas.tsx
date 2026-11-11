@@ -3,13 +3,16 @@
 import dynamic from 'next/dynamic';
 import type { RefObject } from 'react';
 import { useCanvasState } from '@/context/CanvasContext';
-import type { BoardImage, BoardInk, BoardStroke, Paper, SelectionAsk, TutorBoardImages } from '@/types';
+import type { BoardImage, BoardInk, BoardStroke, MarkFavorites, Paper, SelectionAsk, TutorBoardImages } from '@/types';
 
 export interface DrawingCanvasHandle {
   /** PNG (base64, no data: prefix) of the lasso's selection, else the whole drawing; '' when nothing is drawn. */
   captureImage: () => Promise<string>;
-  /** The selection, else the board, with readable close-ups when its overview is downscaled. */
-  captureForTutor: () => Promise<TutorBoardImages>;
+  /**
+   * The selection, else the board (the page in view on a notes board), with readable close-ups when its
+   * overview is downscaled; `only` pictures just those items (a marked problem's).
+   */
+  captureForTutor: (only?: string[]) => Promise<TutorBoardImages>;
   /** Small PNG of the whole drawing for the saved session; null when nothing is drawn. */
   captureThumbnail: () => Promise<Blob | null>;
   /** The whole board as a PNG or JPEG for saving, and how many pixels it has per board unit; null when empty. */
@@ -27,6 +30,8 @@ export interface DrawingCanvasHandle {
   addPicture: (picture: Promise<string>) => Promise<boolean>;
   /** Puts copied ink (and pictures) in the middle of the view with new ids, chosen with the lasso; false when nothing could be. */
   pasteInk: (ink: { strokes: BoardStroke[]; images: BoardImage[] }) => boolean;
+  /** Shows a marked problem: its page, its work near the top of the view; false when it isn't on the board. */
+  showMark: (id: string) => boolean;
   /** Changes whenever the drawing changes; compare it to know whether a new capture is needed. */
   getRevision: () => number;
   /** The live ink board, fresher than the debounced copy in CanvasContext; null before it has loaded. */
@@ -41,14 +46,15 @@ const InkBoard = dynamic(() => import('./InkBoard'), { ssr: false });
 /** Fills its nearest positioned ancestor; give that element a size. */
 /**
  * `ask`: the tutor choices in the lasso selection's menu, which ask about the selection alone.
- * `paged`: a notes board, cut into pages shown one at a time.
+ * `paged`: a notes board, cut into pages shown one at a time, where the lasso can mark a problem.
+ * `markFavorites`: which marked problems are starred, and starring one.
  */
-export default function DrawingCanvas({ handleRef, toolsHidden = false, onShowTools, paper = 'blank', ask, paged = false }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden?: boolean; onShowTools?: () => void; paper?: Paper; ask?: SelectionAsk; paged?: boolean }) {
+export default function DrawingCanvas({ handleRef, toolsHidden = false, onShowTools, paper = 'blank', ask, paged = false, markFavorites }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden?: boolean; onShowTools?: () => void; paper?: Paper; ask?: SelectionAsk; paged?: boolean; markFavorites?: MarkFavorites }) {
   // data-loading: the board still shows the previous drawing (the browser tests wait for it to go).
   const { pendingLoad } = useCanvasState();
   return (
     <div className="absolute inset-0 isolate" data-loading={pendingLoad ? 'true' : undefined}>
-      <InkBoard handleRef={handleRef} toolsHidden={toolsHidden} paper={paper} ask={ask} paged={paged} />
+      <InkBoard handleRef={handleRef} toolsHidden={toolsHidden} paper={paper} ask={ask} paged={paged} markFavorites={markFavorites} />
       {toolsHidden && onShowTools && (
         // The rail folds away to the left; a tab at that edge brings it back.
         <button onClick={onShowTools} data-testid="show-tools" aria-label="Show tools" title="Show tools"

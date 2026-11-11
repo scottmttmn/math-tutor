@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useSessionState } from '@/context/SessionContext';
 import { useTutorChat } from '@/hooks/useTutorChat';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
-import type { BookContext, TutorBoardImages } from '@/types';
+import type { BookContext, TutorFollowUp } from '@/types';
 import ChatTextarea from '@/components/chat/ChatTextarea';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
 import { askChoices, askQuestion } from '@/lib/tutorAsk';
@@ -13,7 +13,7 @@ import type { TutorIntent } from '@/types';
 interface ChatInputProps {
   visible?: boolean;
   /** Current board images for every question, including a follow-up without new ink. */
-  getBoardImages?: () => Promise<TutorBoardImages>;
+  getBoardImages?: () => Promise<TutorFollowUp>;
   /** The Shelf pages the tutor reads with the follow-up, if any. */
   getBookContext?: () => Promise<BookContext | null>;
   /** The chat box's id. */

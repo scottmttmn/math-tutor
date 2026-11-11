@@ -4,14 +4,14 @@ import { useRef, useEffect } from 'react';
 import { useSessionState } from '@/context/SessionContext';
 import ChatMessage from './ChatMessage';
 import ChatInput from './ChatInput';
-import type { BookContext, TutorBoardImages } from '@/types';
+import type { BookContext, TutorFollowUp } from '@/types';
 
 const QUESTION_ID = 'tutor-question';
 
 interface ChatPanelProps {
   visible: boolean;
   /** Current board images, attached to every question because history contains text only. */
-  getBoardImages?: () => Promise<TutorBoardImages>;
+  getBoardImages?: () => Promise<TutorFollowUp>;
   getBookContext?: () => Promise<BookContext | null>;
   onAskForHelp?: (question: string) => Promise<void>;
 }

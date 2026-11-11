@@ -5,8 +5,8 @@ import { createPortal } from 'react-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { useCanvasDispatch, useCanvasState } from '@/context/CanvasContext';
 import { GRID_SPACING, LINE_SPACING, PAPER_LINE } from '@/lib/paper';
-import { HIGHLIGHTER_WIDTH, HIGHLIGHT_ALPHA, INK_COLORS, PEN_WIDTHS, boardBounds, emptyBoard, imageBounds, overlaps, pageAt, pageSpan, paginate, pushPoint, strokeBounds, type PenSize } from '@/lib/inkBoard/model';
-import { addItems, commit, copyItems, moveItems, redo, removeItems, scaleItems, startHistory, undo, type BoardHistory } from '@/lib/inkBoard/edits';
+import { HIGHLIGHTER_WIDTH, HIGHLIGHT_ALPHA, INK_COLORS, PEN_WIDTHS, boardBounds, emptyBoard, imageBounds, liveMarks, markTitle, overlaps, pageAt, pageSpan, paginate, pushPoint, strokeBounds, type PenSize } from '@/lib/inkBoard/model';
+import { addItems, addMark, changeMark, commit, copyItems, moveItems, redo, removeItems, removeMark, scaleItems, startHistory, undo, type BoardHistory } from '@/lib/inkBoard/edits';
 import { GridIndex, itemsInLasso, strokesHitByPath } from '@/lib/inkBoard/hitTest';
 import { scratchedOut } from '@/lib/inkBoard/scratchOut';
 import { useScratchOutOff } from '@/hooks/useInkBoardChoice';
@@ -21,8 +21,8 @@ import { MAX_BOARD_PICTURE } from '@/lib/shelf';
 import { copyPicture } from '@/lib/copiedPicture';
 import { pasteCopiedPicture } from '@/lib/boardPicture';
 import { useBoardRail } from '@/components/layout/BoardRail';
-import { ChevronIcon, CopyIcon, EraserIcon, NewPageIcon, FitWidthIcon, HighlightIcon, LassoIcon, PenIcon, RedoIcon, TrashIcon, UndoIcon } from '@/components/common/Icons';
-import type { BoardImage, BoardInk, BoardStroke, InkColor, Paper, SelectionAsk } from '@/types';
+import { ChevronIcon, CopyIcon, EraserIcon, FavoriteStar, SolvedCheck, NewPageIcon, FitWidthIcon, HighlightIcon, LassoIcon, PenIcon, RedoIcon, TrashIcon, UndoIcon } from '@/components/common/Icons';
+import type { BoardImage, BoardInk, BoardMark, BoardStroke, InkColor, MarkFavorites, Paper, SelectionAsk } from '@/types';
 import { askQuestion, selectionChoices } from '@/lib/tutorAsk';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
 import type { DrawingCanvasHandle } from './DrawingCanvas';
@@ -58,6 +58,9 @@ const PALM_SIZE = 48;
 const PINCH_WINDOW_MS = 250;
 const PINCH_START = 0.15;
 const SCROLL_LOCK = 24;
+// A marked problem's tag sits this far (screen px) above its work, its bracket this far left of it.
+const TAG_RISE = 36;
+const BRACKET_GAP = 12;
 // The selection's box sits this far outside its ink, in screen px; a duplicate lands this far off, in board units.
 const SELECTION_PAD = 8;
 // The resize handle at the selection box's bottom right corner: drawn this big, taken within this reach (screen px).
@@ -127,7 +130,24 @@ function selectedIds(current: BoardInk, selection: ReadonlySet<string>, page: nu
   return current.page.pages ? onPage(current, page) : null;
 }
 
-export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = false }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden: boolean; paper: Paper; ask?: SelectionAsk; paged?: boolean }) {
+/** A marked problem in view: its tag's and bracket's place on screen (px). */
+interface MarkTag {
+  id: string;
+  label: string;
+  book?: string;
+  solved: boolean;
+  left: number;
+  top: number;
+  height: number;
+}
+
+const sameTags = (a: MarkTag[], b: MarkTag[]) => a.length === b.length && a.every((tag, i) => {
+  const other = b[i];
+  return tag.id === other.id && tag.label === other.label && tag.book === other.book && tag.solved === other.solved
+    && Math.abs(tag.left - other.left) < 0.5 && Math.abs(tag.top - other.top) < 0.5 && Math.abs(tag.height - other.height) < 0.5;
+});
+
+export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = false, markFavorites }: { handleRef: RefObject<DrawingCanvasHandle | null>; toolsHidden: boolean; paper: Paper; ask?: SelectionAsk; paged?: boolean; markFavorites?: MarkFavorites }) {
   const { ink: mirrored, pendingLoad } = useCanvasState();
   const dispatch = useCanvasDispatch();
   const container = useRef<HTMLDivElement>(null);
@@ -153,6 +173,10 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = f
   const [zoom, setZoom] = useState(1);
   // Zoomed in or out from writing scale: the rail then offers Fit width.
   const [zoomedAway, setZoomedAway] = useState(false);
+  // Marked problems in view (placed in paint), the one whose menu is open, and Mark problem's form.
+  const [tags, setTags] = useState<MarkTag[]>([]);
+  const [openMark, setOpenMark] = useState<{ id: string; renaming?: { label: string; book: string } } | null>(null);
+  const [marking, setMarking] = useState<{ label: string; book: string } | null>(null);
   const style = useRef({ tool, size, color });
   useEffect(() => { style.current = { tool, size, color }; }, [tool, size, color]);
 
@@ -323,6 +347,15 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = f
         Object.assign(menu.style, { left: `${Math.max(MENU_GAP, left)}px`, top: `${Math.max(MENU_GAP, top)}px`, visibility: 'visible' });
       }
     }
+    // Marked problems on this page (or in view on one long page), tagged above their work.
+    const shownTags = liveMarks(current)
+      .filter(({ bounds }) => (sheet ? bounds.minY >= sheet.top - 1 && bounds.minY < sheet.bottom : true)
+        && overlaps(bounds, { minX: x, minY: y - TAG_RISE / z, maxX: x + w / z, maxY: y + h / z }))
+      .map(({ mark, bounds }) => ({
+        id: mark.id, label: mark.label, book: mark.book, solved: Boolean(mark.solved),
+        left: (bounds.minX - x) * z, top: (bounds.minY - y) * z, height: (bounds.maxY - bounds.minY) * z,
+      }));
+    setTags((last) => (sameTags(last, shownTags) ? last : shownTags));
     if (box) {
       context.save();
       context.strokeStyle = '#111827';
@@ -425,6 +458,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = f
 
   const select = useCallback((ids: Set<string>) => {
     if (ids.size === 0 && selection.current.size === 0) return;
+    setMarking(null);
     selection.current = ids;
     moving.current = null;
     holdPen(false);
@@ -445,6 +479,21 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = f
     select(new Set());
     apply(removeItems(board(), ids));
   }, [apply, select]);
+
+  /** Mark problem's form, for the selection: the last book given on this board is filled in. */
+  const startMarking = () => setMarking({ label: '', book: board().marks?.at(-1)?.book ?? '' });
+  /** Marks the selection as a problem (one undo step) and lets go of it. */
+  const markSelection = (label: string, book: string) => {
+    const current = board();
+    const items = [...current.strokes, ...current.images].map((item) => item.id).filter((id) => selection.current.has(id));
+    if (items.length === 0) return;
+    const name = label.trim() || `Problem ${(current.marks?.length ?? 0) + 1}`;
+    select(new Set());
+    apply(addMark(current, { id: uuidv4(), label: name, ...(book.trim() ? { book: book.trim() } : {}), items }));
+  };
+  const markOf = (id: string): BoardMark | undefined => board().marks?.find((mark) => mark.id === id);
+  // The form changes the menu's size, so it is placed again.
+  useEffect(() => { repaint(); }, [marking, repaint]);
 
   const duplicateSelection = useCallback(() => {
     if (selection.current.size === 0) return;
@@ -543,6 +592,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = f
     moving.current = null;
     holdPen(false);
     setSelected(0);
+    setOpenMark(null);
+    setMarking(null);
     container.current?.setAttribute('data-selected', '0');
     setTool('pen');
     setSize('s');
@@ -856,6 +907,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = f
     };
 
     const down = (event: PointerEvent) => {
+      setOpenMark(null);
       if (event.pointerType === 'touch') {
         // A palm resting while the pen writes, just after it wrote, or as it hovers does nothing;
         // nor does a contact as wide as a palm.
@@ -1082,12 +1134,12 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = f
 
 
   useImperativeHandle(handleRef, () => ({
-    captureForTutor: async () => {
+    captureForTutor: async (only) => {
       if (loadPending.current) throw new Error('The board is still loading. Please try again.');
       const load = loads.current;
       const revision = inkRevision;
       const current = board();
-      const ids = selectedIds(current, selection.current, pageIndex.current);
+      const ids = selectedIds(current, only ? new Set(only) : selection.current, pageIndex.current);
       await loadPictures(current);
       if (loads.current !== load || loadPending.current || inkRevision !== revision) throw new Error('The board changed during capture');
       try {
@@ -1191,6 +1243,16 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = f
       select(pasted.ids);
       return true;
     },
+    showMark: (id) => {
+      if (loadPending.current) return false;
+      const found = liveMarks(board()).find(({ mark }) => mark.id === id);
+      if (!found) return false;
+      const { page } = board();
+      const z = fitZoom(page, view.current);
+      if (page.pages) pageIndex.current = pageAt(page, found.bounds.minY);
+      fitTo(found.bounds.minY - (TAG_RISE + OPEN_TOP) / z);
+      return true;
+    },
     getRevision: () => inkRevision,
     getInk: () => (loadPending.current ? null : board()),
     // Clear leaves the problem picture, as it is locked.
@@ -1241,10 +1303,113 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = f
         </div>,
         rail.tools,
       )}
+      {/* Marked problems (placed in paint): a bracket down the work's left, a tag above it that opens its menu. */}
+      {tags.map((tag) => (
+        <div key={tag.id}>
+          <div aria-hidden="true" className={`absolute pointer-events-none border-2 border-r-0 rounded-l ${tag.solved ? 'border-gray-900' : 'border-gray-500'}`}
+            style={{ left: tag.left - BRACKET_GAP, top: tag.top, width: 8, height: Math.max(tag.height, 12) }} />
+          <button data-pen-skip data-testid="mark-tag" aria-haspopup="menu" aria-expanded={openMark?.id === tag.id}
+            title="This problem: the tutor on it, solved, favorite, rename or unmark"
+            onClick={() => setOpenMark((open) => (open?.id === tag.id ? null : { id: tag.id }))}
+            className={`absolute flex items-center gap-1.5 max-w-[70%] min-h-8 px-2.5 text-[13px] font-semibold rounded-lg border-2 border-gray-900 ${tag.solved ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}
+            style={{ left: Math.max(4, tag.left - BRACKET_GAP), top: Math.max(4, tag.top - TAG_RISE) }}>
+            {tag.solved && <SolvedCheck size={14} />}
+            <span className="truncate">{markTitle(tag)}{tag.solved ? ' · Solved' : ''}</span>
+          </button>
+        </div>
+      ))}
+      {openMark && (() => {
+        const tag = tags.find((each) => each.id === openMark.id);
+        const mark = markOf(openMark.id);
+        if (!tag || !mark) return null;
+        const favorite = markFavorites?.ids.has(mark.id) ?? false;
+        const item = 'flex items-center gap-2 w-full min-h-11 px-3 text-left text-sm text-gray-900 rounded-lg hover:bg-gray-100';
+        const close = () => setOpenMark(null);
+        return (
+          <div role="menu" aria-label={markTitle(mark)} data-testid="mark-menu"
+            className="absolute z-10 flex flex-col gap-0.5 p-1.5 w-72 max-w-[calc(100%-8px)] bg-white border border-gray-300 rounded-xl shadow-md"
+            style={{ left: Math.max(4, Math.min(tag.left - BRACKET_GAP, view.current.w - 296)), top: Math.max(4, Math.min(tag.top - TAG_RISE + 40, view.current.h - 330)) }}>
+            {openMark.renaming ? (
+              <form aria-label="Rename" className="flex flex-col gap-2 p-1.5" onSubmit={(event) => {
+                event.preventDefault();
+                const { label, book } = openMark.renaming!;
+                apply(changeMark(board(), mark.id, { label: label.trim() || mark.label, book: book.trim() }));
+                close();
+              }}>
+                <label className="flex flex-col gap-1 text-xs text-gray-700">Name
+                  <input autoFocus value={openMark.renaming.label} onChange={(event) => setOpenMark({ ...openMark, renaming: { ...openMark.renaming!, label: event.target.value } })}
+                    className="min-h-11 px-3 text-base text-gray-900 border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-gray-700">Book (optional)
+                  <input value={openMark.renaming.book} onChange={(event) => setOpenMark({ ...openMark, renaming: { ...openMark.renaming!, book: event.target.value } })}
+                    className="min-h-11 px-3 text-base text-gray-900 border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
+                </label>
+                <div className="flex justify-end gap-2">
+                  <button type="button" className={pressed(false)} onClick={close}>Cancel</button>
+                  <button type="submit" className="flex items-center justify-center min-h-11 px-4 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Save</button>
+                </div>
+              </form>
+            ) : (
+              <>
+                {ask?.onAskMark && (
+                  // The tutor on this problem alone, as on a problem board: it holds back the answer.
+                  <div className="flex gap-1.5 p-1">
+                    {selectionChoices('problem').map((choice) => (
+                      <button key={choice.intent} role="menuitem" disabled={ask.disabled}
+                        className="flex-1 flex items-center justify-center min-h-11 px-3 text-sm font-medium rounded-lg border border-indigo-700 text-indigo-700 bg-white hover:bg-indigo-50 disabled:opacity-40"
+                        title={`Ask the tutor about this problem: ${askQuestion(choice.intent, 'problem')}`}
+                        onClick={() => {
+                          if (ask.disabled || getTutorWaitMs() > 0) return;
+                          close();
+                          const items = new Set(mark.items);
+                          ask.onAskMark!(askQuestion(choice.intent, 'problem'), mark, [...board().strokes, ...board().images].map((each) => each.id).filter((id) => items.has(id)));
+                        }}>
+                        {choice.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {ask?.onAskMark && <span className="h-px mx-1 my-0.5 bg-gray-200" aria-hidden="true" />}
+                <button role="menuitem" className={item} onClick={() => { apply(changeMark(board(), mark.id, { solved: !mark.solved })); close(); }}>
+                  <SolvedCheck size={16} />{mark.solved ? 'Not solved yet' : 'Mark solved'}
+                </button>
+                {markFavorites && (
+                  <button role="menuitemcheckbox" aria-checked={favorite} className={item} onClick={() => { markFavorites.onToggle(mark, !favorite); close(); }}>
+                    <FavoriteStar filled={favorite} size={16} />{favorite ? 'Remove star' : 'Favorite'}
+                  </button>
+                )}
+                <button role="menuitem" className={item} onClick={() => setOpenMark({ id: mark.id, renaming: { label: mark.label, book: mark.book ?? '' } })}>Rename…</button>
+                <button role="menuitem" className={item} onClick={() => { apply(removeMark(board(), mark.id)); close(); }}>Unmark (the writing stays)</button>
+              </>
+            )}
+          </div>
+        );
+      })()}
       {/* Under the selection (placed in paint): the tutor on just these items, Delete, Copy and Done. */}
       <div ref={selectionMenu} role="toolbar" aria-label="Selection" data-testid="selection-menu" style={{ visibility: 'hidden' }}
         className="absolute flex items-center gap-1 p-1 bg-white border border-gray-300 rounded-xl shadow-md">
-        {tool === 'lasso' && selected > 0 && (
+        {tool === 'lasso' && selected > 0 && marking && (
+          // Mark problem: a name, and where it comes from.
+          <form aria-label="Mark as a problem" className="flex flex-col gap-2 p-2 w-80 max-w-full"
+            onSubmit={(event) => { event.preventDefault(); markSelection(marking.label, marking.book); }}>
+            <span className="text-sm font-semibold text-gray-900">Mark as a problem</span>
+            <label className="flex flex-col gap-1 text-xs text-gray-700">Name
+              <input autoFocus value={marking.label} placeholder={`Problem ${(board().marks?.length ?? 0) + 1}`}
+                onChange={(event) => setMarking({ ...marking, label: event.target.value })}
+                className="min-h-11 px-3 text-base text-gray-900 border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-gray-700">Book (optional)
+              <input value={marking.book} placeholder="Where it comes from"
+                onChange={(event) => setMarking({ ...marking, book: event.target.value })}
+                className="min-h-11 px-3 text-base text-gray-900 border border-gray-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button type="button" className={pressed(false)} onClick={() => setMarking(null)}>Cancel</button>
+              <button type="submit" className="flex items-center justify-center min-h-11 px-4 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">Mark</button>
+            </div>
+          </form>
+        )}
+        {tool === 'lasso' && selected > 0 && !marking && (
           <>
             {ask && selectionChoices(ask.sessionType).map((choice) => (
               <button key={choice.intent} disabled={ask.disabled}
@@ -1254,7 +1419,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = f
                 {choice.label}
               </button>
             ))}
-            {ask && <span className="w-px h-7 mx-0.5 bg-gray-300" aria-hidden="true" />}
+            {paged && <button className={pressed(false)} title="Name this work as a problem: solved, favorites and Home's search find it" onClick={startMarking}>Mark problem</button>}
+            {(ask || paged) && <span className="w-px h-7 mx-0.5 bg-gray-300" aria-hidden="true" />}
             <button className={pressed(false)} aria-label="Copy" title="Copy, to paste on any board (Ctrl+C)" onClick={() => void copySelection()}><CopyIcon /></button>
             <button className={pressed(false)} aria-label="Delete" title="Delete (Delete)" onClick={deleteSelection}><TrashIcon /></button>
             <button className={pressed(false)} title="Let go of the selection (Esc)" onClick={() => select(new Set())}>Done</button>

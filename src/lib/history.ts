@@ -1,5 +1,5 @@
 import { folderIndex, itemFolder, bookLocation, isWithin, folderSummary } from '@/lib/folders';
-import { hasWork } from '@/lib/inkBoard/model';
+import { hasWork, liveMarks, markTitle, pageAt } from '@/lib/inkBoard/model';
 import type { Folder, HistoryItem, HistoryShow, HistorySort, Session, ShelfDocument } from '@/types';
 
 const SHELF_ENTRY = /^shelf:([^:]+):([^:]+)$/;
@@ -60,6 +60,36 @@ export function toHistoryItem(session: Session, favoriteIds: ReadonlySet<string>
       : {}),
     hasWork,
   };
+}
+
+/**
+ * The problems marked in a notes board, each listed on its own like a problem board: named with its
+ * book, in its notebook at its page, solved and starred on its own (favorite ids: `<board>#<mark>`).
+ * Opening one goes to its notebook at that mark (`mark` in the URL).
+ */
+export function markedItems(session: Session, favoriteIds: ReadonlySet<string> = new Set()): HistoryItem[] {
+  const board = toHistoryItem(session, favoriteIds, { untouched: true });
+  const ink = session.ink;
+  if (!board || !ink || (session.sessionType ?? 'problem') !== 'note') return [];
+  return liveMarks(ink).map(({ mark, bounds }) => {
+    const page = ink.page.pages ? `, p. ${pageAt(ink.page, bounds.minY) + 1}` : '';
+    const opens = board.href ? `${board.href}&mark=${encodeURIComponent(mark.id)}` : `/board?mark=${encodeURIComponent(mark.id)}`;
+    return {
+      ...board,
+      id: `${session.id}#${mark.id}`,
+      title: markTitle(mark),
+      problemStatement: `In ${board.title}${page}`,
+      sessionType: 'problem',
+      isSolved: Boolean(mark.solved),
+      renamed: false,
+      favorite: favoriteIds.has(`${session.id}#${mark.id}`),
+      thumbnail: null,
+      href: opens,
+      problems: undefined,
+      hasWork: true,
+      mark: { boardId: session.id, markId: mark.id, label: mark.label, ink },
+    };
+  });
 }
 
 const SHOWN: Record<HistoryShow, (item: HistoryItem) => boolean> = {
@@ -153,12 +183,14 @@ export function libraryView(items: HistoryItem[], books: ShelfDocument[], folder
     folders: showsAll ? folders.filter((folder) => folder.id !== here && (browsing ? index.parent.get(folder.id) === here : isWithin(index, index.parent.get(folder.id) ?? null, here)))
       .filter((folder) => matches(folder.name, words)).sort(folderSort[query.sort]) : [],
     books: showsAll ? books.filter((book) => inside(bookLocation(index, book)) && matches(book.title, words)).sort(bookSort[query.sort]) : [],
-    boards: queryHistory(items.filter((item) => inside(itemFolder(index, item)) && (browsing || item.hasWork)), query, index.books),
+    // A marked problem lists on its own only when searching or filtering; browsing shows its notebook.
+    boards: queryHistory(items.filter((item) => inside(itemFolder(index, item)) && (browsing ? !item.mark : item.hasWork)), query, index.books),
   };
 }
 
 /** The card's counts for each folder listed. */
 export function folderSummaries(items: HistoryItem[], books: ShelfDocument[], folders: Folder[]) {
   const index = folderIndex(folders, books);
-  return new Map(folders.map((folder) => [folder.id, folderSummary(index, folder.id, items)]));
+  const boards = items.filter((item) => !item.mark);
+  return new Map(folders.map((folder) => [folder.id, folderSummary(index, folder.id, boards)]));
 }
