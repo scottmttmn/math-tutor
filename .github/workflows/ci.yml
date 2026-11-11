@@ -29,7 +29,9 @@ jobs:
       - run: npm run build
 
       - name: Install Chromium for the browser tests
-        run: npx playwright install --with-deps chromium
+        # The runner image already has most of what Chromium needs; when Ubuntu's mirrors are
+        # unreachable (2026-11-11), install the browser alone rather than fail before any test runs.
+        run: npx playwright install --with-deps chromium || npx playwright install chromium
 
       # The browser tests use a mock model provider, so no API keys are needed.
       - name: Browser tests against the production build
@@ -71,7 +73,9 @@ jobs:
       - run: npm run build:android
 
       - name: Install Chromium for the bundle test
-        run: npx playwright install --with-deps chromium
+        # The runner image already has most of what Chromium needs; when Ubuntu's mirrors are
+        # unreachable (2026-11-11), install the browser alone rather than fail before any test runs.
+        run: npx playwright install --with-deps chromium || npx playwright install chromium
       - run: npm run test:android:e2e
 
       # Every build is signed with one key, kept between runs, so each installs over the last and the
