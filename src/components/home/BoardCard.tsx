@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { THUMBNAIL_SIDE, renderItems } from '@/lib/inkBoard/capture';
+import { TUTOR_IMAGE_PADDING } from '@/lib/tutorBoardImages';
 import BlobImage from '@/components/common/BlobImage';
 import MoreMenu from '@/components/common/MoreMenu';
 import { FavoriteStar, KindIcon, ShelfIcon, SolvedCheck } from '@/components/common/Icons';
@@ -30,10 +32,12 @@ interface CardProps {
   onMove?: () => void;
   /** The question Delete asks first. */
   deleteQuestion?: string;
+  /** What Delete is called (a marked problem is unmarked). */
+  deleteLabel?: string;
 }
 
 /** A board in a list: its picture, kind and name; opens it; Rename, Move to and Delete in its menu. */
-export default function BoardCard({ item, bookTitle, onOpen, onRename, onDelete, onMove, deleteQuestion = 'Delete it?' }: CardProps) {
+export default function BoardCard({ item, bookTitle, onOpen, onRename, onDelete, onMove, deleteQuestion = 'Delete it?', deleteLabel = 'Delete' }: CardProps) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -48,7 +52,7 @@ export default function BoardCard({ item, bookTitle, onOpen, onRename, onDelete,
     // No overflow-hidden on the card: it would clip the "⋯" menu. The open button rounds its own corners.
     <li className="flex flex-col bg-white border border-gray-200 rounded-xl">
       <button onClick={onOpen} className="text-left rounded-t-xl overflow-hidden hover:bg-gray-50" aria-label={`Open ${item.title}`}>
-        <Thumbnail blob={item.thumbnail} />
+        {item.mark ? <MarkThumbnail mark={item.mark} /> : <Thumbnail blob={item.thumbnail} />}
         <div className="px-3 pt-2">
           <KindLine item={item} bookTitle={bookTitle} />
           {!renaming && <p className="mt-1 text-sm font-medium text-gray-900 line-clamp-2">{item.title}</p>}
@@ -80,7 +84,7 @@ export default function BoardCard({ item, bookTitle, onOpen, onRename, onDelete,
           <span className="flex items-center gap-1.5">
             <span className="text-xs text-gray-700">{deleteQuestion}</span>
             <button onClick={() => void onDelete()} className="min-h-11 px-3 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700">
-              Delete
+              {deleteLabel}
             </button>
             <button onClick={() => setConfirmingDelete(false)} className="min-h-11 px-3 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">
               Keep
@@ -92,7 +96,7 @@ export default function BoardCard({ item, bookTitle, onOpen, onRename, onDelete,
             items={[
               { label: 'Rename', onSelect: () => { setName(item.title); setRenaming(true); } },
               ...(onMove ? [{ label: 'Move to…', onSelect: onMove }] : []),
-              { label: 'Delete', onSelect: () => setConfirmingDelete(true) },
+              { label: deleteLabel, onSelect: () => setConfirmingDelete(true) },
             ]}
           />
         )}
@@ -105,6 +109,26 @@ export function Thumbnail({ blob }: { blob: Blob | null }) {
   return (
     <div className="aspect-[4/3] bg-white border-b border-gray-100 flex items-center justify-center overflow-hidden">
       {blob ? <BlobImage blob={blob} className="max-w-full max-h-full object-contain p-2" /> : <span className="text-xs text-gray-300">Empty board</span>}
+    </div>
+  );
+}
+
+/** A marked problem's work, drawn from its notebook's ink (pictures left out). */
+function MarkThumbnail({ mark }: { mark: NonNullable<HistoryItem['mark']> }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const target = canvas.current;
+    const found = mark.ink.marks?.find((each) => each.id === mark.markId);
+    if (!target || !found) return;
+    const picture = renderItems(mark.ink, new Map(), new Set(found.items), TUTOR_IMAGE_PADDING, THUMBNAIL_SIDE, 1);
+    if (!picture) return;
+    target.width = picture.canvas.width;
+    target.height = picture.canvas.height;
+    target.getContext('2d')?.drawImage(picture.canvas, 0, 0);
+  }, [mark]);
+  return (
+    <div className="aspect-[4/3] bg-white border-b border-gray-100 flex items-center justify-center overflow-hidden">
+      <canvas ref={canvas} className="max-w-full max-h-full object-contain p-2" aria-hidden="true" />
     </div>
   );
 }

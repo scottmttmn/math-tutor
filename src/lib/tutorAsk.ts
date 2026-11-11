@@ -39,3 +39,11 @@ export function askQuestion(intent: TutorIntent, sessionType: SessionType): stri
     default: return 'Can you give me a hint?';
   }
 }
+
+/**
+ * The problem text the tutor gets for a problem marked in notes: its name, and that the problem itself
+ * may only be in the work (often from a print book the tutor can't see).
+ */
+export function markedProblem(title: string): string {
+  return `A problem the student marked in their notebook as "${title}". Its statement may not be written out: work out what the problem is from the work, and if you can't tell, say so plainly instead of guessing.`;
+}

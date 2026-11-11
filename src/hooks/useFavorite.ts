@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadProfile, loadSession, updateProfile } from '@/lib/db';
 import { emptyProfile, findFavorite, removeFavorite, setFavorite } from '@/lib/learnerProfile';
-import type { FavoriteProblem, LearnerProfile } from '@/types';
+import { markTitle } from '@/lib/inkBoard/model';
+import type { BoardMark, FavoriteProblem, LearnerProfile, MarkFavorites } from '@/types';
 
 /** What a board says about itself when it is starred. */
 export interface FavoriteSubject {
@@ -56,4 +57,43 @@ export function useFavorite(sessionId: string | null, subject: FavoriteSubject) 
   const unstar = useCallback(() => change((profile, id) => removeFavorite(profile, id)), [change]);
 
   return { favorite, star, unstar, failed };
+}
+
+/** A marked problem's favorite id in the tutor memory: its board's id and its own. */
+export const markFavoriteId = (boardId: string, markId: string) => `${boardId}#${markId}`;
+
+/**
+ * A notes board's starred marked problems, and starring one (kept in the tutor memory like a board's
+ * favorite). Undefined until the board is saved, which gives it an id.
+ */
+export function useMarkFavorites(sessionId: string | null, boardTitle: string): MarkFavorites | undefined {
+  const [loaded, setLoaded] = useState<{ id: string; ids: Set<string> } | null>(null);
+  const queue = useRef<Promise<void>>(Promise.resolve());
+
+  const read = useCallback((profile: LearnerProfile | undefined, id: string) => {
+    const prefix = markFavoriteId(id, '');
+    setLoaded({ id, ids: new Set((profile?.favorites ?? []).filter((item) => item.id.startsWith(prefix)).map((item) => item.id.slice(prefix.length))) });
+  }, []);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    let active = true;
+    loadProfile().then((profile) => { if (active) read(profile, sessionId); }).catch(() => undefined);
+    return () => { active = false; };
+  }, [sessionId, read]);
+
+  const onToggle = useCallback((mark: BoardMark, on: boolean) => {
+    if (!sessionId) return;
+    const id = markFavoriteId(sessionId, mark.id);
+    queue.current = queue.current.then(async () => {
+      try {
+        const next = await updateProfile((saved) => (on
+          ? setFavorite(saved ?? emptyProfile(), { id, title: markTitle(mark), problem: `Marked in the notebook ${boardTitle}`, reason: '' })
+          : removeFavorite(saved ?? emptyProfile(), id)));
+        read(next, sessionId);
+      } catch { /* The star stays as it was; the menu shows the saved state. */ }
+    });
+  }, [sessionId, boardTitle, read]);
+
+  return useMemo(() => (sessionId ? { ids: loaded?.id === sessionId ? loaded.ids : new Set<string>(), onToggle } : undefined), [sessionId, loaded, onToggle]);
 }

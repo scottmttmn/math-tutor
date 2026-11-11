@@ -12,11 +12,13 @@ import { useToolsHidden } from '@/hooks/useToolsHidden';
 import { useWriteUp } from '@/hooks/useWriteUp';
 import { useTutorProblem } from '@/hooks/useTutorProblem';
 
-import type { SessionType, TutorBoardImages, TutorProblem } from '@/types';
+import type { BoardMark, SessionType, TutorBoardImages, TutorProblem } from '@/types';
 import TopBar from './TopBar';
 import BottomToolbar from './BottomToolbar';
 import FavoriteButton from './FavoriteButton';
-import { useFavorite } from '@/hooks/useFavorite';
+import { useFavorite, useMarkFavorites } from '@/hooks/useFavorite';
+import { markedProblem } from '@/lib/tutorAsk';
+import { markTitle } from '@/lib/inkBoard/model';
 import ProblemStatement from '../workspace/ProblemStatement';
 import NoteHeader from '../workspace/NoteHeader';
 import CheckInHeader from '../workspace/CheckInHeader';
@@ -45,7 +47,7 @@ function AppContent() {
   const { status: saveStatus, saveNow, startNew } = useSessionAutosave(canvasHandle);
   const writeUp = useWriteUp();
   const made = useTutorProblem();
-  const { hasContent } = useCanvasState();
+  const { hasContent, pendingLoad } = useCanvasState();
   const { tutorProblem } = made;
   // A problem the tutor wrote is LaTeX; its board goes by the tutor's plain title.
   const problemTitle = tutorProblem?.title || problemStatement.split('\n')[0].trim();
@@ -55,6 +57,21 @@ function AppContent() {
     title: checkIn ? checkInTitle(checkIn) : problemTitle || 'Untitled problem',
     problem: problemStatement.trim() ? problemStatement : problemImage ? 'A problem given as a picture' : 'Written on the board',
   });
+
+  const markFavorites = useMarkFavorites(sessionType === 'note' ? currentSessionId : null, problemStatement.split('\n')[0].trim() || 'Notes');
+
+  // Home opens a marked problem as /board?mark=<id>: once its notebook has loaded, show it.
+  const markToShow = useRef<string | null>(null);
+  useEffect(() => {
+    const mark = new URLSearchParams(window.location.search).get('mark');
+    if (!mark) return;
+    markToShow.current = mark;
+    window.history.replaceState(null, '', '/board');
+  }, []);
+  useEffect(() => {
+    if (pendingLoad || !markToShow.current || !canvasHandle.current) return;
+    if (canvasHandle.current.showMark(markToShow.current)) markToShow.current = null;
+  }, [pendingLoad, currentSessionId]);
 
   // A new board opens with its tutor closed, so the problem or topic is in view.
   const { cancel: cancelWriteUp } = writeUp;
@@ -96,6 +113,19 @@ function AppContent() {
       setCaptureError(error instanceof Error ? error.message : 'The board image could not be captured. Please try again.');
     }
   }, [sendHelp, checkIn, chatHistory]);
+
+  // Hint or Check on a problem marked in notes: its work alone, asked as a problem.
+  const handleAskMark = useCallback(async (question: string, mark: BoardMark, items: string[]) => {
+    if (getTutorWaitMs() > 0) return;
+    setTutorOpen(true);
+    setCaptureError('');
+    try {
+      if (!canvasHandle.current) throw new Error('The board is still loading. Please try again.');
+      await sendHelp(await canvasHandle.current.captureForTutor(items), question, { sessionType: 'problem', problemStatement: markedProblem(markTitle(mark)) });
+    } catch (error) {
+      setCaptureError(error instanceof Error ? error.message : 'The board image could not be captured. Please try again.');
+    }
+  }, [sendHelp]);
 
   const getBoardImages = useCallback(async (): Promise<TutorBoardImages> => {
     if (!canvasHandle.current) throw new Error('The board is still loading. Please try again.');
@@ -179,8 +209,8 @@ function AppContent() {
           </>
         )}
         canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} onShowTools={toggleTools} paper={paper}
-          ask={checkIn ? undefined : { sessionType, onAsk: (question) => void handleAskForHelp(question), disabled: isStreaming }}
-          paged={sessionType === 'note'} />}
+          ask={checkIn ? undefined : { sessionType, onAsk: (question) => void handleAskForHelp(question), onAskMark: (question, mark, items) => void handleAskMark(question, mark, items), disabled: isStreaming }}
+          paged={sessionType === 'note'} markFavorites={markFavorites} />}
         toolbar={(
           <BottomToolbar
             onAskForHelp={(question) => void handleAskForHelp(question)}

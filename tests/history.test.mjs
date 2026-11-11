@@ -116,3 +116,40 @@ test('the library lists what is in each folder; a search or filter reaches every
   assert.deepEqual(folderSummaries(items, books, folders).get('fall'), { folders: 2, books: 1, problems: 3, notes: 1, solved: 1 });
   assert.deepEqual(folderSummaries(items, books, folders).get('ch4'), { folders: 0, books: 0, problems: 1, notes: 0, solved: 0 });
 });
+
+test('problems marked in a notebook list on their own when searching or filtering, opening the notebook at them', () => {
+  const { markedItems } = load('src/lib/history.ts');
+  const line = (id, y) => ({ id, tool: 'pen', color: 'black', width: 3, points: [10, y, 0.5, 50, y, 0.5] });
+  const ink = {
+    version: 1, page: { left: 0, top: 0, width: 960, pages: 2 },
+    strokes: [line('a', 100), line('b', 1400)],
+    images: [],
+    marks: [
+      { id: 'm1', label: '#55', book: 'Stewart 4.2', items: ['a'], solved: true },
+      { id: 'm2', label: '#56', items: ['b'] },
+      { id: 'gone', label: '#57', items: ['erased'] },
+    ],
+  };
+  const notebook = session({ id: 'n1', sessionType: 'note', problemStatement: 'Calculus practice', title: 'Calculus practice', ink });
+  const marks = markedItems(notebook, new Set(['n1#m2']));
+  assert.deepEqual(marks.map((item) => item.id), ['n1#m1', 'n1#m2']);
+  assert.equal(marks[0].title, '#55 · Stewart 4.2');
+  assert.equal(marks[0].problemStatement, 'In Calculus practice, p. 1');
+  assert.equal(marks[1].problemStatement, 'In Calculus practice, p. 2');
+  assert.equal(marks[0].sessionType, 'problem');
+  assert.equal(marks[0].isSolved, true);
+  assert.equal(marks[1].favorite, true);
+  assert.equal(marks[0].href, '/board?mark=m1');
+  assert.deepEqual(marks[0].mark.boardId, 'n1');
+  // A note page's marks open beside its page.
+  assert.equal(markedItems(session({ ...notebook, id: 'shelf:d:x', chatHistory: [{}] }))[0].href, '/shelf/read?doc=d&open=x&mark=m1');
+  // Problem boards have none.
+  assert.deepEqual(markedItems(session({ id: 'p', ink })), []);
+  // Browsing lists the notebook alone; searching and the Solved filter find the mark.
+  const items = [toHistoryItem(notebook), ...marks];
+  const view = (query) => libraryView(items, [], [], { folderId: null, sort: 'updated', search: '', show: 'all', ...query }).boards.map((item) => item.id);
+  assert.deepEqual(view({}), ['n1']);
+  assert.deepEqual(view({ search: 'stewart' }), ['n1#m1']);
+  assert.deepEqual(view({ show: 'solved' }), ['n1#m1']);
+  assert.deepEqual(view({ show: 'favorites' }), ['n1#m2']);
+});

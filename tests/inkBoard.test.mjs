@@ -333,3 +333,32 @@ test('on a page the camera stays between its top and bottom', () => {
   // A page shorter than the view sits at its top.
   assert.equal(camera.clampCamera({ x: -16, y: 5000, z: 1 }, page, { w: 992, h: 2000 }, span).y, span.top - 16);
 });
+
+test('a marked problem holds its work, follows it, and goes when none is left; edits make new boards', () => {
+  const board = { ...model.emptyBoard(), strokes: [line('a', 10, 10, 50, 10), line('b', 10, 40, 50, 40), line('c', 10, 300, 50, 300)] };
+  const marked = edits.addMark(board, { id: 'm', label: '#55', book: 'Stewart 4.2', items: ['a', 'b'] });
+  assert.notEqual(marked, board);
+  assert.equal(board.marks, undefined);
+  let [live] = model.liveMarks(marked);
+  assert.equal(live.mark.id, 'm');
+  assert.equal(live.bounds.minY < 10 && live.bounds.maxY > 40 && live.bounds.maxY < 300, true);
+  assert.equal(model.markTitle(live.mark), '#55 · Stewart 4.2');
+  assert.equal(model.markTitle({ label: '#55' }), '#55');
+  // Moving its work moves it.
+  [live] = model.liveMarks(edits.moveItems(marked, new Set(['a', 'b']), 0, 500));
+  assert.ok(live.bounds.minY > 500);
+  // Solved, renamed, the book taken off; the same board when nothing changes.
+  const solved = edits.changeMark(marked, 'm', { solved: true });
+  assert.equal(solved.marks[0].solved, true);
+  assert.equal(edits.changeMark(solved, 'm', { solved: true }), solved);
+  assert.equal(edits.changeMark(marked, 'gone', { solved: true }), marked);
+  const renamed = edits.changeMark(solved, 'm', { label: '#56', book: '', solved: false });
+  assert.deepEqual(renamed.marks[0], { id: 'm', label: '#56', items: ['a', 'b'] });
+  // Erasing all its work hides it; unmarking keeps the work.
+  assert.equal(model.liveMarks(edits.removeItems(marked, new Set(['a', 'b']))).length, 0);
+  assert.equal(model.liveMarks(edits.removeItems(marked, new Set(['a']))).length, 1);
+  const unmarked = edits.removeMark(marked, 'm');
+  assert.equal(unmarked.marks, undefined);
+  assert.equal(unmarked.strokes.length, 3);
+  assert.equal(edits.removeMark(unmarked, 'm'), unmarked);
+});

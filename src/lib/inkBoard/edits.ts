@@ -1,4 +1,4 @@
-import type { BoardImage, BoardInk, BoardStroke } from '@/types';
+import type { BoardImage, BoardInk, BoardMark, BoardStroke } from '@/types';
 import { boardBounds, imageBounds, pageAround, strokeBounds, union, type Bounds } from './model';
 
 // Edits never change a board in place: each returns a new one sharing the untouched strokes, so
@@ -89,6 +89,31 @@ export function copyItems(board: BoardInk, ids: ReadonlySet<string>, dx: number,
   if (copied.size === 0) return { board, ids: copied };
   const added = addItems(board, strokes, images);
   return { board: moveItems(added, copied, dx, dy), ids: copied };
+}
+
+/** The board with a problem marked on it. */
+export function addMark(board: BoardInk, mark: BoardMark): BoardInk {
+  return { ...board, marks: [...(board.marks ?? []), mark] };
+}
+
+/** The board with a mark renamed, given a book or marked solved; the same board when nothing changes. */
+export function changeMark(board: BoardInk, id: string, change: Partial<Pick<BoardMark, 'label' | 'book' | 'solved'>>): BoardInk {
+  const mark = board.marks?.find((each) => each.id === id);
+  if (!mark) return board;
+  const next: BoardMark = { ...mark, ...change };
+  if (!next.book) delete next.book;
+  if (!next.solved) delete next.solved;
+  if (next.label === mark.label && next.book === mark.book && next.solved === mark.solved) return board;
+  return { ...board, marks: board.marks!.map((each) => (each.id === id ? next : each)) };
+}
+
+/** The board without a mark; its work stays. */
+export function removeMark(board: BoardInk, id: string): BoardInk {
+  if (!board.marks?.some((mark) => mark.id === id)) return board;
+  const marks = board.marks.filter((mark) => mark.id !== id);
+  const { marks: _gone, ...rest } = board;
+  void _gone;
+  return marks.length ? { ...rest, marks } : rest;
 }
 
 /** Where two versions of a board differ (items added, removed or changed); null when they draw the same. */
