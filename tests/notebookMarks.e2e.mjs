@@ -129,8 +129,21 @@ try {
   const height = Buffer.from(image, 'base64').readUInt32BE(20);
   assert.ok(height < 300, `only the marked work is pictured (${height} px)`);
   await page.getByText('Mark reply.').waitFor();
-  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
   console.log('PASS Hint on a mark sends only its work, as a marked problem');
+
+  // A follow-up stays on the marked problem: its work alone, asked as a problem.
+  await page.waitForTimeout(5200);
+  await page.getByPlaceholder('Ask your own question…').fill('What about the second line?');
+  await page.getByPlaceholder('Ask your own question…').press('Enter');
+  for (let tries = 0; tries < 100 && requests.length < 2; tries++) await page.waitForTimeout(100);
+  assert.equal(requests.length, 2);
+  const followUp = JSON.stringify(requests[1].messages);
+  assert.ok(followUp.includes('#55 · Stewart 4.2') && !followUp.includes('helping a student understand concepts'), 'the follow-up is about the mark, as a problem');
+  const followImage = requests[1].messages.at(-1).content.find((part) => part.type === 'image_url').image_url.url.split(',')[1];
+  assert.ok(Buffer.from(followImage, 'base64').readUInt32BE(20) < 300, 'the follow-up pictures only the marked work');
+  await page.getByText('Mark reply.').nth(1).waitFor();
+  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  console.log('PASS a follow-up keeps asking about the mark');
 
   // Home: browsing lists the notebook only; a search and the Solved filter find the mark, which opens the notebook at it.
   await saved('session.ink?.marks?.[0]?.solved === true');
@@ -145,6 +158,12 @@ try {
   await card.waitFor();
   assert.ok((await card.textContent()).includes('Solved'));
   await page.getByRole('button', { name: 'Favorites', exact: true }).click();
+  await card.waitFor();
+  // Rename on Home starts from the mark's own name, not its title with the book.
+  await page.getByRole('button', { name: 'More for #55 · Stewart 4.2' }).click();
+  await page.getByRole('menuitem', { name: 'Rename' }).click();
+  assert.equal(await page.getByRole('textbox', { name: 'Name' }).inputValue(), '#55');
+  await page.getByRole('textbox', { name: 'Name' }).press('Enter');
   await card.waitFor();
   await card.click();
   await page.waitForURL(/\/board$/);

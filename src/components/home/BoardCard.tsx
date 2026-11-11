@@ -34,10 +34,13 @@ interface CardProps {
   deleteQuestion?: string;
   /** What Delete is called (a marked problem is unmarked). */
   deleteLabel?: string;
+  /** What Rename starts from, when it isn't the title (a marked problem's name without its book). */
+  renameValue?: string;
 }
 
 /** A board in a list: its picture, kind and name; opens it; Rename, Move to and Delete in its menu. */
-export default function BoardCard({ item, bookTitle, onOpen, onRename, onDelete, onMove, deleteQuestion = 'Delete it?', deleteLabel = 'Delete' }: CardProps) {
+export default function BoardCard({ item, bookTitle, onOpen, onRename, onDelete, onMove, deleteQuestion = 'Delete it?', deleteLabel = 'Delete', renameValue }: CardProps) {
+  const startName = renameValue ?? item.title;
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -45,7 +48,7 @@ export default function BoardCard({ item, bookTitle, onOpen, onRename, onDelete,
 
   const finishRename = async () => {
     setRenaming(false);
-    if (name.trim() !== item.title) await onRename(name);
+    if (name.trim() !== startName) await onRename(name);
   };
 
   return (
@@ -70,7 +73,7 @@ export default function BoardCard({ item, bookTitle, onOpen, onRename, onDelete,
           onBlur={() => void finishRename()}
           onKeyDown={(event) => {
             if (event.key === 'Enter') event.currentTarget.blur();
-            if (event.key === 'Escape') { setName(item.title); setRenaming(false); }
+            if (event.key === 'Escape') { setName(startName); setRenaming(false); }
           }}
           aria-label="Name"
           className="mx-3 mt-1 px-2 py-1.5 text-sm border border-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
@@ -94,7 +97,7 @@ export default function BoardCard({ item, bookTitle, onOpen, onRename, onDelete,
           <MoreMenu
             label={`More for ${item.title}`}
             items={[
-              { label: 'Rename', onSelect: () => { setName(item.title); setRenaming(true); } },
+              { label: 'Rename', onSelect: () => { setName(startName); setRenaming(true); } },
               ...(onMove ? [{ label: 'Move to…', onSelect: onMove }] : []),
               { label: deleteLabel, onSelect: () => setConfirmingDelete(true) },
             ]}

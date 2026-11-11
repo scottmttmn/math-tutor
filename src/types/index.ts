@@ -257,7 +257,7 @@ export interface HistoryItem {
   /** Something was done on it; false for a Shelf exercise only opened (listed only where its book is). */
   hasWork: boolean;
   /** A problem marked in a notebook, listed on its own: its board, the mark and the ink to picture it. */
-  mark?: { boardId: string; markId: string; ink: BoardInk };
+  mark?: { boardId: string; markId: string; label: string; ink: BoardInk };
 }
 
 /** History's filter: everything, problems, notes, problems not yet solved, solved problems, or favorites. */
@@ -458,6 +458,17 @@ export interface TutorImageBounds {
 export interface TutorBoardImages {
   canvasImage: string;
   canvasDetails?: string[];
+}
+
+/** What a question is asked as, when not the board's own problem: a problem marked in notes. */
+export interface TutorAbout {
+  sessionType: SessionType;
+  problemStatement: string;
+}
+
+/** A follow-up's pictures of the board, and what it is about when that is not the board's problem. */
+export interface TutorFollowUp extends TutorBoardImages {
+  about?: TutorAbout;
 }
 
 export interface TutorRequest extends TutorBoardImages {

@@ -87,7 +87,7 @@ export function markedItems(session: Session, favoriteIds: ReadonlySet<string> =
       href: opens,
       problems: undefined,
       hasWork: true,
-      mark: { boardId: session.id, markId: mark.id, ink },
+      mark: { boardId: session.id, markId: mark.id, label: mark.label, ink },
     };
   });
 }

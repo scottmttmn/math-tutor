@@ -12,13 +12,12 @@ import { useToolsHidden } from '@/hooks/useToolsHidden';
 import { useWriteUp } from '@/hooks/useWriteUp';
 import { useTutorProblem } from '@/hooks/useTutorProblem';
 
-import type { BoardMark, SessionType, TutorBoardImages, TutorProblem } from '@/types';
+import type { BoardMark, SessionType, TutorProblem } from '@/types';
 import TopBar from './TopBar';
 import BottomToolbar from './BottomToolbar';
 import FavoriteButton from './FavoriteButton';
 import { useFavorite, useMarkFavorites } from '@/hooks/useFavorite';
-import { markedProblem } from '@/lib/tutorAsk';
-import { markTitle } from '@/lib/inkBoard/model';
+import { markAbout, useMarkConversation } from '@/hooks/useMarkConversation';
 import ProblemStatement from '../workspace/ProblemStatement';
 import NoteHeader from '../workspace/NoteHeader';
 import CheckInHeader from '../workspace/CheckInHeader';
@@ -40,10 +39,11 @@ function AppContent() {
   const { fullScreen, toggle: toggleFullScreen } = useBoardFullScreen();
   const { toolsHidden, toggleTools } = useToolsHidden();
 
-  const { isStreaming, isSolved, sessionType, problemStatement, problemImage, checkIn, chatHistory, paper: chosenPaper, currentSessionId } = useSessionState();
+  const { isStreaming, isSolved, sessionType, problemStatement, problemImage, checkIn, chatHistory, paper: chosenPaper, currentSessionId, conversationKey } = useSessionState();
   const paper = paperFor(chosenPaper, sessionType);
   const sessionDispatch = useSessionDispatch();
   const { sendHelp } = useTutorChat();
+  const markConversation = useMarkConversation(canvasHandle, conversationKey);
   const { status: saveStatus, saveNow, startNew } = useSessionAutosave(canvasHandle);
   const writeUp = useWriteUp();
   const made = useTutorProblem();
@@ -106,13 +106,14 @@ function AppContent() {
     // A check-in starts with the tutor's first problem; after that, Ask tutor hands in an answer.
     const question = checkIn ? (checkInStarted(chatHistory) ? 'Here is my answer.' : 'Start the check-in.') : picked;
     setCaptureError('');
+    markConversation.end();
     try {
       if (!canvasHandle.current) throw new Error('The board is still loading. Please try again.');
       await sendHelp(await canvasHandle.current.captureForTutor(), question);
     } catch (error) {
       setCaptureError(error instanceof Error ? error.message : 'The board image could not be captured. Please try again.');
     }
-  }, [sendHelp, checkIn, chatHistory]);
+  }, [sendHelp, checkIn, chatHistory, markConversation]);
 
   // Hint or Check on a problem marked in notes: its work alone, asked as a problem.
   const handleAskMark = useCallback(async (question: string, mark: BoardMark, items: string[]) => {
@@ -121,16 +122,15 @@ function AppContent() {
     setCaptureError('');
     try {
       if (!canvasHandle.current) throw new Error('The board is still loading. Please try again.');
-      await sendHelp(await canvasHandle.current.captureForTutor(items), question, { sessionType: 'problem', problemStatement: markedProblem(markTitle(mark)) });
+      // Follow-ups stay on this problem until something else is asked.
+      markConversation.start(mark);
+      await sendHelp(await canvasHandle.current.captureForTutor(items), question, markAbout(mark));
     } catch (error) {
       setCaptureError(error instanceof Error ? error.message : 'The board image could not be captured. Please try again.');
     }
-  }, [sendHelp]);
+  }, [sendHelp, markConversation]);
 
-  const getBoardImages = useCallback(async (): Promise<TutorBoardImages> => {
-    if (!canvasHandle.current) throw new Error('The board is still loading. Please try again.');
-    return canvasHandle.current.captureForTutor();
-  }, []);
+  const getBoardImages = markConversation.followUpImages;
 
   const handleSetProblemImage = useCallback(async () => {
     const image = await canvasHandle.current?.captureImage();

@@ -379,11 +379,12 @@ export default function Home({ folderId = null }: { folderId?: string | null }) 
                         bookTitle={bookTitle(item)}
                         onOpen={() => open(item)}
                         onRename={(name) => (item.mark
-                          ? changeMarkOn(item, (ink) => changeMark(ink, item.mark!.markId, { label: name.trim() || item.title }))
+                          ? changeMarkOn(item, (ink) => changeMark(ink, item.mark!.markId, { label: name.trim() || item.mark!.label }))
                           : run(() => renameSession(item.id, name)))}
                         onMove={item.mark ? undefined : () => setMoving({ kind: 'board', item })}
                         onDelete={() => (item.mark ? changeMarkOn(item, (ink) => removeMark(ink, item.mark!.markId)) : removeBoard(item))}
                         deleteLabel={item.mark ? 'Unmark' : undefined}
+                        renameValue={item.mark?.label}
                         deleteQuestion={item.mark ? 'Unmark it? The writing stays.' : item.exerciseId ? (item.problems ? 'Delete it and its marks?' : 'Delete it and its mark?') : undefined}
                       />
                     ))}
