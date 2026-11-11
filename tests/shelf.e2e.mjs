@@ -120,6 +120,15 @@ try {
     ['Problem figure', 'image_url', 'My board', 'image_url', 'The problem']);
   // The tutor reads the book up to the exercise's page, never past it.
   assert.equal(await page.getByLabel('Reads from the book').inputValue(), '1');
+  // Under the book line, the chat box still fits in the tutor's column, not under the board,
+  // also on a short upright screen where the conversation scrolls (it was pushed off on the BOOX).
+  for (const size of [{ width: 1280, height: 900 }, { width: 720, height: 760 }]) {
+    await page.setViewportSize(size);
+    const column = await page.getByRole('complementary', { name: 'Tutor' }).boundingBox();
+    const box = await page.getByPlaceholder('Ask your own question…').boundingBox();
+    assert.ok(box.y + box.height <= column.y + column.height + 1, `the chat box ends inside the tutor at ${size.width}×${size.height} (${box.y + box.height} > ${column.y + column.height})`);
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
   // The pages open the conversation as user text; only the rule about them is in the system prompt.
   const [system, pages] = requests.at(-1).messages;
   assert.equal(system.role, 'system');
