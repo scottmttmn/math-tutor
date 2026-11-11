@@ -167,6 +167,12 @@ export interface Session {
   /** When Move last filed it: a move isn't work on the board (updatedAt), but a restore keeps the later filing. */
   filedAt?: number;
   /**
+   * The tutor's quiet reads of finished work (see QuietCheck), by problem: `board` for the board's
+   * own, an exercise's id on a board of several, a mark's id for a problem marked in notes. Written
+   * only by `saveQuietCheck`; a save that omits it keeps the stored one.
+   */
+  quietChecks?: Record<string, QuietCheck>;
+  /**
    * A Shelf board holding several marked exercises (Mark → This board), in the order added. Set once a
    * second one joins; the session's problemStatement, problemImage and isSolved are the current one's
    * while open, and isSolved is saved as all of them solved. Unset: the board's one problem is the session's own.
@@ -258,10 +264,12 @@ export interface HistoryItem {
   hasWork: boolean;
   /** A problem marked in a notebook, listed on its own: its board, the mark and the ink to picture it. */
   mark?: { boardId: string; markId: string; label: string; ink: BoardInk };
+  /** The tutor's quiet read of the finished work, while it is solved. */
+  check?: QuietCheck;
 }
 
-/** History's filter: everything, problems, notes, problems not yet solved, solved problems, or favorites. */
-export type HistoryShow = 'all' | 'problems' | 'notes' | 'inProgress' | 'solved' | 'favorites';
+/** History's filter: everything, problems, notes, problems not yet solved, solved problems, favorites, or solved ones the tutor would look at again. */
+export type HistoryShow = 'all' | 'problems' | 'notes' | 'inProgress' | 'solved' | 'favorites' | 'secondLook';
 /** `book`: a book's boards in the order of their pages (in a folder holding a book). */
 export type HistorySort = 'updated' | 'created' | 'title' | 'book';
 
@@ -436,6 +444,8 @@ export interface SelectionAsk {
   onAsk: (question: string) => void;
   /** Hint or Check on a marked problem in notes: only its items, asked as a problem (see BoardMark). */
   onAskMark?: (question: string, mark: BoardMark, items: string[]) => void;
+  /** A marked problem was just marked solved: its items, for the tutor's quiet read. */
+  onMarkSolved?: (mark: BoardMark, items: string[]) => void;
   /** A reply is streaming. */
   disabled?: boolean;
 }
@@ -491,6 +501,24 @@ export interface TutorRequest extends TutorBoardImages {
   otherProblems?: string[];
   /** Write a new problem for the student (MAKE_PROBLEM_PROMPT) instead of tutoring; `avoid` lists problems already offered. */
   makeProblem?: Omit<TutorProblem, 'title' | 'usage'> & { avoid?: string[] };
+  /** Read finished work quietly (QUIET_CHECK_PROMPT): a short verdict for Home, not a reply to the student. */
+  quietCheck?: boolean;
+}
+
+/**
+ * The tutor's quiet read of a problem's finished work, made once when it is marked solved and shown
+ * only on Home: right, worth another look (`where`, never the fix), or can't tell.
+ */
+export interface QuietCheck {
+  result: 'right' | 'look' | 'unclear';
+  /** For `look`: where to look, in a few words. */
+  where?: string;
+  /** When it was read. */
+  at: number;
+  /** The work it read (a short hash of its picture), so the same work isn't read twice. */
+  work: string;
+  /** The model that read it. */
+  model?: string;
 }
 
 /** One request as the model gets it (planTutorRequest in src/lib/tutorPrompt.ts), for any provider. */
@@ -604,6 +632,8 @@ export interface LearnerProfile {
   notebook?: TutorNotebook;
   /** Off: nothing here goes to the tutor. */
   shareWithTutor: boolean;
+  /** False: the tutor doesn't read work quietly when it is marked solved. Unset: on. */
+  quietChecks?: boolean;
   updatedAt: number;
 }
 

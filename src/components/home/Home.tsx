@@ -30,6 +30,7 @@ const SHOW_OPTIONS: { value: HistoryShow; label: string }[] = [
   { value: 'inProgress', label: 'In progress' },
   { value: 'solved', label: 'Solved' },
   { value: 'favorites', label: 'Favorites' },
+  { value: 'secondLook', label: 'Second look' },
 ];
 
 interface Library {

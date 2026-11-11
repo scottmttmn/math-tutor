@@ -40,6 +40,8 @@ import PageAsk from './PageAsk';
 import { useBookSearch } from '@/hooks/useBookSearch';
 import { useFavorite, useMarkFavorites } from '@/hooks/useFavorite';
 import { markAbout, useMarkConversation } from '@/hooks/useMarkConversation';
+import { useQuietCheck } from '@/hooks/useQuietCheck';
+import { BOARD_CHECK } from '@/lib/quietCheck';
 import FavoriteButton from '@/components/layout/FavoriteButton';
 
 // Whether the list beside the page is hidden, so the page gets the width.
@@ -141,7 +143,8 @@ export default function ShelfReader() {
   const book = useRef<{ pdf: PDFDocumentProxy; document: ShelfDocument; range: ReadingRange } | null>(null);
 
   const canvasHandle = useRef<DrawingCanvasHandle>(null);
-  const { isStreaming, isSolved, currentSessionId, problemImage, paper: chosenPaper, problems, conversationKey } = useSessionState();
+  const { isStreaming, isSolved, currentSessionId, problemImage, problemStatement, paper: chosenPaper, problems, currentProblem, conversationKey } = useSessionState();
+  const quietCheck = useQuietCheck(canvasHandle);
   const sessionDispatch = useSessionDispatch();
   // An exercise opened on an empty board is put on it, once it has loaded (so the tutor also reads
   // anything written on the figure). A board with work keeps it as it is.
@@ -966,7 +969,7 @@ export default function ShelfReader() {
               ]} />
           )}
           canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} onShowTools={toggleTools} paper={paper}
-            ask={{ sessionType: exercise && isNote(exercise) ? 'note' : 'problem', onAsk: (question) => void askForHelp(question), onAskMark: (question, mark, items) => void askAboutMark(question, mark, items), disabled: isStreaming }}
+            ask={{ sessionType: exercise && isNote(exercise) ? 'note' : 'problem', onAsk: (question) => void askForHelp(question), onAskMark: (question, mark, items) => void askAboutMark(question, mark, items), onMarkSolved: (mark, items) => void quietCheck({ sessionId: currentSessionId, key: mark.id, items, ...markAbout(mark) }), disabled: isStreaming }}
             paged={Boolean(exercise && isNote(exercise))} markFavorites={markFavorites} />}
           toolbar={(
             <BottomToolbar
@@ -974,7 +977,11 @@ export default function ShelfReader() {
               onClear={() => canvasHandle.current?.clear()}
               isStreaming={isStreaming}
               isSolved={isSolved}
-              onToggleSolved={() => sessionDispatch({ type: 'TOGGLE_SOLVED' })}
+              onToggleSolved={() => {
+                sessionDispatch({ type: 'TOGGLE_SOLVED' });
+                // Marked solved: the tutor reads it quietly, for Home only.
+                if (!isSolved) void quietCheck({ sessionId: currentSessionId, key: problems && problems.length > 1 && currentProblem ? currentProblem : BOARD_CHECK, problemStatement, problemImage });
+              }}
               sessionType={isNote(exercise) ? 'note' : 'problem'}
               paper={{ value: paper, onChange: (next) => sessionDispatch({ type: 'SET_PAPER', paper: next }) }}
               fullScreen={{ on: fullScreen, toggle: toggleFullScreen }}

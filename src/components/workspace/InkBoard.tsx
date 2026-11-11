@@ -1370,7 +1370,12 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = f
                   </div>
                 )}
                 {ask?.onAskMark && <span className="h-px mx-1 my-0.5 bg-gray-200" aria-hidden="true" />}
-                <button role="menuitem" className={item} onClick={() => { apply(changeMark(board(), mark.id, { solved: !mark.solved })); close(); }}>
+                <button role="menuitem" className={item} onClick={() => {
+                  apply(changeMark(board(), mark.id, { solved: !mark.solved }));
+                  // Marked solved: the tutor may read it quietly (shown only on Home).
+                  if (!mark.solved) ask?.onMarkSolved?.(mark, [...board().strokes, ...board().images].map((each) => each.id).filter((id) => mark.items.includes(id)));
+                  close();
+                }}>
                   <SolvedCheck size={16} />{mark.solved ? 'Not solved yet' : 'Mark solved'}
                 </button>
                 {markFavorites && (

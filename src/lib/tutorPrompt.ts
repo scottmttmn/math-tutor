@@ -79,6 +79,20 @@ Title: <a name of two to six plain words, no math>
 
 No hints, no answer, no solution, no remarks before or after. Keep the problem under about 120 words. ${MATH_FORMAT}`;
 
+// A quiet check (on Mark solved): the tutor reads the finished work once and gives a short verdict
+// that shows only on Home, never on the board, so it never interrupts. It points, never fixes.
+const QUIET_CHECK_PROMPT = `You quietly read a student's finished handwritten work on one math problem. They marked it solved. They will not read a reply from you: your verdict shows later as a small note on the problem's card, so they can take another look when they choose.
+
+Decide whether the work reaches a correct answer by valid steps.
+
+Reply in exactly this form and nothing else:
+Result: right | look | unclear
+Where: <only for look: where to look, in at most 12 words, naming a line or step; never the fix, the correct value or a hint at it>
+
+- right: the work is correct, or a slip doesn't change the result.
+- look: you are confident there is a mistake that matters.
+- unclear: you can't read the work, can't tell what the problem is, or the work isn't a solution. When unsure between look and unclear, choose unclear: a false alarm costs the student more than a miss.`;
+
 const MAX_ASK_CHARS = 300;
 
 /** What the student asked for, as the question: their own words, so it goes in the conversation, not the prompt. */
@@ -239,6 +253,17 @@ export function planTutorRequest(body: TutorRequest): TutorPlan {
       systemPrompt: [MAKE_PROBLEM_PROMPT, memory && PROFILE_RULE].filter(Boolean).join('\n\n'),
       reference: '', profile: memory, history: [], board: [],
       question: problemRequest(makeProblem),
+      maxTokens: TUTOR_MAX_OUTPUT_TOKENS,
+    };
+  }
+  // A quiet check reads the problem and the finished work, nothing else.
+  if (body.quietCheck === true && writeUp !== true && !makeProblem) {
+    return {
+      systemPrompt: QUIET_CHECK_PROMPT,
+      reference: '', profile: '', history: [],
+      board: boardUserParts(problemStatement, canvasImage, problemImage, [],
+        Array.isArray(canvasDetails) ? canvasDetails.filter((image): image is string => typeof image === 'string' && Boolean(image)).slice(0, TUTOR_MAX_DETAILS) : []),
+      question: 'I marked this problem solved. Read my work.',
       maxTokens: TUTOR_MAX_OUTPUT_TOKENS,
     };
   }

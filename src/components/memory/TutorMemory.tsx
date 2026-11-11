@@ -12,6 +12,7 @@ import {
   removeFavorite, removeTopic, setTutorLevel, topicId, writeNotebook,
 } from '@/lib/learnerProfile';
 import type { LearnerProfile, ProfileTopic, TopicRating, TutorNote } from '@/types';
+import { QUIET_CHECKS_PER_DAY } from '@/lib/quietCheck';
 
 function RatingButtons({ name, rating, onRate }: { name: string; rating: TopicRating | null; onRate: (rating: TopicRating | null) => void }) {
   return (
@@ -197,6 +198,18 @@ export default function TutorMemory() {
               />
               Share this with the tutor
               {!profile.shareWithTutor && <span className="text-gray-500">(off: the tutor sees none of it and takes no notes)</span>}
+            </label>
+            <label className="flex items-center gap-3 min-h-11 text-sm text-gray-900">
+              <input
+                type="checkbox"
+                checked={profile.quietChecks !== false}
+                onChange={(event) => update((current) => ({ ...current, quietChecks: event.target.checked, updatedAt: Date.now() }))}
+                className="w-5 h-5 accent-gray-900"
+              />
+              <span>
+                Read my work when I mark a problem solved
+                <span className="block text-gray-500">Once per problem, at most {QUIET_CHECKS_PER_DAY} a day. The tutor&apos;s verdict shows only on Home (Second look), never on the board.</span>
+              </span>
             </label>
 
             <section aria-labelledby="about-heading" className="flex flex-col gap-2">

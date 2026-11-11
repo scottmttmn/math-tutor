@@ -63,6 +63,11 @@ export default function BoardCard({ item, bookTitle, onOpen, onRename, onDelete,
           {item.problemStatement && !item.problemStatement.startsWith(item.title) && !renaming && (
             <p className="text-xs text-gray-500 line-clamp-1">{item.problemStatement}</p>
           )}
+          {/* The tutor's quiet read of the finished work: only here, never on the board. */}
+          {item.check?.result === 'look' && (
+            <p className="mt-1 text-xs text-gray-900 line-clamp-2"><span className="font-semibold">Take another look</span>{item.check.where ? `: ${item.check.where}` : ''}</p>
+          )}
+          {item.check?.result === 'right' && <p className="mt-1 text-xs text-gray-500">Tutor agrees</p>}
         </div>
       </button>
       {renaming && (
