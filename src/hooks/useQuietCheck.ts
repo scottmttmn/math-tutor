@@ -40,8 +40,8 @@ let queue: Promise<void> = Promise.resolve();
 
 const quietChecksOn = async () => (await loadProfile())?.quietChecks !== false;
 
-/** What happened to one read: sent and saved, skipped (already read, off, failed), or stopped by the daily cap. */
-export type QuietReadOutcome = 'read' | 'skipped' | 'cap';
+/** What happened to one read: sent and saved, skipped (already read, off), stopped by the daily cap, failed to reach the tutor (offline), or cancelled by the student's question. */
+export type QuietReadOutcome = 'read' | 'skipped' | 'cap' | 'failed' | 'cancelled';
 
 /**
  * Queues one quiet read of work already pictured. It waits for the tutor to be idle a while unless
@@ -63,13 +63,30 @@ function queueQuietRead(
     const day = new Date().toISOString().slice(0, 10);
     const count = countToday(await getSetting<{ day: string; count: number }>(COUNT_KEY), day);
     if (count >= QUIET_CHECKS_PER_DAY) return 'cap';
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'failed';
     await setSetting(COUNT_KEY, { day, count: count + 1 });
-    const reply = await requestTutorText({
-      quietCheck: true, problemStatement: subject.problemStatement, problemImage: subject.problemImage ?? undefined,
-      chatHistory: [], canvasImage, canvasDetails, modelConfig: getModelConfig(),
-    }, new AbortController().signal, () => undefined);
-    const verdict = reply && parseQuietCheck(reply.text);
-    if (!verdict) return 'skipped';
+    let reply: Awaited<ReturnType<typeof requestTutorText>>;
+    const giveBack = async () => {
+      const saved = await getSetting<{ day: string; count: number }>(COUNT_KEY);
+      if (saved?.day === day && saved.count > 0) await setSetting(COUNT_KEY, { day, count: saved.count - 1 });
+    };
+    try {
+      reply = await requestTutorText({
+        quietCheck: true, problemStatement: subject.problemStatement, problemImage: subject.problemImage ?? undefined,
+        chatHistory: [], canvasImage, canvasDetails, modelConfig: getModelConfig(),
+      }, new AbortController().signal, () => undefined);
+    } catch {
+      // Not reached (offline, the provider down): the try doesn't count toward the day's reads.
+      await giveBack();
+      return 'failed';
+    }
+    if (!reply) {
+      // Cancelled by a question the student asked: it stays unchecked, to be read later.
+      await giveBack();
+      return 'cancelled';
+    }
+    // A reply without a verdict counts as unclear, so the same work isn't sent again.
+    const verdict = parseQuietCheck(reply.text) ?? { result: 'unclear' as const };
     await saveQuietCheck(sessionId, key, { ...verdict, at: Date.now(), work });
     return 'read';
   };
@@ -83,32 +100,45 @@ export async function listUnreadSolved(): Promise<UnreadSolved[]> {
   return unreadSolved(await listSessions());
 }
 
+let catchingUp: Promise<{ read: number; capped: boolean; failed?: boolean }> | null = null;
+
 /**
- * Reads solved problems saved before quiet checks, one at a time, from their saved ink. Stops at the
- * daily cap or when `stopped()` says so; `onProgress(done, total)` follows it. Returns how many were read.
+ * Reads the solved problems not checked yet (marked solved offline, a read that failed, or solved
+ * before quiet checks), one at a time, from their saved boards. In the background (`waitForQuiet`)
+ * each waits for the tutor to be idle a while; asked for in Tutor memory, they go one after another.
+ * Stops at the daily cap, when the tutor can't be reached, or when `stopped()` says so;
+ * `onProgress(done, total)` follows it. Only one runs at a time: a second call shares the first.
  */
-export async function readUnreadSolved(
-  onProgress: (done: number, total: number) => void,
-  stopped: () => boolean = () => false,
-): Promise<{ read: number; capped: boolean }> {
-  const list = await listUnreadSolved();
-  let read = 0;
-  for (let i = 0; i < list.length; i++) {
-    if (stopped()) break;
-    onProgress(i, list.length);
-    const item = list[i];
-    try {
-      const images = await savedTutorImages(item.ink, item.items ? new Set(item.items) : null);
-      if (!images.canvasImage) continue;
-      const outcome = await queueQuietRead(item, images, false);
-      if (outcome === 'cap') return { read, capped: true };
-      if (outcome === 'read') read++;
-    } catch {
-      // One that can't be pictured is passed over.
+export function readUnreadSolved(
+  onProgress: (done: number, total: number) => void = () => undefined,
+  { waitForQuiet = false, stopped = () => false }: { waitForQuiet?: boolean; stopped?: () => boolean } = {},
+): Promise<{ read: number; capped: boolean; failed?: boolean }> {
+  if (catchingUp) return catchingUp;
+  const run = async () => {
+    if (!(await quietChecksOn())) return { read: 0, capped: false };
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return { read: 0, capped: false, failed: true };
+    const list = await listUnreadSolved();
+    let read = 0;
+    for (let i = 0; i < list.length; i++) {
+      if (stopped()) break;
+      onProgress(i, list.length);
+      const item = list[i];
+      try {
+        const images = await savedTutorImages(item.ink, item.items ? new Set(item.items) : null);
+        if (!images.canvasImage) continue;
+        const outcome = await queueQuietRead(item, images, waitForQuiet);
+        if (outcome === 'cap') return { read, capped: true };
+        if (outcome === 'failed') return { read, capped: false, failed: true };
+        if (outcome === 'read') read++;
+      } catch {
+        // One that can't be pictured is passed over.
+      }
     }
-  }
-  onProgress(list.length, list.length);
-  return { read, capped: false };
+    onProgress(list.length, list.length);
+    return { read, capped: false };
+  };
+  catchingUp = run().finally(() => { catchingUp = null; });
+  return catchingUp;
 }
 
 /**
@@ -126,7 +156,11 @@ export function useQuietCheck(handle: RefObject<DrawingCanvasHandle | null>) {
       // Pictured now, as it was marked solved; read once the tutor is quiet.
       const images = await handle.current.captureForTutor(subject.items);
       if (!images.canvasImage) return;
-      await queueQuietRead({ ...subject, sessionId }, images);
+      // Not reached (offline): it stays solved and unchecked, and is read when the app is back online.
+      // Cancelled by a question: read again in the background once the tutor is idle.
+      if (await queueQuietRead({ ...subject, sessionId }, images) === 'cancelled') {
+        void readUnreadSolved(undefined, { waitForQuiet: true }).catch(() => undefined);
+      }
     } catch {
       // Quiet by design: a failed read leaves nothing behind, and marking it solved again tries again.
     }

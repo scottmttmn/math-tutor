@@ -1,15 +1,50 @@
 import { TUTOR_UNAVAILABLE } from '@/lib/constants';
 import { getTutorWaitMs, recordTutorUsage, tryStartTutorRequest } from '@/hooks/useRateLimit';
-import { requestTutor } from '@/lib/tutorRequest';
+import { TUTOR_DIRECT, requestTutor } from '@/lib/tutorRequest';
 import type { TokenUsage, TutorRequest, TutorStreamEvent } from '@/types';
 
 /**
  * One tutor request whose reply is a piece of text rather than a chat turn (a TeX write-up, a
  * problem from the tutor). It waits out the five-second spacing instead of refusing, retries once
  * when the server's gate asks it to wait, and passes the reply so far to `onText` as it streams.
- * Resolves with the whole reply and its token usage (when the provider reports it), or null when `signal` aborted it.
+ * Resolves with the whole reply and its token usage (when the provider reports it), or null when `signal` aborted it
+ * (or, for a quiet read, a question the student asked cancelled it). Any other request cancels a quiet read under way.
  */
-export async function requestTutorText(body: TutorRequest, signal: AbortSignal, onText: (text: string) => void): Promise<{ text: string; usage?: TokenUsage } | null> {
+// The quiet read under way, if any: a question the student asks cancels it (`cancelQuietRead`).
+let quietRead: AbortController | null = null;
+
+/**
+ * Cancels a quiet read under way, so the student's own question goes first; true when one was
+ * cancelled. Only through the server, which runs one request at a time: in the Android app the two
+ * simply run side by side (Scott: two at once is fine), so the read isn't wasted.
+ */
+export function cancelQuietRead(): boolean {
+  if (TUTOR_DIRECT || !quietRead) return false;
+  quietRead.abort();
+  quietRead = null;
+  return true;
+}
+
+export async function requestTutorText(body: TutorRequest, outerSignal: AbortSignal, onText: (text: string) => void): Promise<{ text: string; usage?: TokenUsage } | null> {
+  // A quiet read can be cancelled by a question the student asks; it then resolves null.
+  const own = new AbortController();
+  if (outerSignal.aborted) own.abort();
+  else outerSignal.addEventListener('abort', () => own.abort(), { once: true });
+  const signal = own.signal;
+  if (body.quietCheck) {
+    quietRead?.abort();
+    quietRead = own;
+  } else {
+    cancelQuietRead();
+  }
+  try {
+    return await readTutorText(body, signal, onText);
+  } finally {
+    if (quietRead === own) quietRead = null;
+  }
+}
+
+async function readTutorText(body: TutorRequest, signal: AbortSignal, onText: (text: string) => void): Promise<{ text: string; usage?: TokenUsage } | null> {
   const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   const wait = getTutorWaitMs();
   if (wait > 0) await pause(wait + 50);

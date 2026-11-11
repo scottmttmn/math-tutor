@@ -12,12 +12,21 @@ import { chromium } from 'playwright';
 
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const requests = [];
+let slowQuiet = false;
 const provider = createServer(async (req, res) => {
   let raw = '';
   for await (const part of req) raw += part;
-  requests.push(JSON.parse(raw));
+  const body = JSON.parse(raw);
+  requests.push(body);
+  const quiet = raw.includes('I marked this problem solved');
   res.writeHead(200, { 'Content-Type': 'text/event-stream' });
-  res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'Result: look\nWhere: the second line' } }] })}\n\n`);
+  // A slow quiet read, for a question asked while it runs; the connection closing ends it.
+  if (quiet && slowQuiet) {
+    res.write(': waiting\n\n');
+    await new Promise((resolve) => { const timer = setTimeout(resolve, 20_000); req.on('close', () => { clearTimeout(timer); resolve(); }); res.on('close', () => { clearTimeout(timer); resolve(); }); });
+    if (res.destroyed || res.writableEnded) return;
+  }
+  res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: quiet ? 'Result: look\nWhere: the second line' : 'A hint.' } }] })}\n\n`);
   res.end('data: [DONE]\n\n');
 });
 await new Promise((resolve) => provider.listen(0, '127.0.0.1', resolve));
@@ -145,8 +154,47 @@ try {
   assert.equal(requests.length, 3);
   assert.ok(JSON.stringify(requests[2].messages).includes('Another one'), 'the solved problem is read');
   assert.equal(await page.getByRole('button', { name: 'Read them' }).count(), 0);
+  console.log('PASS solved problems not read yet are read on request');
+
+  // Marked solved offline: nothing is sent; back online, it is read quietly once the tutor is idle.
+  await page.goto(`${origin}/board?new=problem`);
+  await page.getByPlaceholder("Type the math problem you're working on...").fill('Offline one');
+  await page.waitForFunction(() => document.querySelector('[data-ink-board]') && !document.querySelector('[data-loading]'));
+  await drag([[100, 200], [400, 210]]);
+  await page.getByRole('status').getByText('Saved', { exact: true }).waitFor();
+  await context.setOffline(true);
+  await page.getByRole('button', { name: 'Mark solved' }).click();
+  await page.waitForTimeout(2000);
+  assert.equal(requests.length, 3, 'nothing is sent offline');
+  await context.setOffline(false);
+  for (let tries = 0; tries < 450 && requests.length < 4; tries++) await page.waitForTimeout(100);
+  assert.equal(requests.length, 4, 'read once back online');
+  assert.ok(JSON.stringify(requests[3].messages).includes('Offline one'));
+  assert.equal((await waitCheck('board')).result, 'look');
+  console.log('PASS a problem marked solved offline is read once back online');
+
+  // A question asked while a quiet read runs goes first: the read is cancelled and done later.
+  slowQuiet = true;
+  await page.goto(`${origin}/board?new=problem`);
+  await page.getByPlaceholder("Type the math problem you're working on...").fill('Interrupted one');
+  await page.waitForFunction(() => document.querySelector('[data-ink-board]') && !document.querySelector('[data-loading]'));
+  await drag([[100, 200], [400, 210]]);
+  await page.getByRole('status').getByText('Saved', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Mark solved' }).click();
+  for (let tries = 0; tries < 450 && requests.length < 5; tries++) await page.waitForTimeout(100);
+  assert.equal(requests.length, 5, 'the quiet read started');
+  await page.waitForTimeout(5200);
+  await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();
+  await page.getByRole('button', { name: 'Hint', exact: true }).click();
+  await page.getByText('A hint.').waitFor({ timeout: 15_000 });
+  assert.equal(requests.length, 6);
+  assert.equal(await savedChecks(), null, 'the cancelled read saved nothing');
+  slowQuiet = false;
+  for (let tries = 0; tries < 450 && requests.length < 7; tries++) await page.waitForTimeout(100);
+  assert.equal(requests.length, 7, 'read again once the tutor was idle');
+  assert.equal((await waitCheck('board')).result, 'look');
   assert.deepEqual(errors, []);
-  console.log('PASS solved problems not read yet are read on request; no browser exceptions');
+  console.log('PASS a question goes before a quiet read, which is read again later; no browser exceptions');
 } finally {
   await context.close();
   provider.close();

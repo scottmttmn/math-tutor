@@ -49,9 +49,9 @@ export interface UnreadSolved {
 }
 
 /**
- * Solved problems saved before quiet checks (or never read): problem boards drawn on the ink board
- * with one problem, and solved marked problems in notes. Boards of several exercises are left out,
- * since their work isn't split by exercise.
+ * Solved problems not checked yet (marked solved offline, a read that failed, or solved before quiet
+ * checks): problem boards on the ink board (each solved exercise on a board of several) and solved
+ * marked problems in notes. Check-ins and boards saved before the ink board are left out.
  */
 export function unreadSolved(sessions: Session[]): UnreadSolved[] {
   const found: UnreadSolved[] = [];
@@ -59,8 +59,15 @@ export function unreadSolved(sessions: Session[]): UnreadSolved[] {
     const ink = session.ink;
     if (!ink || session.id.startsWith('workbook:')) continue;
     if ((session.sessionType ?? 'problem') === 'problem') {
-      if (session.isSolved && !(session.problems && session.problems.length > 0) && !session.checkIn && !session.quietChecks?.[BOARD_CHECK]
-        && ink.strokes.length > 0) {
+      if (session.checkIn || ink.strokes.length === 0) continue;
+      if (session.problems && session.problems.length > 0) {
+        // A board of several exercises: each solved one, read with the whole board, as when marked.
+        for (const problem of session.problems) {
+          if (problem.isSolved && !session.quietChecks?.[problem.id]) {
+            found.push({ sessionId: session.id, key: problem.id, problemStatement: problem.problemStatement, problemImage: problem.problemImage, ink });
+          }
+        }
+      } else if (session.isSolved && !session.quietChecks?.[BOARD_CHECK]) {
         found.push({ sessionId: session.id, key: BOARD_CHECK, problemStatement: session.problemStatement, problemImage: session.problemImage, ink });
       }
       continue;

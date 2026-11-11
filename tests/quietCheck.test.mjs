@@ -67,7 +67,7 @@ test('a marked problem shows its own check while it is solved', () => {
   assert.equal(two.check, undefined);
 });
 
-test('solved problems not read yet: one-problem boards with ink and solved marks, nothing else', () => {
+test('solved but not checked: boards with ink, each solved exercise, solved marks; nothing else', () => {
   const stroke = (id) => ({ id, tool: 'pen', color: 'black', width: 2, points: [10, 10, 0.5, 40, 40, 0.5] });
   const ink = (strokes, marks) => ({ page: { left: 0, top: 0, width: 960 }, strokes, images: [], ...(marks ? { marks } : {}) });
   const base = { title: '', problemStatement: 'x^2 = 4', chatHistory: [], createdAt: 1, updatedAt: 1 };
@@ -77,7 +77,7 @@ test('solved problems not read yet: one-problem boards with ink and solved marks
     { ...base, id: 'open', ink: ink([stroke('a')]) },
     { ...base, id: 'empty', isSolved: true, ink: ink([]) },
     { ...base, id: 'old', isSolved: true },
-    { ...base, id: 'several', isSolved: true, ink: ink([stroke('a')]), problems: [{ id: 'e1', label: '1', text: '', solved: true }] },
+    { ...base, id: 'several', isSolved: true, ink: ink([stroke('a')]), problems: [{ id: 'e1', label: '1', problemStatement: 'Exercise 1', problemImage: null, isSolved: true }, { id: 'e2', label: '2', problemStatement: 'Exercise 2', problemImage: null }] },
     { ...base, id: 'checkin', isSolved: true, ink: ink([stroke('a')]), checkIn: { topics: [] } },
     { ...base, id: 'notes', sessionType: 'note', ink: ink([stroke('a'), stroke('b'), stroke('c')], [
       { id: 'm1', label: '#55', book: 'Stewart 4.2', items: ['a'], solved: true },
@@ -87,7 +87,8 @@ test('solved problems not read yet: one-problem boards with ink and solved marks
     ]), quietChecks: { m2: { result: 'look', at: 1, work: 'w' } } },
   ];
   const found = unreadSolved(sessions);
-  assert.deepEqual(found.map((item) => `${item.sessionId}/${item.key}`), ['solved/board', 'notes/m1']);
-  assert.deepEqual(found[1].items, ['a']);
-  assert.match(found[1].problemStatement, /#55 · Stewart 4\.2/);
+  assert.deepEqual(found.map((item) => `${item.sessionId}/${item.key}`), ['solved/board', 'several/e1', 'notes/m1']);
+  assert.equal(found[1].problemStatement, 'Exercise 1');
+  assert.deepEqual(found[2].items, ['a']);
+  assert.match(found[2].problemStatement, /#55 · Stewart 4\.2/);
 });

@@ -170,13 +170,15 @@ function UnreadSolvedProblems({ beforeStart }: { beforeStart: () => Promise<void
     await beforeStart();
     setProgress({ done: 0, total: unread ?? 0 });
     try {
-      const { read, capped } = await readUnreadSolved((done, total) => { if (!gone.current) setProgress({ done, total }); }, () => gone.current);
+      const { read, capped, failed } = await readUnreadSolved((done, total) => { if (!gone.current) setProgress({ done, total }); });
       if (gone.current) return;
       const left = (await listUnreadSolved()).length;
       setUnread(left);
-      setResult(capped
-        ? `Read ${read}. That's today's ${QUIET_CHECKS_PER_DAY}; the rest can be read tomorrow.`
-        : `Read ${read}. See Second look on Home.`);
+      setResult(failed
+        ? `Read ${read}. The tutor couldn't be reached; try the rest when you're online.`
+        : capped
+          ? `Read ${read}. That's today's ${QUIET_CHECKS_PER_DAY}; the rest can be read tomorrow.`
+          : `Read ${read}. See Second look on Home.`);
     } catch {
       if (!gone.current) setResult('Reading stopped. Try again later.');
     } finally {
