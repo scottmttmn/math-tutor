@@ -29,11 +29,18 @@ export function fakeBooxBridge() {
       // window.__startDelay (ms): the SDK takes that long to come up, and calls meanwhile are
       // refused, as the native side did before it checked on the main thread. window.__boox.region
       // is the region the pen really has.
+      // Only the latest start counts: one stopped while it was coming up (full screen remounts the
+      // page) must not take the pen back to its own region when it finishes.
       if (method === 'start') {
+        const start = {};
+        window.__boox.pendingStart = start;
         window.__boox.starting = true;
         if (window.__startDelay) await new Promise((resolve) => setTimeout(resolve, window.__startDelay));
-        window.__boox.starting = false;
-        window.__boox.region = options.region;
+        if (window.__boox.pendingStart === start) {
+          window.__boox.pendingStart = null;
+          window.__boox.starting = false;
+          window.__boox.region = options.region;
+        }
       } else if (['setWidth', 'setRegion', 'pause', 'resume', 'refresh'].includes(method) && window.__boox.starting) {
         throw new Error('The BOOX pen isn\'t started.');
       }
