@@ -41,7 +41,7 @@ export function toHistoryItem(session: Session, favoriteIds: ReadonlySet<string>
   const sessionType = session.sessionType ?? 'problem';
   const isSolved = sessionType === 'problem' && Boolean(session.isSolved);
   // The tutor's quiet read shows while the problem is solved: the board's own, or its exercises' on a board of several.
-  const check = isSolved ? shownCheck(session.quietChecks, session.problems && session.problems.length > 1 ? session.problems.map((problem) => problem.id) : [BOARD_CHECK]) : undefined;
+  const check = isSolved ? shownCheck(session.quietChecks, [BOARD_CHECK, ...(session.problems ?? []).map((problem) => problem.id)]) : undefined;
   return {
     id: session.id,
     title: session.customTitle || session.title || 'Untitled',

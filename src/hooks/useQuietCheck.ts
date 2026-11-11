@@ -40,26 +40,39 @@ export interface QuietCheckSubject {
  * Home, never to the board or the chat, once the tutor has been idle a while. Off in the tutor memory, past the daily cap, for work
  * already read, or on any failure, it does nothing.
  */
+// Reads run one after another, so each reserves its place in the daily count after its wait.
+let queue: Promise<void> = Promise.resolve();
+
 export function useQuietCheck(handle: RefObject<DrawingCanvasHandle | null>) {
   return useCallback(async (subject: QuietCheckSubject) => {
     const { sessionId, key } = subject;
     if (!sessionId || !handle.current) return;
+    const quietChecksOn = async () => (await loadProfile())?.quietChecks !== false;
     try {
-      if ((await loadProfile())?.quietChecks === false) return;
+      if (!(await quietChecksOn())) return;
+      // Pictured now, as it was marked solved; read once the tutor is quiet.
       const { canvasImage, canvasDetails } = await handle.current.captureForTutor(subject.items);
       if (!canvasImage) return;
       const work = workKey(canvasImage);
-      if ((await loadSession(sessionId))?.quietChecks?.[key]?.work === work) return;
-      const day = new Date().toISOString().slice(0, 10);
-      const count = countToday(await getSetting<{ day: string; count: number }>(COUNT_KEY), day);
-      if (count >= QUIET_CHECKS_PER_DAY || !(await quietMoment())) return;
-      await setSetting(COUNT_KEY, { day, count: count + 1 });
-      const reply = await requestTutorText({
-        quietCheck: true, problemStatement: subject.problemStatement, problemImage: subject.problemImage ?? undefined,
-        chatHistory: [], canvasImage, canvasDetails, modelConfig: getModelConfig(),
-      }, new AbortController().signal, () => undefined);
-      const verdict = reply && parseQuietCheck(reply.text);
-      if (verdict) await saveQuietCheck(sessionId, key, { ...verdict, at: Date.now(), work });
+      const read = async () => {
+        if ((await loadSession(sessionId))?.quietChecks?.[key]?.work === work) return;
+        if (!(await quietMoment())) return;
+        // Turned off meanwhile: nothing is sent.
+        if (!(await quietChecksOn())) return;
+        const day = new Date().toISOString().slice(0, 10);
+        const count = countToday(await getSetting<{ day: string; count: number }>(COUNT_KEY), day);
+        if (count >= QUIET_CHECKS_PER_DAY) return;
+        await setSetting(COUNT_KEY, { day, count: count + 1 });
+        const reply = await requestTutorText({
+          quietCheck: true, problemStatement: subject.problemStatement, problemImage: subject.problemImage ?? undefined,
+          chatHistory: [], canvasImage, canvasDetails, modelConfig: getModelConfig(),
+        }, new AbortController().signal, () => undefined);
+        const verdict = reply && parseQuietCheck(reply.text);
+        if (verdict) await saveQuietCheck(sessionId, key, { ...verdict, at: Date.now(), work });
+      };
+      const next = queue.then(read).catch(() => undefined);
+      queue = next;
+      await next;
     } catch {
       // Quiet by design: a failed read leaves nothing behind, and marking it solved again tries again.
     }

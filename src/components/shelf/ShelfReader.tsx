@@ -980,7 +980,7 @@ export default function ShelfReader() {
               onToggleSolved={() => {
                 sessionDispatch({ type: 'TOGGLE_SOLVED' });
                 // Marked solved: the tutor reads it quietly, for Home only.
-                if (!isSolved) void quietCheck({ sessionId: currentSessionId, key: problems && problems.length > 1 && currentProblem ? currentProblem : BOARD_CHECK, problemStatement, problemImage });
+                if (!isSolved) void quietCheck({ sessionId: currentSessionId, key: problems?.length && currentProblem ? currentProblem : BOARD_CHECK, problemStatement, problemImage });
               }}
               sessionType={isNote(exercise) ? 'note' : 'problem'}
               paper={{ value: paper, onChange: (next) => sessionDispatch({ type: 'SET_PAPER', paper: next }) }}

@@ -51,6 +51,9 @@ test('Home shows a check only while solved, and Second look lists solved problem
   // A board of several: an exercise to look at again shows first.
   assert.equal(shownCheck({ a: { ...look, result: 'right', at: 9 }, b: look }, ['a', 'b']).result, 'look');
   assert.equal(shownCheck({ board: look }, ['other']), undefined);
+  // One exercise left of a board of several keeps its own verdict.
+  const survivor = toHistoryItem(session({ id: 'v', isSolved: true, problems: [{ id: 'ex2', label: '#2', isSolved: true }], currentProblem: 'ex2', quietChecks: { ex2: look } }));
+  assert.deepEqual(survivor.check, look);
 });
 
 test('a marked problem shows its own check while it is solved', () => {
