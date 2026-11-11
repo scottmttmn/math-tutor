@@ -58,7 +58,7 @@ Every change goes through a branch and a PR (see CLAUDE.md, "Workflow and CI"). 
 - [x] Scratch out to erase on the ink board (Board → Scratch out to erase, on by default).
 - [x] **Problems in a notebook** (2026-11-10; replaces the print-book notebook design, Scott: not something separate from notes): notes boards have pages (flip like BOOX Notes), and the lasso's **Mark problem** names a problem in them with an optional book. Its tag has Hint · Check (asked as a problem: the tutor works out the problem from the work, or says it can't), Mark solved, Favorite, Rename and Unmark; Home finds marks by search and the Problems, In progress, Solved and Favorites filters and opens the notebook at one.
 - [ ] Marked problems in a book's list and sections (a notebook tied to a Shelf text), if wanted after using marks.
-- [x] **Quiet checks, step 1** (2026-11-11): Mark solved (a board or a marked problem) has the tutor read the work once in the background; the verdict (Take another look: where / Tutor agrees) shows only on Home, with a **Second look** filter. Off switch in Tutor memory, 20 a day. Scott: never distracting, nothing on the board.
+- [x] **Quiet checks, step 1** (2026-11-11): Mark solved (a board or a marked problem) has the tutor read the work once in the background; the verdict (Take another look: where / Tutor agrees) shows only on Home, with a **Second look** filter. Off switch in Tutor memory, 100 a day; **Read them** there reads problems solved before. Scott: never distracting, nothing on the board.
 - [ ] Quiet checks, next: scoring a flag (It was a mistake / It was fine; Was actually wrong for a miss) to compare models, and each read becoming a tutor note on the topic.
 
 ## Later ideas

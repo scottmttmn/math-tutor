@@ -7,7 +7,8 @@ import { chromium } from 'playwright';
 
 // Quiet checks: marking a problem solved has the tutor read its work once in the background; the
 // verdict shows only on Home (the card and the Second look filter), never on the board or in the chat.
-// A marked problem in notes is read alone; the tutor memory's switch turns it off.
+// A marked problem in notes is read alone; the tutor memory's switch turns it off, and reads
+// problems solved meanwhile on request.
 
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const requests = [];
@@ -133,8 +134,19 @@ try {
   await page.getByRole('button', { name: 'Mark solved' }).click();
   await page.waitForTimeout(2000);
   assert.equal(requests.length, 2);
+  console.log('PASS the tutor memory turns quiet checks off');
+
+  // Back on, the problem solved meanwhile can be read from the tutor memory.
+  await page.goto(`${origin}/memory`);
+  await page.getByRole('checkbox', { name: /Read my work when I mark a problem solved/ }).check();
+  await page.getByTestId('unread-solved').getByText('1 solved problem not read yet').waitFor();
+  await page.getByRole('button', { name: 'Read them' }).click();
+  await page.getByText('Read 1. See Second look on Home.').waitFor({ timeout: 20_000 });
+  assert.equal(requests.length, 3);
+  assert.ok(JSON.stringify(requests[2].messages).includes('Another one'), 'the solved problem is read');
+  assert.equal(await page.getByRole('button', { name: 'Read them' }).count(), 0);
   assert.deepEqual(errors, []);
-  console.log('PASS the tutor memory turns quiet checks off; no browser exceptions');
+  console.log('PASS solved problems not read yet are read on request; no browser exceptions');
 } finally {
   await context.close();
   provider.close();

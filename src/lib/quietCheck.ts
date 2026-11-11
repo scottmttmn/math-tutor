@@ -1,7 +1,9 @@
-import type { QuietCheck } from '@/types';
+import { liveMarks, markTitle } from '@/lib/inkBoard/model';
+import { markedProblem } from '@/lib/tutorAsk';
+import type { BoardInk, QuietCheck, Session } from '@/types';
 
 /** At most this many quiet reads a day, so marking a pile of problems solved costs little. */
-export const QUIET_CHECKS_PER_DAY = 20;
+export const QUIET_CHECKS_PER_DAY = 100;
 
 /** The key of a board's own problem in `Session.quietChecks`. */
 export const BOARD_CHECK = 'board';
@@ -34,4 +36,40 @@ export function countToday(saved: { day: string; count: number } | undefined, da
 export function shownCheck(checks: Record<string, QuietCheck> | undefined, keys?: string[]): QuietCheck | undefined {
   const list = Object.entries(checks ?? {}).filter(([key]) => !keys || keys.includes(key)).map(([, check]) => check);
   return list.find((check) => check.result === 'look') ?? list.sort((a, b) => b.at - a.at)[0];
+}
+
+/** A solved problem the tutor hasn't read yet: its board, key, what it is, and which work (a mark's items). */
+export interface UnreadSolved {
+  sessionId: string;
+  key: string;
+  problemStatement: string;
+  problemImage?: string | null;
+  ink: BoardInk;
+  items?: string[];
+}
+
+/**
+ * Solved problems saved before quiet checks (or never read): problem boards drawn on the ink board
+ * with one problem, and solved marked problems in notes. Boards of several exercises are left out,
+ * since their work isn't split by exercise.
+ */
+export function unreadSolved(sessions: Session[]): UnreadSolved[] {
+  const found: UnreadSolved[] = [];
+  for (const session of sessions) {
+    const ink = session.ink;
+    if (!ink || session.id.startsWith('workbook:')) continue;
+    if ((session.sessionType ?? 'problem') === 'problem') {
+      if (session.isSolved && !(session.problems && session.problems.length > 0) && !session.checkIn && !session.quietChecks?.[BOARD_CHECK]
+        && ink.strokes.length > 0) {
+        found.push({ sessionId: session.id, key: BOARD_CHECK, problemStatement: session.problemStatement, problemImage: session.problemImage, ink });
+      }
+      continue;
+    }
+    for (const { mark } of liveMarks(ink)) {
+      if (mark.solved && !session.quietChecks?.[mark.id]) {
+        found.push({ sessionId: session.id, key: mark.id, problemStatement: markedProblem(markTitle(mark)), ink, items: mark.items });
+      }
+    }
+  }
+  return found;
 }

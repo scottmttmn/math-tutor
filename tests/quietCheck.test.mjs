@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import load from './load-typescript.mjs';
 
-const { parseQuietCheck, workKey, countToday, shownCheck } = load('src/lib/quietCheck.ts');
+const { parseQuietCheck, workKey, countToday, shownCheck, unreadSolved } = load('src/lib/quietCheck.ts');
 const { planTutorRequest } = load('src/lib/tutorPrompt.ts');
 const { toHistoryItem, markedItems, queryHistory } = load('src/lib/history.ts');
 
@@ -65,4 +65,29 @@ test('a marked problem shows its own check while it is solved', () => {
   const [one, two] = markedItems(session({ id: 'n', sessionType: 'note', ink, quietChecks: { m1: look, m2: look, board: look } }));
   assert.deepEqual(one.check, look);
   assert.equal(two.check, undefined);
+});
+
+test('solved problems not read yet: one-problem boards with ink and solved marks, nothing else', () => {
+  const stroke = (id) => ({ id, tool: 'pen', color: 'black', width: 2, points: [10, 10, 0.5, 40, 40, 0.5] });
+  const ink = (strokes, marks) => ({ page: { left: 0, top: 0, width: 960 }, strokes, images: [], ...(marks ? { marks } : {}) });
+  const base = { title: '', problemStatement: 'x^2 = 4', chatHistory: [], createdAt: 1, updatedAt: 1 };
+  const sessions = [
+    { ...base, id: 'solved', isSolved: true, ink: ink([stroke('a')]) },
+    { ...base, id: 'read', isSolved: true, ink: ink([stroke('a')]), quietChecks: { board: { result: 'right', at: 1, work: 'w' } } },
+    { ...base, id: 'open', ink: ink([stroke('a')]) },
+    { ...base, id: 'empty', isSolved: true, ink: ink([]) },
+    { ...base, id: 'old', isSolved: true },
+    { ...base, id: 'several', isSolved: true, ink: ink([stroke('a')]), problems: [{ id: 'e1', label: '1', text: '', solved: true }] },
+    { ...base, id: 'checkin', isSolved: true, ink: ink([stroke('a')]), checkIn: { topics: [] } },
+    { ...base, id: 'notes', sessionType: 'note', ink: ink([stroke('a'), stroke('b'), stroke('c')], [
+      { id: 'm1', label: '#55', book: 'Stewart 4.2', items: ['a'], solved: true },
+      { id: 'm2', label: '#56', items: ['b'], solved: true },
+      { id: 'm3', label: '#57', items: ['c'] },
+      { id: 'm4', label: '#58', items: ['gone'], solved: true },
+    ]), quietChecks: { m2: { result: 'look', at: 1, work: 'w' } } },
+  ];
+  const found = unreadSolved(sessions);
+  assert.deepEqual(found.map((item) => `${item.sessionId}/${item.key}`), ['solved/board', 'notes/m1']);
+  assert.deepEqual(found[1].items, ['a']);
+  assert.match(found[1].problemStatement, /#55 · Stewart 4\.2/);
 });
