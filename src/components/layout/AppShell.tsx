@@ -18,6 +18,8 @@ import BottomToolbar from './BottomToolbar';
 import FavoriteButton from './FavoriteButton';
 import { useFavorite, useMarkFavorites } from '@/hooks/useFavorite';
 import { markAbout, useMarkConversation } from '@/hooks/useMarkConversation';
+import { useQuietCheck } from '@/hooks/useQuietCheck';
+import { BOARD_CHECK } from '@/lib/quietCheck';
 import ProblemStatement from '../workspace/ProblemStatement';
 import NoteHeader from '../workspace/NoteHeader';
 import CheckInHeader from '../workspace/CheckInHeader';
@@ -44,6 +46,7 @@ function AppContent() {
   const sessionDispatch = useSessionDispatch();
   const { sendHelp } = useTutorChat();
   const markConversation = useMarkConversation(canvasHandle, conversationKey);
+  const quietCheck = useQuietCheck(canvasHandle);
   const { status: saveStatus, saveNow, startNew } = useSessionAutosave(canvasHandle);
   const writeUp = useWriteUp();
   const made = useTutorProblem();
@@ -209,7 +212,7 @@ function AppContent() {
           </>
         )}
         canvas={<DrawingCanvas handleRef={canvasHandle} toolsHidden={toolsHidden} onShowTools={toggleTools} paper={paper}
-          ask={checkIn ? undefined : { sessionType, onAsk: (question) => void handleAskForHelp(question), onAskMark: (question, mark, items) => void handleAskMark(question, mark, items), disabled: isStreaming }}
+          ask={checkIn ? undefined : { sessionType, onAsk: (question) => void handleAskForHelp(question), onAskMark: (question, mark, items) => void handleAskMark(question, mark, items), onMarkSolved: (mark, items) => void quietCheck({ sessionId: currentSessionId, key: mark.id, items, ...markAbout(mark) }), disabled: isStreaming }}
           paged={sessionType === 'note'} markFavorites={markFavorites} />}
         toolbar={(
           <BottomToolbar
@@ -218,7 +221,11 @@ function AppContent() {
             onClear={() => canvasHandle.current?.clear()}
             isStreaming={isStreaming}
             isSolved={isSolved}
-            onToggleSolved={() => sessionDispatch({ type: 'TOGGLE_SOLVED' })}
+            onToggleSolved={() => {
+              sessionDispatch({ type: 'TOGGLE_SOLVED' });
+              // Marked solved: the tutor reads it quietly, for Home only.
+              if (!isSolved) void quietCheck({ sessionId: currentSessionId, key: BOARD_CHECK, problemStatement, problemImage });
+            }}
             sessionType={sessionType}
             paper={{ value: paper, onChange: (next) => sessionDispatch({ type: 'SET_PAPER', paper: next }) }}
             fullScreen={{ on: fullScreen, toggle: toggleFullScreen }}

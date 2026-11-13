@@ -81,3 +81,15 @@ export function problemImage(board: BoardInk, key: string | true) {
   return board.images.find((image) => image.problem === key) ?? null;
 }
 
+
+/** What the tutor reads of a saved board, without a board on screen: its items (or all of it), pictures loaded. */
+export async function savedTutorImages(board: BoardInk, ids: ReadonlySet<string> | null) {
+  const pictures = new Map<string, CanvasImageSource>();
+  await Promise.all(board.images.map((image) => new Promise<void>((resolve) => {
+    const picture = new Image();
+    picture.onload = () => { pictures.set(image.id, picture); resolve(); };
+    picture.onerror = () => resolve();
+    picture.src = image.src;
+  })));
+  return tutorImages(board, pictures, ids);
+}

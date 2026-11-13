@@ -26,6 +26,7 @@ import type { BoardImage, BoardInk, BoardMark, BoardStroke, InkColor, MarkFavori
 import { askQuestion, selectionChoices } from '@/lib/tutorAsk';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
 import type { DrawingCanvasHandle } from './DrawingCanvas';
+import { markWork } from '@/lib/quietCheck';
 
 // The ink board: our own Notes-like canvas (it replaced tldraw). One long page of fixed width; the
 // pen or mouse writes, two fingers scroll and pinch (one does nothing), the wheel scrolls (with Ctrl, zooms). The drawing
@@ -1370,7 +1371,12 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = f
                   </div>
                 )}
                 {ask?.onAskMark && <span className="h-px mx-1 my-0.5 bg-gray-200" aria-hidden="true" />}
-                <button role="menuitem" className={item} onClick={() => { apply(changeMark(board(), mark.id, { solved: !mark.solved })); close(); }}>
+                <button role="menuitem" className={item} onClick={() => {
+                  apply(changeMark(board(), mark.id, { solved: !mark.solved }));
+                  // Marked solved: the tutor may read it quietly (shown only on Home).
+                  if (!mark.solved) ask?.onMarkSolved?.(mark, markWork(board(), mark));
+                  close();
+                }}>
                   <SolvedCheck size={16} />{mark.solved ? 'Not solved yet' : 'Mark solved'}
                 </button>
                 {markFavorites && (

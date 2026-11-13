@@ -7,6 +7,7 @@ import BlobImage from '@/components/common/BlobImage';
 import MoreMenu from '@/components/common/MoreMenu';
 import { FavoriteStar, KindIcon, ShelfIcon, SolvedCheck } from '@/components/common/Icons';
 import type { HistoryItem } from '@/types';
+import type { CheckAgainOutcome } from '@/hooks/useQuietCheck';
 
 /** What a board is (problem or notes), the book it came from, and whether it's solved or a favorite. */
 export function KindLine({ item, bookTitle }: { item: HistoryItem; bookTitle?: string }) {
@@ -36,15 +37,38 @@ interface CardProps {
   deleteLabel?: string;
   /** What Rename starts from, when it isn't the title (a marked problem's name without its book). */
   renameValue?: string;
+  /** Offers Check again on a problem flagged for another look: the tutor reads the corrected work once more. */
+  onCheckAgain?: () => Promise<CheckAgainOutcome>;
 }
 
+/** What Check again says when it didn't bring a new verdict. */
+const CHECK_AGAIN_NOTE: Record<Exclude<CheckAgainOutcome, 'read'>, string> = {
+  same: 'Nothing has changed since the tutor read it.',
+  off: 'Quiet checks are off in Tutor memory.',
+  cap: 'The tutor has read its limit for today. Try again tomorrow.',
+  failed: "Couldn't reach the tutor. Try again later.",
+  gone: "There's no solved work here to read.",
+};
+
 /** A board in a list: its picture, kind and name; opens it; Rename, Move to and Delete in its menu. */
-export default function BoardCard({ item, bookTitle, onOpen, onRename, onDelete, onMove, deleteQuestion = 'Delete it?', deleteLabel = 'Delete', renameValue }: CardProps) {
+export default function BoardCard({ item, bookTitle, onOpen, onRename, onDelete, onMove, deleteQuestion = 'Delete it?', deleteLabel = 'Delete', renameValue, onCheckAgain }: CardProps) {
   const startName = renameValue ?? item.title;
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [checkNote, setCheckNote] = useState('');
   const updated = new Date(item.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
+  const runCheckAgain = async () => {
+    if (!onCheckAgain || checking) return;
+    setChecking(true);
+    setCheckNote('');
+    const outcome = await onCheckAgain().catch((): CheckAgainOutcome => 'failed');
+    setChecking(false);
+    // Read: the list reloads with the new verdict.
+    if (outcome !== 'read') setCheckNote(CHECK_AGAIN_NOTE[outcome]);
+  };
 
   const finishRename = async () => {
     setRenaming(false);
@@ -63,8 +87,23 @@ export default function BoardCard({ item, bookTitle, onOpen, onRename, onDelete,
           {item.problemStatement && !item.problemStatement.startsWith(item.title) && !renaming && (
             <p className="text-xs text-gray-500 line-clamp-1">{item.problemStatement}</p>
           )}
+          {/* The tutor's quiet read of the finished work: only here, never on the board. */}
+          {item.check?.result === 'look' && (
+            <p className="mt-1 text-xs text-gray-900 line-clamp-2"><span className="font-semibold">Take another look</span>{item.check.where ? `: ${item.check.where}` : ''}</p>
+          )}
+          {item.check?.result === 'right' && <p className="mt-1 text-xs text-gray-500">Tutor agrees</p>}
         </div>
       </button>
+      {/* After correcting the work: one more quiet read, only when asked. */}
+      {onCheckAgain && item.check?.result === 'look' && !renaming && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 pt-1">
+          <button onClick={() => void runCheckAgain()} disabled={checking}
+            className="min-h-11 px-3 text-sm text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-60">
+            {checking ? 'Checking…' : 'Check again'}
+          </button>
+          {checkNote && <p role="status" className="text-xs text-gray-700">{checkNote}</p>}
+        </div>
+      )}
       {renaming && (
         <input
           autoFocus

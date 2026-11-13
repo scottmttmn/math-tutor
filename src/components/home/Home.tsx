@@ -17,6 +17,7 @@ import AppBar from '@/components/layout/AppBar';
 import MoreMenu from '@/components/common/MoreMenu';
 import { TutorIcon } from '@/components/common/Icons';
 import BoardCard, { KindLine, Thumbnail } from '@/components/home/BoardCard';
+import { checkAgain } from '@/hooks/useQuietCheck';
 import FolderCard from '@/components/home/FolderCard';
 import MoveDialog from '@/components/home/MoveDialog';
 import BookHero from '@/components/book/BookHero';
@@ -30,6 +31,7 @@ const SHOW_OPTIONS: { value: HistoryShow; label: string }[] = [
   { value: 'inProgress', label: 'In progress' },
   { value: 'solved', label: 'Solved' },
   { value: 'favorites', label: 'Favorites' },
+  { value: 'secondLook', label: 'Second look' },
 ];
 
 interface Library {
@@ -385,6 +387,11 @@ export default function Home({ folderId = null }: { folderId?: string | null }) 
                         onDelete={() => (item.mark ? changeMarkOn(item, (ink) => removeMark(ink, item.mark!.markId)) : removeBoard(item))}
                         deleteLabel={item.mark ? 'Unmark' : undefined}
                         renameValue={item.mark?.label}
+                        onCheckAgain={item.checkKey ? async () => {
+                          const outcome = await checkAgain(item.mark?.boardId ?? item.id, item.checkKey!);
+                          if (outcome === 'read') await reload().catch(() => setFailed(true));
+                          return outcome;
+                        } : undefined}
                         deleteQuestion={item.mark ? 'Unmark it? The writing stays.' : item.exerciseId ? (item.problems ? 'Delete it and its marks?' : 'Delete it and its mark?') : undefined}
                       />
                     ))}

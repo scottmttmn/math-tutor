@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useSessionState, useSessionDispatch } from '@/context/SessionContext';
 import { getModelConfig } from '@/lib/modelConfig';
 import { recordTutorUsage, tryStartTutorRequest, useRateLimit } from '@/hooks/useRateLimit';
+import { cancelQuietRead } from '@/lib/tutorText';
 import { RATE_LIMIT_MS, TUTOR_UNAVAILABLE } from '@/lib/constants';
 import { loadProfile, updateProfile } from '@/lib/db';
 import { requestTutor } from '@/lib/tutorRequest';
@@ -38,7 +39,10 @@ export function useTutorChat(getBookContext?: () => Promise<BookContext | null>)
    * the mark's name as the problem text, in place of the board's.
    */
   const sendHelp = useCallback(async ({ canvasImage, canvasDetails }: TutorBoardImages, question?: string, about?: TutorAbout): Promise<boolean> => {
-    if (isStreaming || pendingRequest.current || !tryStartTutorRequest()) return false;
+    if (isStreaming || pendingRequest.current) return false;
+    // The student's question goes first: a quiet read under way is cancelled (and read again later).
+    const quietCancelled = cancelQuietRead();
+    if (!tryStartTutorRequest()) return false;
     const abort = new AbortController();
     pendingRequest.current = abort;
     const userContent = question || 'I need help with this part of my work.';
@@ -67,13 +71,19 @@ export function useTutorChat(getBookContext?: () => Promise<BookContext | null>)
       const profile = await loadProfile().then((saved) => saved ?? emptyProfile()).catch(() => undefined);
       const learnerProfile = profileForTutor(profile) || undefined;
       const takeNotes = profile?.shareWithTutor === true;
-      const response = await requestTutor({
+      const request = () => requestTutor({
         problemStatement: about?.problemStatement ?? problemStatement, chatHistory: chatHistory.filter((message) => message.content.trim()),
         canvasImage, canvasDetails, modelConfig: getModelConfig(), userQuestion: userContent,
         problemImage: about ? undefined : problemImage ?? undefined, sessionType: about?.sessionType ?? sessionType, bookContext, learnerProfile, takeNotes,
         checkIn: checkIn ?? undefined,
         otherProblems: problems && problems.length > 1 ? problems.filter((problem) => problem.id !== currentProblem).map((problem) => problem.label) : undefined,
       }, abort.signal);
+      let response = await request();
+      // The server lets one request run at a time; a cancelled quiet read may take a moment to end there.
+      if (response.status === 429 && quietCancelled && !abort.signal.aborted) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        if (!abort.signal.aborted) response = await request();
+      }
       if (!response.ok) {
         if (response.status === 429) recordTutorUsage();
         throw new Error(await response.text() || response.statusText);

@@ -1,5 +1,6 @@
 import { folderIndex, itemFolder, bookLocation, isWithin, folderSummary } from '@/lib/folders';
 import { hasWork, liveMarks, markTitle, pageAt } from '@/lib/inkBoard/model';
+import { BOARD_CHECK, shownCheckEntry } from '@/lib/quietCheck';
 import type { Folder, HistoryItem, HistoryShow, HistorySort, Session, ShelfDocument } from '@/types';
 
 const SHELF_ENTRY = /^shelf:([^:]+):([^:]+)$/;
@@ -38,6 +39,9 @@ export function toHistoryItem(session: Session, favoriteIds: ReadonlySet<string>
     href = `/shelf/read?doc=${encodeURIComponent(bookId)}&open=${encodeURIComponent(opens)}`;
   }
   const sessionType = session.sessionType ?? 'problem';
+  const isSolved = sessionType === 'problem' && Boolean(session.isSolved);
+  // The tutor's quiet read shows while the problem is solved: the board's own, or its exercises' on a board of several.
+  const check = isSolved ? shownCheckEntry(session.quietChecks, [BOARD_CHECK, ...(session.problems ?? []).map((problem) => problem.id)]) : undefined;
   return {
     id: session.id,
     title: session.customTitle || session.title || 'Untitled',
@@ -45,7 +49,7 @@ export function toHistoryItem(session: Session, favoriteIds: ReadonlySet<string>
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     messageCount: session.chatHistory.length,
-    isSolved: sessionType === 'problem' && Boolean(session.isSolved),
+    isSolved,
     sessionType,
     renamed: Boolean(session.customTitle),
     favorite,
@@ -59,6 +63,7 @@ export function toHistoryItem(session: Session, favoriteIds: ReadonlySet<string>
       ? { problems: { total: session.problems.length, solved: session.problems.filter((problem) => problem.isSolved).length } }
       : {}),
     hasWork,
+    ...(check ? { check: check[1], checkKey: check[0] } : {}),
   };
 }
 
@@ -88,6 +93,8 @@ export function markedItems(session: Session, favoriteIds: ReadonlySet<string> =
       problems: undefined,
       hasWork: true,
       mark: { boardId: session.id, markId: mark.id, label: mark.label, ink },
+      check: mark.solved ? session.quietChecks?.[mark.id] : undefined,
+      checkKey: mark.solved && session.quietChecks?.[mark.id] ? mark.id : undefined,
     };
   });
 }
@@ -99,6 +106,7 @@ const SHOWN: Record<HistoryShow, (item: HistoryItem) => boolean> = {
   solved: (item) => item.isSolved,
   notes: (item) => item.sessionType === 'note',
   favorites: (item) => item.favorite,
+  secondLook: (item) => item.isSolved && item.check?.result === 'look',
 };
 
 const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true });

@@ -1,5 +1,5 @@
 import { openDB, type IDBPDatabase, type DBSchema } from 'idb';
-import type { BoardInk, CanvasDocument, Stroke, ChatMessage, Folder, InkStroke, LearnerProfile, PageInk, SessionType, ShelfDocument } from '@/types';
+import type { BoardInk, CanvasDocument, Stroke, ChatMessage, Folder, InkStroke, LearnerProfile, PageInk, QuietCheck, SessionType, ShelfDocument } from '@/types';
 
 interface MathTutorDB extends DBSchema {
   sessions: {
@@ -21,6 +21,7 @@ interface MathTutorDB extends DBSchema {
       customTitle?: string;
       folderId?: string | null;
       filedAt?: number;
+      quietChecks?: Record<string, QuietCheck>;
     };
     indexes: {
       'by-updated': number;
@@ -99,13 +100,28 @@ export async function saveSession(session: MathTutorDB['sessions']['value']) {
   const tx = db.transaction('sessions', 'readwrite');
   // Names are given in History, and folders chosen by Move, not by the page that autosaves, so a
   // save without one keeps it.
-  if (session.customTitle === undefined || session.folderId === undefined || session.filedAt === undefined) {
+  if (session.customTitle === undefined || session.folderId === undefined || session.filedAt === undefined || session.quietChecks === undefined) {
     const existing = await tx.store.get(session.id);
+    // The tutor's quiet reads are written by saveQuietCheck, not by the board's autosave.
+    if (session.quietChecks === undefined && existing?.quietChecks) session = { ...session, quietChecks: existing.quietChecks };
     if (session.customTitle === undefined && existing?.customTitle) session = { ...session, customTitle: existing.customTitle };
     if (session.folderId === undefined && existing?.folderId !== undefined) session = { ...session, folderId: existing.folderId };
     if (session.filedAt === undefined && existing?.filedAt !== undefined) session = { ...session, filedAt: existing.filedAt };
   }
   await tx.store.put(session);
+  await tx.done;
+  changed();
+}
+
+/**
+ * Keeps the tutor's quiet read of one problem on its saved board (see QuietCheck). Not work on the
+ * board, so `updatedAt` stays; nothing is written if the board isn't saved.
+ */
+export async function saveQuietCheck(sessionId: string, key: string, check: QuietCheck) {
+  const db = await getDB();
+  const tx = db.transaction('sessions', 'readwrite');
+  const existing = await tx.store.get(sessionId);
+  if (existing) await tx.store.put({ ...existing, quietChecks: { ...existing.quietChecks, [key]: check } });
   await tx.done;
   changed();
 }

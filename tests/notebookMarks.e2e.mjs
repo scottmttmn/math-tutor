@@ -117,15 +117,20 @@ try {
   assert.ok((await favorites()).includes(`${marked.id}#${mark.id}`), 'the mark is starred in the tutor memory');
   console.log('PASS a mark is marked solved and starred from its tag');
 
+  // Marking it solved had the tutor read it quietly (tests/quietCheck.e2e.mjs); wait out the 5 s spacing.
+  for (let tries = 0; tries < 100 && requests.length === 0; tries++) await page.waitForTimeout(100);
+  assert.equal(requests.length, 1);
+  await page.waitForTimeout(5200);
+
   // Hint asks about the marked work alone, as a problem.
   await openTag();
   await page.getByRole('menuitem', { name: 'Hint' }).click();
-  for (let tries = 0; tries < 100 && requests.length === 0; tries++) await page.waitForTimeout(100);
-  assert.equal(requests.length, 1);
-  const sent = JSON.stringify(requests[0].messages);
+  for (let tries = 0; tries < 100 && requests.length === 1; tries++) await page.waitForTimeout(100);
+  assert.equal(requests.length, 2);
+  const sent = JSON.stringify(requests[1].messages);
   assert.ok(sent.includes('#55 · Stewart 4.2'), 'the tutor is told the problem is the mark');
   assert.ok(!sent.includes('helping a student understand concepts'), 'asked as a problem, not with the notes prompt');
-  const image = requests[0].messages.at(-1).content.find((part) => part.type === 'image_url').image_url.url.split(',')[1];
+  const image = requests[1].messages.at(-1).content.find((part) => part.type === 'image_url').image_url.url.split(',')[1];
   const height = Buffer.from(image, 'base64').readUInt32BE(20);
   assert.ok(height < 300, `only the marked work is pictured (${height} px)`);
   await page.getByText('Mark reply.').waitFor();
@@ -135,11 +140,11 @@ try {
   await page.waitForTimeout(5200);
   await page.getByPlaceholder('Ask your own question…').fill('What about the second line?');
   await page.getByPlaceholder('Ask your own question…').press('Enter');
-  for (let tries = 0; tries < 100 && requests.length < 2; tries++) await page.waitForTimeout(100);
-  assert.equal(requests.length, 2);
-  const followUp = JSON.stringify(requests[1].messages);
+  for (let tries = 0; tries < 100 && requests.length < 3; tries++) await page.waitForTimeout(100);
+  assert.equal(requests.length, 3);
+  const followUp = JSON.stringify(requests[2].messages);
   assert.ok(followUp.includes('#55 · Stewart 4.2') && !followUp.includes('helping a student understand concepts'), 'the follow-up is about the mark, as a problem');
-  const followImage = requests[1].messages.at(-1).content.find((part) => part.type === 'image_url').image_url.url.split(',')[1];
+  const followImage = requests[2].messages.at(-1).content.find((part) => part.type === 'image_url').image_url.url.split(',')[1];
   assert.ok(Buffer.from(followImage, 'base64').readUInt32BE(20) < 300, 'the follow-up pictures only the marked work');
   await page.getByText('Mark reply.').nth(1).waitFor();
   await page.getByRole('button', { name: 'Ask tutor', exact: true }).click();

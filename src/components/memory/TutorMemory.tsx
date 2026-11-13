@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AppBar from '@/components/layout/AppBar';
 import { FavoriteStar, TutorIcon } from '@/components/common/Icons';
@@ -12,6 +12,8 @@ import {
   removeFavorite, removeTopic, setTutorLevel, topicId, writeNotebook,
 } from '@/lib/learnerProfile';
 import type { LearnerProfile, ProfileTopic, TopicRating, TutorNote } from '@/types';
+import { QUIET_CHECKS_PER_DAY } from '@/lib/quietCheck';
+import { listUnreadSolved, readUnreadSolved } from '@/hooks/useQuietCheck';
 
 function RatingButtons({ name, rating, onRate }: { name: string; rating: TopicRating | null; onRate: (rating: TopicRating | null) => void }) {
   return (
@@ -150,6 +152,64 @@ function CheckInSection({ profile, beforeStart }: { profile: LearnerProfile; bef
   );
 }
 
+/** Problems marked solved before quiet checks: how many the tutor hasn't read, and reading them on request. */
+function UnreadSolvedProblems({ beforeStart }: { beforeStart: () => Promise<void> | void }) {
+  const [unread, setUnread] = useState<number | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+  const gone = useRef(false);
+
+  useEffect(() => {
+    gone.current = false;
+    listUnreadSolved().then((list) => { if (!gone.current) setUnread(list.length); }).catch(() => undefined);
+    return () => { gone.current = true; };
+  }, []);
+
+  const start = async () => {
+    setResult(null);
+    await beforeStart();
+    setProgress({ done: 0, total: unread ?? 0 });
+    try {
+      const { read, capped, failed } = await readUnreadSolved((done, total) => { if (!gone.current) setProgress({ done, total }); });
+      if (gone.current) return;
+      const left = (await listUnreadSolved()).length;
+      setUnread(left);
+      setResult(failed
+        ? `Read ${read}. The tutor couldn't be reached; try the rest when you're online.`
+        : capped
+          ? `Read ${read}. That's today's ${QUIET_CHECKS_PER_DAY}; the rest can be read tomorrow.`
+          : `Read ${read}. See Second look on Home.`);
+    } catch {
+      if (!gone.current) setResult('Reading stopped. Try again later.');
+    } finally {
+      if (!gone.current) setProgress(null);
+    }
+  };
+
+  if (!unread && !result) return null;
+  return (
+    <div className="ml-8 flex flex-wrap items-center gap-3 text-sm text-gray-700" data-testid="unread-solved">
+      {progress ? (
+        <span aria-live="polite">Reading {Math.min(progress.done + 1, progress.total)} of {progress.total}…</span>
+      ) : (
+        <>
+          {!!unread && <span>{unread === 1 ? '1 solved problem' : `${unread} solved problems`} not read yet</span>}
+          {!!unread && (
+            <button
+              type="button"
+              onClick={start}
+              className="min-h-11 px-3 text-sm border border-gray-300 rounded-lg bg-white hover:bg-gray-100"
+            >
+              Read them
+            </button>
+          )}
+        </>
+      )}
+      {result && !progress && <span aria-live="polite" className="text-gray-500">{result}</span>}
+    </div>
+  );
+}
+
 /** /memory: what the tutor knows about the student, written and rated by them. */
 export default function TutorMemory() {
   const { profile, update, status, loadFailed, saveNow } = useLearnerProfile();
@@ -198,6 +258,19 @@ export default function TutorMemory() {
               Share this with the tutor
               {!profile.shareWithTutor && <span className="text-gray-500">(off: the tutor sees none of it and takes no notes)</span>}
             </label>
+            <label className="flex items-center gap-3 min-h-11 text-sm text-gray-900">
+              <input
+                type="checkbox"
+                checked={profile.quietChecks !== false}
+                onChange={(event) => update((current) => ({ ...current, quietChecks: event.target.checked, updatedAt: Date.now() }))}
+                className="w-5 h-5 accent-gray-900"
+              />
+              <span>
+                Read my work when I mark a problem solved
+                <span className="block text-gray-500">Once per problem, at most {QUIET_CHECKS_PER_DAY} a day. The tutor&apos;s verdict shows only on Home (Second look), never on the board.</span>
+              </span>
+            </label>
+            {profile.quietChecks !== false && <UnreadSolvedProblems beforeStart={saveNow} />}
 
             <section aria-labelledby="about-heading" className="flex flex-col gap-2">
               <h2 id="about-heading" className="font-semibold text-gray-900">About you</h2>

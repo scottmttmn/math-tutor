@@ -95,8 +95,8 @@ export function backupFingerprint(
 }
 
 /** Changes when a board's file would: it was saved, renamed or moved. */
-export const boardStamp = (session: Pick<Session, 'updatedAt' | 'customTitle' | 'folderId' | 'filedAt'>) =>
-  `${session.updatedAt} ${session.customTitle ?? ''} ${session.folderId === undefined ? '' : session.folderId ?? '/'} ${session.filedAt ?? ''}`;
+export const boardStamp = (session: Pick<Session, 'updatedAt' | 'customTitle' | 'folderId' | 'filedAt' | 'quietChecks'>) =>
+  `${session.updatedAt} ${session.customTitle ?? ''} ${session.folderId === undefined ? '' : session.folderId ?? '/'} ${session.filedAt ?? ''} ${Math.max(0, ...Object.values(session.quietChecks ?? {}).map((check) => check.at)) || ''}`;
 
 export const backupFileName = (date = new Date()) =>
   `math-tutor-backup-${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}.zip`;
