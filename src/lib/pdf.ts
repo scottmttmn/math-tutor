@@ -64,7 +64,11 @@ async function drawPage(page: PDFPageProxy, width: number) {
   const viewport = page.getViewport({ scale: width / page.getViewport({ scale: 1 }).width });
   canvas.width = Math.floor(viewport.width);
   canvas.height = Math.floor(viewport.height);
-  await page.render({ canvas, viewport, background: 'white' }).promise;
+  try {
+    await page.render({ canvas, viewport, background: 'white' }).promise;
+  } finally {
+    page.cleanup(); // the drawing is in the canvas; PDF.js need not keep the page's images
+  }
   return canvas;
 }
 

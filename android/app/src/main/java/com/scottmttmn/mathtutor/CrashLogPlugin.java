@@ -57,11 +57,29 @@ public class CrashLogPlugin extends Plugin {
         }
     }
 
+    /**
+     * What is open and the page's memory (src/lib/errorLog.ts sends it every 20 s), kept with the
+     * app's own memory so an exit Android gives no reason for can say where the app was.
+     */
+    @PluginMethod
+    public void note(PluginCall call) {
+        try {
+            if (exits != null) exits.join(5000); // the last run's note goes with its exit first
+            Integer heap = call.getData().has("heapMB") ? call.getData().optInt("heapMB") : null;
+            CrashLog.note(getContext(), call.getString("page", ""), call.getString("about", ""), heap);
+            call.resolve();
+        } catch (Exception error) {
+            call.reject("Couldn't note the app's state.", error);
+        }
+    }
+
     /** Drops the first `size` bytes, what the page has stored. */
     @PluginMethod
     public void clear(PluginCall call) {
         try {
-            CrashLog.clear(getContext(), call.getLong("size", 0L));
+            // Not call.getLong: a small number arrives as an Integer, which getLong answers with its
+            // default, so the log was never cleared and every start stored its exits again.
+            CrashLog.clear(getContext(), call.getData().optLong("size", 0L));
             call.resolve();
         } catch (Exception error) {
             call.reject("Couldn't empty the crash log.", error);

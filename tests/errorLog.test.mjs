@@ -8,7 +8,7 @@ const db = {
   setSetting: async (key, value) => (value === undefined ? store.delete(key) : store.set(key, value)),
 };
 const capacitor = { registerPlugin: () => ({}), Capacitor: { isNativePlatform: () => false } };
-const { withEntry, parseNativeLog, recordError, listErrors, clearErrors, errorLogText, MAX_ERRORS, REPEAT_MS } = load('src/lib/errorLog.ts', {
+const { withEntry, withoutDuplicates, parseNativeLog, recordError, listErrors, clearErrors, errorLogText, MAX_ERRORS, REPEAT_MS } = load('src/lib/errorLog.ts', {
   '@capacitor/core': capacitor,
   '@/lib/db': db,
   '@/lib/constants': { APP_BUILD: '300' },
@@ -30,6 +30,22 @@ test('the same error again soon after is left out, later it is kept', () => {
   assert.equal(withEntry(log, entry(1000 + 10, 'Boom', 'promise')).length, 2);
   assert.equal(withEntry(log, entry(1000 + REPEAT_MS, 'Boom')).length, 2);
   assert.equal(withEntry(log, entry(2000, 'ResizeObserver loop completed with undelivered notifications.')), log);
+});
+
+test('an event read again is kept once, however long after the last one', () => {
+  const exit = { at: 1000, kind: 'exit', message: 'The app was stopped by a signal' };
+  const log = [exit, { ...exit, at: 900_000 }];
+  assert.equal(withEntry(log, { ...exit }), log);
+  assert.equal(withEntry(log, { ...exit, at: 2_000_000 }).length, 3);
+});
+
+test('events stored more than once by older builds are kept once', () => {
+  const a = { at: 1, kind: 'exit', message: 'X' };
+  const b = { at: 2, kind: 'exit', message: 'X' };
+  const log = [a, { ...a }, b, { ...a }, { ...b }];
+  assert.deepEqual(withoutDuplicates(log), [a, b]);
+  const clean = [a, b];
+  assert.equal(withoutDuplicates(clean), clean);
 });
 
 test('the native log is read line by line, skipping a cut-off line', () => {

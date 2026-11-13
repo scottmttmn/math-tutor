@@ -23,10 +23,20 @@ const IGNORED = [/^ResizeObserver loop/];
 /** The log with an entry added: newest last, at most MAX_ERRORS, a quick repeat left out. */
 export function withEntry(log: ErrorLogEntry[], entry: ErrorLogEntry): ErrorLogEntry[] {
   if (IGNORED.some((pattern) => pattern.test(entry.message))) return log;
+  // The same event read again (the native log's exits carry their own time).
+  if (log.some((old) => sameEvent(old, entry))) return log;
   const repeat = log.findLast((old) => old.kind === entry.kind && old.message === entry.message);
   if (repeat && Math.abs(entry.at - repeat.at) < REPEAT_MS) return log;
   const next = [...log, entry].sort((a, b) => a.at - b.at);
   return next.slice(Math.max(0, next.length - MAX_ERRORS));
+}
+
+const sameEvent = (a: ErrorLogEntry, b: ErrorLogEntry) => a.at === b.at && a.kind === b.kind && a.message === b.message;
+
+/** The log with any event stored more than once kept once (the same log when there are none). */
+export function withoutDuplicates(log: ErrorLogEntry[]): ErrorLogEntry[] {
+  const kept = log.filter((entry, index) => log.findIndex((other) => sameEvent(other, entry)) === index);
+  return kept.length === log.length ? log : kept;
 }
 
 /** The native log's JSON lines as entries; a line that doesn't parse is skipped. */
@@ -110,6 +120,36 @@ export function installErrorLog() {
     recordError({ kind: 'promise', message: message || 'Unknown rejection', detail, page: here() });
   });
   void takeNativeLog();
+  noteWhereWeAre();
+}
+
+/** How often the Android app is told what is open, for an exit Android gives no reason for. */
+export const NOTE_EVERY_MS = 20_000;
+
+interface ChromeMemory { usedJSHeapSize: number }
+
+/**
+ * Tells CrashLogPlugin what is open and how much memory the page uses, so when Android ends the
+ * app with no reason of its own (a bare SIGKILL), its exit says where the app was and how big.
+ */
+function noteWhereWeAre() {
+  if (!Capacitor.isNativePlatform() || !Capacitor.isPluginAvailable('CrashLog')) return;
+  const note = () => {
+    const board = document.querySelector<HTMLElement>('[data-ink-board]');
+    const memory = (performance as Performance & { memory?: ChromeMemory }).memory;
+    const parts = [
+      board && `board: ${board.dataset.strokes ?? '?'} strokes, ${board.dataset.images ?? '?'} pictures${board.dataset.pages ? `, ${board.dataset.pages} pages` : ''}`,
+      document.querySelectorAll('canvas').length + ' canvases',
+    ].filter(Boolean);
+    CrashLog.note({
+      page: here(),
+      about: parts.join('; '),
+      ...(memory && { heapMB: Math.round(memory.usedJSHeapSize / 1048576) }),
+    }).catch(() => undefined);
+  };
+  note();
+  window.setInterval(() => { if (document.visibilityState === 'visible') note(); }, NOTE_EVERY_MS);
+  document.addEventListener('visibilitychange', note);
 }
 
 async function takeNativeLog() {
@@ -117,7 +157,8 @@ async function takeNativeLog() {
   try {
     const { lines, size } = await CrashLog.read();
     const entries = parseNativeLog(lines);
-    if (entries.length) await update((log) => entries.reduce(withEntry, log));
+    // Builds before 332 never cleared the native log, so every start stored its exits again.
+    await update((log) => entries.reduce(withEntry, withoutDuplicates(log)));
     // Only once they're stored: a failed write leaves them in the native log for the next start.
     if (size > 0) await CrashLog.clear({ size });
   } catch {

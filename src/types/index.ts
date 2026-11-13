@@ -814,4 +814,6 @@ export interface CrashLogPlugin {
   read(): Promise<{ lines: string; size: number }>;
   /** Drops the first `size` bytes (what was read and stored), keeping anything added since. */
   clear(options: { size: number }): Promise<void>;
+  /** What is open and the page's memory, kept natively and added to the next unexplained exit. */
+  note(options: { page: string; about: string; heapMB?: number }): Promise<void>;
 }
