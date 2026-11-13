@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import load from './load-typescript.mjs';
 
-const { parseQuietCheck, workKey, countToday, shownCheck, unreadSolved } = load('src/lib/quietCheck.ts');
+const { parseQuietCheck, workKey, countToday, shownCheck, shownCheckEntry, unreadSolved, solvedSubject } = load('src/lib/quietCheck.ts');
 const { planTutorRequest } = load('src/lib/tutorPrompt.ts');
 const { toHistoryItem, markedItems, queryHistory } = load('src/lib/history.ts');
 
@@ -91,4 +91,21 @@ test('solved but not checked: boards with ink, each solved exercise, solved mark
   assert.equal(found[1].problemStatement, 'Exercise 1');
   assert.deepEqual(found[2].items, ['a']);
   assert.match(found[2].problemStatement, /#55 · Stewart 4\.2/);
+
+  // Check again finds one solved problem by its key, read or not.
+  const byId = Object.fromEntries(sessions.map((session) => [session.id, session]));
+  assert.equal(solvedSubject(byId.read, 'board').problemStatement, 'x^2 = 4');
+  assert.equal(solvedSubject(byId.open, 'board'), null);
+  assert.equal(solvedSubject(byId.old, 'board'), null);
+  assert.equal(solvedSubject(byId.several, 'e1').problemStatement, 'Exercise 1');
+  assert.equal(solvedSubject(byId.several, 'e2'), null);
+  assert.deepEqual(solvedSubject(byId.notes, 'm2').items, ['b']);
+  assert.equal(solvedSubject(byId.notes, 'm3'), null);
+  assert.equal(solvedSubject(byId.checkin, 'board'), null);
+});
+
+test('Home knows which check it shows, for Check again', () => {
+  assert.deepEqual(shownCheckEntry({ a: { ...look, result: 'right', at: 9 }, b: look }, ['a', 'b']), ['b', look]);
+  const item = toHistoryItem(session({ id: 's', isSolved: true, quietChecks: { board: look } }));
+  assert.equal(item.checkKey, 'board');
 });

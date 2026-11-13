@@ -1,6 +1,6 @@
 import { folderIndex, itemFolder, bookLocation, isWithin, folderSummary } from '@/lib/folders';
 import { hasWork, liveMarks, markTitle, pageAt } from '@/lib/inkBoard/model';
-import { BOARD_CHECK, shownCheck } from '@/lib/quietCheck';
+import { BOARD_CHECK, shownCheckEntry } from '@/lib/quietCheck';
 import type { Folder, HistoryItem, HistoryShow, HistorySort, Session, ShelfDocument } from '@/types';
 
 const SHELF_ENTRY = /^shelf:([^:]+):([^:]+)$/;
@@ -41,7 +41,7 @@ export function toHistoryItem(session: Session, favoriteIds: ReadonlySet<string>
   const sessionType = session.sessionType ?? 'problem';
   const isSolved = sessionType === 'problem' && Boolean(session.isSolved);
   // The tutor's quiet read shows while the problem is solved: the board's own, or its exercises' on a board of several.
-  const check = isSolved ? shownCheck(session.quietChecks, [BOARD_CHECK, ...(session.problems ?? []).map((problem) => problem.id)]) : undefined;
+  const check = isSolved ? shownCheckEntry(session.quietChecks, [BOARD_CHECK, ...(session.problems ?? []).map((problem) => problem.id)]) : undefined;
   return {
     id: session.id,
     title: session.customTitle || session.title || 'Untitled',
@@ -63,7 +63,7 @@ export function toHistoryItem(session: Session, favoriteIds: ReadonlySet<string>
       ? { problems: { total: session.problems.length, solved: session.problems.filter((problem) => problem.isSolved).length } }
       : {}),
     hasWork,
-    ...(check ? { check } : {}),
+    ...(check ? { check: check[1], checkKey: check[0] } : {}),
   };
 }
 
@@ -94,6 +94,7 @@ export function markedItems(session: Session, favoriteIds: ReadonlySet<string> =
       hasWork: true,
       mark: { boardId: session.id, markId: mark.id, label: mark.label, ink },
       check: mark.solved ? session.quietChecks?.[mark.id] : undefined,
+      checkKey: mark.solved && session.quietChecks?.[mark.id] ? mark.id : undefined,
     };
   });
 }

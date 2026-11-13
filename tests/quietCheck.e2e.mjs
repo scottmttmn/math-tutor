@@ -13,6 +13,7 @@ import { chromium } from 'playwright';
 const origin = process.env.APP_TEST_URL || 'http://127.0.0.1:3100';
 const requests = [];
 let slowQuiet = false;
+let quietReply = 'Result: look\nWhere: the second line';
 const provider = createServer(async (req, res) => {
   let raw = '';
   for await (const part of req) raw += part;
@@ -26,7 +27,7 @@ const provider = createServer(async (req, res) => {
     await new Promise((resolve) => { const timer = setTimeout(resolve, 20_000); req.on('close', () => { clearTimeout(timer); resolve(); }); res.on('close', () => { clearTimeout(timer); resolve(); }); });
     if (res.destroyed || res.writableEnded) return;
   }
-  res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: quiet ? 'Result: look\nWhere: the second line' : 'A hint.' } }] })}\n\n`);
+  res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: quiet ? quietReply : 'A hint.' } }] })}\n\n`);
   res.end('data: [DONE]\n\n');
 });
 await new Promise((resolve) => provider.listen(0, '127.0.0.1', resolve));
@@ -193,8 +194,37 @@ try {
   for (let tries = 0; tries < 450 && requests.length < 7; tries++) await page.waitForTimeout(100);
   assert.equal(requests.length, 7, 'read again once the tutor was idle');
   assert.equal((await waitCheck('board')).result, 'look');
+  console.log('PASS a question goes before a quiet read, which is read again later');
+
+  // Check again on Home: unchanged work isn't sent; corrected work is read once more, on request only.
+  await page.goto(`${origin}/`);
+  await page.getByRole('heading', { name: 'Problems and notes' }).waitFor();
+  await page.getByRole('button', { name: 'Second look', exact: true }).click();
+  let flagged = page.getByRole('listitem').filter({ hasText: 'Interrupted one' });
+  await flagged.getByRole('button', { name: 'Check again' }).click();
+  await flagged.getByText('Nothing has changed since the tutor read it.').waitFor();
+  assert.equal(requests.length, 7, 'unchanged work is not read again');
+  // Corrected: nothing is read until asked.
+  await page.goto(`${origin}/board`);
+  await page.waitForFunction(() => document.querySelector('[data-ink-board]') && !document.querySelector('[data-loading]'));
+  await waitAttr('strokes', 1);
+  await drag([[100, 300], [400, 310]]);
+  await waitAttr('strokes', 2);
+  await page.getByRole('status').getByText('Saved', { exact: true }).waitFor();
+  await page.waitForTimeout(1500);
+  assert.equal(requests.length, 7, 'a correction alone sends nothing');
+  quietReply = 'Result: right';
+  await page.goto(`${origin}/`);
+  await page.getByRole('heading', { name: 'Problems and notes' }).waitFor();
+  await page.getByRole('button', { name: 'Second look', exact: true }).click();
+  flagged = page.getByRole('listitem').filter({ hasText: 'Interrupted one' });
+  await flagged.getByRole('button', { name: 'Check again' }).click();
+  await flagged.waitFor({ state: 'detached', timeout: 20_000 });
+  assert.equal(requests.length, 8, 'read once more');
+  await page.getByRole('button', { name: 'Solved', exact: true }).click();
+  await page.getByRole('listitem').filter({ hasText: 'Interrupted one' }).getByText('Tutor agrees').waitFor();
   assert.deepEqual(errors, []);
-  console.log('PASS a question goes before a quiet read, which is read again later; no browser exceptions');
+  console.log('PASS Check again reads corrected work once more and leaves unchanged work alone; no browser exceptions');
 } finally {
   await context.close();
   provider.close();

@@ -5,7 +5,7 @@ import { getSetting, listSessions, loadProfile, loadSession, saveQuietCheck, set
 import { getModelConfig } from '@/lib/modelConfig';
 import { requestTutorText } from '@/lib/tutorText';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
-import { QUIET_CHECKS_PER_DAY, countToday, parseQuietCheck, unreadSolved, workKey, type UnreadSolved } from '@/lib/quietCheck';
+import { QUIET_CHECKS_PER_DAY, countToday, parseQuietCheck, solvedSubject, unreadSolved, workKey, type UnreadSolved } from '@/lib/quietCheck';
 import { savedTutorImages } from '@/lib/inkBoard/capture';
 import type { DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 
@@ -40,8 +40,8 @@ let queue: Promise<void> = Promise.resolve();
 
 const quietChecksOn = async () => (await loadProfile())?.quietChecks !== false;
 
-/** What happened to one read: sent and saved, skipped (already read, off), stopped by the daily cap, failed to reach the tutor (offline), or cancelled by the student's question. */
-export type QuietReadOutcome = 'read' | 'skipped' | 'cap' | 'failed' | 'cancelled';
+/** What happened to one read: sent and saved, the same work already read, skipped (off, no quiet moment), stopped by the daily cap, failed to reach the tutor (offline), or cancelled by the student's question. */
+export type QuietReadOutcome = 'read' | 'same' | 'skipped' | 'cap' | 'failed' | 'cancelled';
 
 /**
  * Queues one quiet read of work already pictured. It waits for the tutor to be idle a while unless
@@ -56,7 +56,7 @@ function queueQuietRead(
   const { canvasImage, canvasDetails } = images;
   const work = workKey(canvasImage);
   const read = async (): Promise<QuietReadOutcome> => {
-    if ((await loadSession(sessionId))?.quietChecks?.[key]?.work === work) return 'skipped';
+    if ((await loadSession(sessionId))?.quietChecks?.[key]?.work === work) return 'same';
     if (waitForQuiet && !(await quietMoment())) return 'skipped';
     // Turned off meanwhile: nothing is sent.
     if (!(await quietChecksOn())) return 'skipped';
@@ -93,6 +93,26 @@ function queueQuietRead(
   const next = queue.then(read).catch((): QuietReadOutcome => 'skipped');
   queue = next.then(() => undefined);
   return next;
+}
+
+/** What Check again came to: read (Home shows the new verdict), or why not. */
+export type CheckAgainOutcome = 'read' | 'same' | 'off' | 'cap' | 'failed' | 'gone';
+
+/**
+ * Check again (Home, on a problem flagged for another look): the tutor reads the saved work once more,
+ * now, without the idle wait, since the student asked. Work unchanged since the last read isn't sent.
+ */
+export async function checkAgain(sessionId: string, key: string): Promise<CheckAgainOutcome> {
+  if (!(await quietChecksOn())) return 'off';
+  const session = await loadSession(sessionId);
+  const subject = session ? solvedSubject(session, key) : null;
+  if (!subject) return 'gone';
+  const images = await savedTutorImages(subject.ink, subject.items ? new Set(subject.items) : null);
+  if (!images.canvasImage) return 'gone';
+  const outcome = await queueQuietRead(subject, images, false);
+  if (outcome === 'read' || outcome === 'same' || outcome === 'cap') return outcome;
+  // Turned off meanwhile, or not finished (offline, the provider down, a question asked meanwhile).
+  return outcome === 'skipped' && !(await quietChecksOn()) ? 'off' : 'failed';
 }
 
 /** Solved problems the tutor hasn't read yet (saved before quiet checks, or never read). */

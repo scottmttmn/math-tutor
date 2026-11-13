@@ -266,6 +266,8 @@ export interface HistoryItem {
   mark?: { boardId: string; markId: string; label: string; ink: BoardInk };
   /** The tutor's quiet read of the finished work, while it is solved. */
   check?: QuietCheck;
+  /** The key of `check` in `Session.quietChecks`, for Check again. */
+  checkKey?: string;
 }
 
 /** History's filter: everything, problems, notes, problems not yet solved, solved problems, favorites, or solved ones the tutor would look at again. */

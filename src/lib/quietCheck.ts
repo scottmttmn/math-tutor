@@ -32,10 +32,15 @@ export function countToday(saved: { day: string; count: number } | undefined, da
   return saved?.day === day ? saved.count : 0;
 }
 
-/** The check shown for a board on Home: one marked "look" first (a board of several), else the newest. */
+/** The check shown for a board on Home and its key: one marked "look" first (a board of several), else the newest. */
+export function shownCheckEntry(checks: Record<string, QuietCheck> | undefined, keys?: string[]): [string, QuietCheck] | undefined {
+  const list = Object.entries(checks ?? {}).filter(([key]) => !keys || keys.includes(key));
+  return list.find(([, check]) => check.result === 'look') ?? list.sort(([, a], [, b]) => b.at - a.at)[0];
+}
+
+/** The check shown for a board on Home (see shownCheckEntry). */
 export function shownCheck(checks: Record<string, QuietCheck> | undefined, keys?: string[]): QuietCheck | undefined {
-  const list = Object.entries(checks ?? {}).filter(([key]) => !keys || keys.includes(key)).map(([, check]) => check);
-  return list.find((check) => check.result === 'look') ?? list.sort((a, b) => b.at - a.at)[0];
+  return shownCheckEntry(checks, keys)?.[1];
 }
 
 /** A solved problem the tutor hasn't read yet: its board, key, what it is, and which work (a mark's items). */
@@ -79,4 +84,25 @@ export function unreadSolved(sessions: Session[]): UnreadSolved[] {
     }
   }
   return found;
+}
+
+/**
+ * One solved problem on a saved board, by its key, to read again (Check again on Home): the board's own
+ * problem, an exercise on a board of several, or a marked problem. Null when it isn't solved or has no ink.
+ */
+export function solvedSubject(session: Session, key: string): UnreadSolved | null {
+  const ink = session.ink;
+  if (!ink) return null;
+  if ((session.sessionType ?? 'problem') === 'problem') {
+    if (session.checkIn || ink.strokes.length === 0) return null;
+    if (session.problems && session.problems.length > 0) {
+      const problem = session.problems.find((each) => each.id === key);
+      return problem?.isSolved ? { sessionId: session.id, key, problemStatement: problem.problemStatement, problemImage: problem.problemImage, ink } : null;
+    }
+    return key === BOARD_CHECK && session.isSolved
+      ? { sessionId: session.id, key, problemStatement: session.problemStatement, problemImage: session.problemImage, ink }
+      : null;
+  }
+  const mark = liveMarks(ink).find((each) => each.mark.id === key)?.mark;
+  return mark?.solved ? { sessionId: session.id, key, problemStatement: markedProblem(markTitle(mark)), ink, items: mark.items } : null;
 }
