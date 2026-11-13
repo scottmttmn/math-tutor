@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
+import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import { renderPage } from '@/lib/pdf';
 import { toPage, toShown } from '@/lib/reader';
 import { ERASER_RADIUS, HIGHLIGHTER_WIDTH, PEN_COLOR, PEN_WIDTH, drawStroke, drawStrokes, eraseAt, inkPoint, pageScale } from '@/lib/ink';
@@ -223,8 +223,10 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
     if (!width || !canvas.current) return;
     let cancelled = false;
     let task: ReturnType<typeof renderPage> | null = null;
+    let shown: PDFPageProxy | null = null;
     pdf.getPage(pageNumber)
       .then((page) => {
+        shown = page;
         if (cancelled || !canvas.current) return;
         task = renderPage(page, canvas.current, width, crop);
         return task.promise;
@@ -233,7 +235,10 @@ export default function PdfPage({ pdf, pageNumber, marks, solvedIds, activeId, m
       .catch((error: unknown) => {
         if (!cancelled && (error as { name?: string })?.name !== 'RenderingCancelledException') setFailed(true);
       });
-    return () => { cancelled = true; task?.cancel(); };
+    // PDF.js keeps a drawn page's fonts and decoded images until told otherwise, so reading on
+    // through a book (a scan above all) held every page read in memory. cleanup() waits for a
+    // render still running.
+    return () => { cancelled = true; task?.cancel(); shown?.cleanup(); };
   }, [pdf, pageNumber, width, crop, painted]);
 
   // Where the pointer is on the page, in fractions of the whole page (not just the part shown).

@@ -32,6 +32,9 @@ final class CrashLog {
     static final int MAX_DETAIL = 16 * 1024;
     private static final String PREFS = "crash_log";
     private static final String EXITS_SEEN = "exitsSeen";
+    private static final String LAST_NOTE = "lastNote";
+    /** A note older than this before an exit says little about it. */
+    private static final long NOTE_FRESH_MS = 10 * 60 * 1000;
 
     private CrashLog() {}
 
@@ -71,6 +74,59 @@ final class CrashLog {
             }
         } catch (Exception error) {
             Log.w("CrashLog", "Couldn't record " + kind, error);
+        }
+    }
+
+    /**
+     * Keeps what the page says is open, with this process's memory and the device's, for the next
+     * exit Android gives no reason for. Only the latest is kept.
+     */
+    static void note(Context context, String page, String about, Integer heapMB) {
+        try {
+            JSONObject note = new JSONObject();
+            note.put("at", System.currentTimeMillis());
+            note.put("page", page);
+            note.put("about", about);
+            if (heapMB != null) note.put("heapMB", heapMB);
+            android.os.Debug.MemoryInfo own = new android.os.Debug.MemoryInfo();
+            android.os.Debug.getMemoryInfo(own);
+            note.put("appMB", own.getTotalPss() / 1024);
+            note.put("nativeHeapMB", android.os.Debug.getNativeHeapAllocatedSize() / 1048576);
+            ActivityManager manager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+            if (manager != null) {
+                ActivityManager.MemoryInfo device = new ActivityManager.MemoryInfo();
+                manager.getMemoryInfo(device);
+                note.put("freeMB", device.availMem / 1048576);
+                note.put("totalMB", device.totalMem / 1048576);
+                note.put("low", device.lowMemory);
+            }
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(LAST_NOTE, note.toString()).apply();
+        } catch (Exception error) {
+            Log.w("CrashLog", "Couldn't note the app's state", error);
+        }
+    }
+
+    /** The last note as lines for an exit at `exitAt`, or "" when there is none from shortly before. */
+    static String noteBefore(String saved, long exitAt) {
+        if (saved == null || saved.isEmpty()) return "";
+        try {
+            JSONObject note = new JSONObject(saved);
+            long at = note.getLong("at");
+            if (at > exitAt || exitAt - at > NOTE_FRESH_MS) return "";
+            StringBuilder text = new StringBuilder("\n\nLast noted ").append((exitAt - at + 500) / 1000).append(" s before:");
+            text.append("\nPage: ").append(note.optString("page"));
+            String about = note.optString("about");
+            if (!about.isEmpty()) text.append("\nOpen: ").append(about);
+            text.append("\nApp memory: ").append(note.optLong("appMB")).append(" MB PSS");
+            text.append(", native heap ").append(note.optLong("nativeHeapMB")).append(" MB");
+            if (note.has("heapMB")) text.append(", page JS heap ").append(note.optLong("heapMB")).append(" MB");
+            if (note.has("freeMB")) {
+                text.append("\nDevice: ").append(note.optLong("freeMB")).append(" of ").append(note.optLong("totalMB")).append(" MB free");
+                if (note.optBoolean("low")) text.append(", low on memory");
+            }
+            return text.toString();
+        } catch (Exception error) {
+            return "";
         }
     }
 
@@ -120,6 +176,7 @@ final class CrashLog {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return;
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         long seen = prefs.getLong(EXITS_SEEN, 0);
+        String lastNote = prefs.getString(LAST_NOTE, "");
         ActivityManager manager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
         if (manager == null) return;
         List<ApplicationExitInfo> exits = manager.getHistoricalProcessExitReasons(context.getPackageName(), 0, 16);
@@ -137,11 +194,14 @@ final class CrashLog {
             String detail = "Process: " + exit.getProcessName()
                 + "\nReason " + exit.getReason() + ", status " + exit.getStatus() + ", importance " + exit.getImportance()
                 + "\nMemory: " + exit.getPss() / 1024 + " MB PSS, " + exit.getRss() / 1024 + " MB RSS";
+            String noted = noteBefore(lastNote, exit.getTimestamp());
+            if (!noted.isEmpty()) { detail += noted; lastNote = ""; } // one run's note, one exit
             if (exit.getReason() == ApplicationExitInfo.REASON_ANR) detail += "\n\n" + trace(exit);
             add(context, exit.getTimestamp(), kind, message, detail, false);
         }
         if (newest == 0) newest = System.currentTimeMillis();
-        prefs.edit().putLong(EXITS_SEEN, newest).apply();
+        // commit, not apply: the next start must not read these exits again.
+        prefs.edit().putLong(EXITS_SEEN, newest).commit();
     }
 
     @RequiresApi(api = Build.VERSION_CODES.R)
