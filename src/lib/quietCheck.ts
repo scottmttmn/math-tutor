@@ -1,6 +1,6 @@
-import { liveMarks, markTitle } from '@/lib/inkBoard/model';
+import { imageBounds, liveMarks, markTitle, strokeBounds, type Bounds } from '@/lib/inkBoard/model';
 import { markedProblem } from '@/lib/tutorAsk';
-import type { BoardInk, QuietCheck, Session } from '@/types';
+import type { BoardInk, BoardMark, QuietCheck, Session } from '@/types';
 
 /** At most this many quiet reads a day, so marking a pile of problems solved costs little. */
 export const QUIET_CHECKS_PER_DAY = 100;
@@ -32,10 +32,38 @@ export function countToday(saved: { day: string; count: number } | undefined, da
   return saved?.day === day ? saved.count : 0;
 }
 
-/** The check shown for a board on Home: one marked "look" first (a board of several), else the newest. */
+/** The check shown for a board on Home and its key: one marked "look" first (a board of several), else the newest. */
+export function shownCheckEntry(checks: Record<string, QuietCheck> | undefined, keys?: string[]): [string, QuietCheck] | undefined {
+  const list = Object.entries(checks ?? {}).filter(([key]) => !keys || keys.includes(key));
+  return list.find(([, check]) => check.result === 'look') ?? list.sort(([, a], [, b]) => b.at - a.at)[0];
+}
+
+/** The check shown for a board on Home (see shownCheckEntry). */
 export function shownCheck(checks: Record<string, QuietCheck> | undefined, keys?: string[]): QuietCheck | undefined {
-  const list = Object.entries(checks ?? {}).filter(([key]) => !keys || keys.includes(key)).map(([, check]) => check);
-  return list.find((check) => check.result === 'look') ?? list.sort((a, b) => b.at - a.at)[0];
+  return shownCheckEntry(checks, keys)?.[1];
+}
+
+/** How far above or below a marked problem's rows writing still counts as its work (a correction under it), in board units. */
+export const MARK_REACH = 64;
+
+/**
+ * A marked problem's work as a quiet read sees it: its own items, plus writing added since across its
+ * rows (or within MARK_REACH above and below), such as a correction, unless it belongs to another mark.
+ * A mark keeps the items it was made with, so without this a correction would never be read.
+ */
+export function markWork(ink: BoardInk, mark: BoardMark): string[] {
+  const live = liveMarks(ink);
+  const own = live.find((each) => each.mark.id === mark.id);
+  const items = new Set(mark.items);
+  if (!own) return [...ink.strokes, ...ink.images].map((each) => each.id).filter((id) => items.has(id));
+  const others = new Set(live.filter((each) => each.mark.id !== mark.id).flatMap((each) => each.mark.items));
+  const top = own.bounds.minY - MARK_REACH;
+  const bottom = own.bounds.maxY + MARK_REACH;
+  const near = (box: Bounds) => { const middle = (box.minY + box.maxY) / 2; return middle >= top && middle <= bottom; };
+  return [
+    ...ink.strokes.filter((stroke) => items.has(stroke.id) || (!others.has(stroke.id) && near(strokeBounds(stroke)))),
+    ...ink.images.filter((image) => items.has(image.id) || (!image.problem && !others.has(image.id) && near(imageBounds(image)))),
+  ].map((each) => each.id);
 }
 
 /** A solved problem the tutor hasn't read yet: its board, key, what it is, and which work (a mark's items). */
@@ -74,9 +102,30 @@ export function unreadSolved(sessions: Session[]): UnreadSolved[] {
     }
     for (const { mark } of liveMarks(ink)) {
       if (mark.solved && !session.quietChecks?.[mark.id]) {
-        found.push({ sessionId: session.id, key: mark.id, problemStatement: markedProblem(markTitle(mark)), ink, items: mark.items });
+        found.push({ sessionId: session.id, key: mark.id, problemStatement: markedProblem(markTitle(mark)), ink, items: markWork(ink, mark) });
       }
     }
   }
   return found;
+}
+
+/**
+ * One solved problem on a saved board, by its key, to read again (Check again on Home): the board's own
+ * problem, an exercise on a board of several, or a marked problem. Null when it isn't solved or has no ink.
+ */
+export function solvedSubject(session: Session, key: string): UnreadSolved | null {
+  const ink = session.ink;
+  if (!ink) return null;
+  if ((session.sessionType ?? 'problem') === 'problem') {
+    if (session.checkIn || ink.strokes.length === 0) return null;
+    if (session.problems && session.problems.length > 0) {
+      const problem = session.problems.find((each) => each.id === key);
+      return problem?.isSolved ? { sessionId: session.id, key, problemStatement: problem.problemStatement, problemImage: problem.problemImage, ink } : null;
+    }
+    return key === BOARD_CHECK && session.isSolved
+      ? { sessionId: session.id, key, problemStatement: session.problemStatement, problemImage: session.problemImage, ink }
+      : null;
+  }
+  const mark = liveMarks(ink).find((each) => each.mark.id === key)?.mark;
+  return mark?.solved ? { sessionId: session.id, key, problemStatement: markedProblem(markTitle(mark)), ink, items: markWork(ink, mark) } : null;
 }
