@@ -13,7 +13,7 @@ const stagedAt = new Map<string, number>();
  * go without their data and are taken from that save when the copy is read: a board's pictures are
  * most of its size, and local storage is small and kept in memory.
  */
-function serialize(session: Session, saved?: BoardInk | null) {
+function serialize(session: Session, saved?: Pick<BoardInk, 'images'> | null) {
   const kept = new Map(saved?.images.map((image) => [image.id, image.src]));
   const ink = session.ink && session.ink.images.some((image) => kept.get(image.id) === image.src)
     ? { ...session.ink, images: session.ink.images.map((image) => (kept.get(image.id) === image.src ? { ...image, src: '' } : image)) }
@@ -37,7 +37,7 @@ function withSavedPictures(recovery: Session, saved: Session | undefined): Sessi
  * A synchronous recovery copy covers a reload or close before IndexedDB has the latest work.
  * `saved` is the drawing as last saved durably, whose pictures the copy can leave out.
  */
-export function stageSession(session: Session, saved?: BoardInk | null) {
+export function stageSession(session: Session, saved?: Pick<BoardInk, 'images'> | null) {
   const key = recoveryKey(session.id);
   const known = stagedAt.get(session.id);
   if (known !== undefined) {
@@ -86,7 +86,7 @@ export async function loadRecoveredSession(id: string): Promise<Session | undefi
  * save copied the whole board, pictures included, several times over); a save that fails leaves a
  * recovery copy instead. `saved` is the drawing as last saved durably (see stageSession).
  */
-export async function saveRecoverableSession(session: Session, saved?: BoardInk | null) {
+export async function saveRecoverableSession(session: Session, saved?: Pick<BoardInk, 'images'> | null) {
   try {
     await saveSession(session);
   } catch (error) {

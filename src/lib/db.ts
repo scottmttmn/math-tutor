@@ -132,10 +132,17 @@ type KeptFields = Pick<StoredSession, 'customTitle' | 'folderId' | 'filedAt' | '
 const kept = new Map<string, KeptFields>();
 let writes = 0;
 const keptFields = ({ customTitle, folderId, filedAt, quietChecks }: KeptFields): KeptFields => ({ customTitle, folderId, filedAt, quietChecks });
-/** Another writer is changing this session (or, with no id, any of them). */
-const touched = (id?: string) => {
+// Another tab may be that writer (a rename on Home while the board is open in the first).
+const otherTabs = typeof window === 'undefined' || typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('math-tutor:sessions-touched');
+const dropKept = (id?: string) => {
   writes += 1;
   if (id) kept.delete(id); else kept.clear();
+};
+if (otherTabs) otherTabs.onmessage = (event: MessageEvent<string | null>) => dropKept(event.data ?? undefined);
+/** Another writer is changing this session (or, with no id, any of them). */
+const touched = (id?: string) => {
+  dropKept(id);
+  otherTabs?.postMessage(id ?? null);
 };
 
 /**

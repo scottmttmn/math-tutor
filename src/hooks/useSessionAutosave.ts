@@ -31,6 +31,7 @@ const sameContent = (a: ContentKey | null, b: ContentKey | null) =>
   Boolean(a && b) && a!.length === b!.length && a!.every((part, index) => Object.is(part, b![index]));
 
 const rememberCurrent = setBoardToOpen;
+const emptyInk: Pick<BoardInk, 'images'> = { images: [] };
 
 /**
  * Saves the open session to IndexedDB shortly after each change, flushes it when the page is
@@ -58,6 +59,17 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
   const savedInk = useRef<BoardInk | null>(null);
   // Whether the session opened was saved as ink (not an older drawing, converted as it opens).
   const openedInk = useRef(false);
+  // The drawing a save under way is writing. Until it lands the store may hold either, so a
+  // recovery copy leaves out only the pictures both have (a picture deleted, then put back by undo
+  // while that save runs, is in neither once it lands).
+  const savingInk = useRef<Pick<BoardInk, 'images'> | null>(null);
+  const heldPictures = useCallback((): Pick<BoardInk, 'images'> | null => {
+    const saved = savedInk.current;
+    const saving = savingInk.current;
+    if (!saved || !saving) return saved;
+    const landing = new Map(saving.images.map((image) => [image.id, image.src]));
+    return { images: saved.images.filter((image) => landing.get(image.id) === image.src) };
+  }, []);
   // True from a load request until the editor shows it; nothing is saved in between.
   const loading = useRef(true);
   const awaitingEditor = useRef(false);
@@ -115,7 +127,10 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
         // After the page unmounts there is no editor; keep the last thumbnail.
         const handle = canvasHandle.current;
         if (handle) thumbnail.current = await handle.captureThumbnail();
-        await saveRecoverableSession({ ...session, canvasImageBlob: thumbnail.current }, savedInk.current);
+        savingInk.current = session.ink ?? emptyInk;
+        try {
+          await saveRecoverableSession({ ...session, canvasImageBlob: thumbnail.current }, savedInk.current);
+        } finally { savingInk.current = null; }
         savedInk.current = session.ink ?? null;
         // The student may have moved to another session while this one was saving.
         const { currentSessionId } = latest.current;
@@ -230,9 +245,9 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
   const flush = useCallback(() => {
     const session = snapshot();
     if (!session || sameContent(contentKey(session), savedKey.current)) return;
-    try { stageSession(session, savedInk.current); if (reopenLast) rememberCurrent(session.id); } catch { /* The save below may still finish. */ }
+    try { stageSession(session, heldPictures()); if (reopenLast) rememberCurrent(session.id); } catch { /* The save below may still finish. */ }
     void persist();
-  }, [snapshot, persist, reopenLast]);
+  }, [snapshot, persist, reopenLast, heldPictures]);
 
   useEffect(() => {
     const onVisibility = () => { if (document.visibilityState === 'hidden') flush(); };
