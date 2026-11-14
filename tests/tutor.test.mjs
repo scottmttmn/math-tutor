@@ -512,11 +512,12 @@ test('recovery preserves newer unsaved work and ignores corrupt or stale copies'
   global.localStorage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
   let durable;
   let finishSave;
+  let failSave;
   const storage = load('src/lib/sessionRecovery.ts', { '@/lib/db': {
     loadSession: async () => durable,
-    saveSession: (session) => new Promise((resolve) => { finishSave = () => { durable = session; resolve(); }; }),
+    saveSession: (session) => new Promise((resolve, reject) => { finishSave = () => { durable = session; resolve(); }; failSave = () => reject(new Error('full')); }),
   } });
-  const original = { id: 'shelf:doc:exercise', canvasStrokes: [], chatHistory: [], updatedAt: 1 };
+  const original = { id: 'shelf:doc:exercise', canvasStrokes: [], canvasImageBlob: null, chatHistory: [], updatedAt: 1 };
   const latest = { ...original, canvasStrokes: [{ points: [{ x: 1, y: 1 }, { x: 2, y: 2 }] }], isSolved: true, updatedAt: 2 };
   storage.stageSession(original);
   assert.deepEqual(await storage.loadRecoveredSession(original.id), original);
@@ -528,8 +529,49 @@ test('recovery preserves newer unsaved work and ignores corrupt or stale copies'
   assert.deepEqual(await storage.loadRecoveredSession(original.id), latest);
   const saveLatest = storage.saveRecoverableSession(latest); finishSave(); await saveLatest;
   assert.equal(values.size, 0);
+  // A save stages nothing by itself; one that fails leaves a copy.
+  const newest = { ...latest, updatedAt: 3 };
+  const failing = storage.saveRecoverableSession(newest);
+  assert.equal(values.size, 0);
+  failSave(); await assert.rejects(failing);
+  assert.deepEqual(await storage.loadRecoveredSession(original.id), newest);
+  // A copy left by an earlier run goes once a later save lands.
+  const fresh = load('src/lib/sessionRecovery.ts', { '@/lib/db': { loadSession: async () => durable, saveSession: async (session) => { durable = session; } } });
+  await fresh.saveRecoverableSession({ ...newest, updatedAt: 4 });
+  assert.equal(values.size, 0);
   values.set(`${original.id}:pendingSave`, '{broken');
-  assert.deepEqual(await storage.loadRecoveredSession(original.id), latest);
+  assert.deepEqual(await storage.loadRecoveredSession(original.id), { ...newest, updatedAt: 4 });
+  delete global.localStorage;
+});
+
+test('a recovery copy leaves out pictures the last save holds and takes them back from it', async () => {
+  const values = new Map();
+  global.localStorage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
+  const picture = (id, src) => ({ id, x: 0, y: 0, w: 10, h: 10, src });
+  const board = (images, strokes = []) => ({ version: 1, page: { left: 0, top: 0, width: 960 }, strokes, images });
+  const big = `data:image/png;base64,${'A'.repeat(5000)}`;
+  const savedInk = board([picture('a', big), picture('gone', big)]);
+  let durable = { id: 'b', canvasStrokes: [], canvasImageBlob: null, chatHistory: [], updatedAt: 1, ink: savedInk };
+  const storage = load('src/lib/sessionRecovery.ts', { '@/lib/db': { loadSession: async () => durable, saveSession: async () => {} } });
+  const stroke = { id: 's', tool: 'pen', color: 'black', width: 2, points: [1, 2, 0.5] };
+  // 'a' is saved; 'new' was added since; 'changed' has the saved id but another picture.
+  const edited = { ...durable, updatedAt: 2, ink: board([picture('a', big), picture('new', 'data:image/png;base64,NEW'), { ...picture('gone', big), src: 'data:image/png;base64,OTHER' }], [stroke]) };
+  storage.stageSession(edited, savedInk);
+  const copy = values.get('b:pendingSave');
+  assert.ok(copy.length < big.length, 'the saved picture is not in the copy');
+  assert.deepEqual(await storage.loadRecoveredSession('b'), edited);
+  // Without the save's ink nothing is left out.
+  values.clear();
+  const other = load('src/lib/sessionRecovery.ts', { '@/lib/db': { loadSession: async () => durable, saveSession: async () => {} } });
+  other.stageSession(edited);
+  assert.ok(values.get('b:pendingSave').length > big.length);
+  // A picture the save no longer has can't come back; the rest of the copy does.
+  values.clear();
+  storage.stageSession({ ...edited, updatedAt: 3 }, savedInk);
+  durable = { ...durable, ink: board([]) };
+  const recovered = await storage.loadRecoveredSession('b');
+  assert.deepEqual(recovered.ink.images.map((image) => image.id), ['new', 'gone']);
+  assert.deepEqual(recovered.ink.strokes, [stroke]);
   delete global.localStorage;
 });
 

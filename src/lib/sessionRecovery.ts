@@ -1,20 +1,57 @@
 import { loadSession, saveSession } from '@/lib/db';
-import type { ChatMessage, Session } from '@/types';
+import type { BoardInk, ChatMessage, Session } from '@/types';
 
 const recoveryKey = (id: string) => `${id}:pendingSave`;
 
-// The thumbnail is a Blob, which JSON can't hold; the next durable save captures a fresh one.
-const serialize = (session: Session) => JSON.stringify(session.canvasImageBlob ? { ...session, canvasImageBlob: null } : session);
+// When each copy staged in this run was made, so a save can tell whether a newer one is waiting
+// without reading it back (a board's copy can be megabytes).
+const stagedAt = new Map<string, number>();
 
-// A synchronous recovery copy covers reload/close during the IndexedDB debounce.
-export function stageSession(session: Session) {
-  const existing = localStorage.getItem(recoveryKey(session.id));
-  if (existing) {
-    try {
-      if (JSON.parse(existing).updatedAt > session.updatedAt) return;
-    } catch { /* Replace an invalid recovery record. */ }
+/**
+ * The session as its recovery copy holds it. The thumbnail is a Blob, which JSON can't hold; the
+ * next durable save captures a fresh one. Pictures the last durable save already holds (`saved`)
+ * go without their data and are taken from that save when the copy is read: a board's pictures are
+ * most of its size, and local storage is small and kept in memory.
+ */
+function serialize(session: Session, saved?: BoardInk | null) {
+  const kept = new Map(saved?.images.map((image) => [image.id, image.src]));
+  const ink = session.ink && session.ink.images.some((image) => kept.get(image.id) === image.src)
+    ? { ...session.ink, images: session.ink.images.map((image) => (kept.get(image.id) === image.src ? { ...image, src: '' } : image)) }
+    : session.ink;
+  return JSON.stringify({ ...session, canvasImageBlob: null, ...(session.ink ? { ink } : {}) });
+}
+
+/** A recovery copy's pictures filled in from the durable save; one that save doesn't hold is left out. */
+function withSavedPictures(recovery: Session, saved: Session | undefined): Session {
+  if (!recovery.ink?.images?.some((image) => !image.src)) return recovery;
+  const kept = new Map(saved?.ink?.images.map((image) => [image.id, image.src]));
+  const images = recovery.ink.images.flatMap((image) => {
+    if (image.src) return [image];
+    const src = kept.get(image.id);
+    return src ? [{ ...image, src }] : [];
+  });
+  return { ...recovery, ink: { ...recovery.ink, images } };
+}
+
+/**
+ * A synchronous recovery copy covers a reload or close before IndexedDB has the latest work.
+ * `saved` is the drawing as last saved durably, whose pictures the copy can leave out.
+ */
+export function stageSession(session: Session, saved?: BoardInk | null) {
+  const key = recoveryKey(session.id);
+  const known = stagedAt.get(session.id);
+  if (known !== undefined) {
+    if (known > session.updatedAt) return;
+  } else {
+    const existing = localStorage.getItem(key);
+    if (existing) {
+      try {
+        if (JSON.parse(existing).updatedAt > session.updatedAt) return;
+      } catch { /* Replace an invalid recovery record. */ }
+    }
   }
-  localStorage.setItem(recoveryKey(session.id), serialize(session));
+  localStorage.setItem(key, serialize(session, saved));
+  stagedAt.set(session.id, session.updatedAt);
 }
 
 /** True when a session has unsaved changes kept only in its recovery copy. */
@@ -24,6 +61,7 @@ export function hasRecoveryCopy(id: string) {
 
 /** Drops a session's recovery copy, so a deleted session can't come back from it. */
 export function discardRecoveryCopy(id: string) {
+  stagedAt.delete(id);
   try { localStorage.removeItem(recoveryKey(id)); } catch { /* Nothing to discard. */ }
 }
 
@@ -35,20 +73,34 @@ export async function loadRecoveredSession(id: string): Promise<Session | undefi
       const recovery: Session = JSON.parse(pending);
       if (recovery.id === id && Array.isArray(recovery.canvasStrokes) && Array.isArray(recovery.chatHistory)
         && Number.isFinite(recovery.updatedAt) && (!saved || recovery.updatedAt >= saved.updatedAt)) {
-        return saved?.canvasImageBlob ? { ...recovery, canvasImageBlob: saved.canvasImageBlob } : recovery;
+        const whole = withSavedPictures(recovery, saved);
+        return saved?.canvasImageBlob ? { ...whole, canvasImageBlob: saved.canvasImageBlob } : whole;
       }
     } catch { /* Ignore an invalid recovery record; keep the durable session. */ }
   }
   return saved;
 }
 
-export async function saveRecoverableSession(session: Session) {
-  try { stageSession(session); } catch { /* IndexedDB can still save if local storage is full. */ }
-  await saveSession(session);
+/**
+ * Saves durably. The save itself is the protection, so no copy is staged first (staging every
+ * save copied the whole board, pictures included, several times over); a save that fails leaves a
+ * recovery copy instead. `saved` is the drawing as last saved durably (see stageSession).
+ */
+export async function saveRecoverableSession(session: Session, saved?: BoardInk | null) {
   try {
-    const pending = localStorage.getItem(recoveryKey(session.id));
-    // A later edit may have been staged while this transaction was running.
-    if (pending === serialize(session)) localStorage.removeItem(recoveryKey(session.id));
+    await saveSession(session);
+  } catch (error) {
+    try { stageSession(session, saved); } catch { /* Local storage is full too; the caller reports the failed save. */ }
+    throw error;
+  }
+  try {
+    // A copy from an earlier run is older than this save; one staged in this run may be newer (an
+    // edit staged while the transaction was running).
+    const staged = stagedAt.get(session.id);
+    if (staged === undefined || staged <= session.updatedAt) {
+      localStorage.removeItem(recoveryKey(session.id));
+      stagedAt.delete(session.id);
+    }
   } catch { /* The IndexedDB transaction succeeded. */ }
 }
 
