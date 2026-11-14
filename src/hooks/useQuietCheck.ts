@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, type RefObject } from 'react';
-import { getSetting, listSessions, loadProfile, loadSession, saveQuietCheck, setSetting } from '@/lib/db';
+import { getSetting, listSessions, loadProfile, loadSession, saveQuietCheck, setSetting, withPictures } from '@/lib/db';
 import { getModelConfig } from '@/lib/modelConfig';
 import { requestTutorText } from '@/lib/tutorText';
 import { getTutorWaitMs } from '@/hooks/useRateLimit';
@@ -144,7 +144,9 @@ export function readUnreadSolved(
       onProgress(i, list.length);
       const item = list[i];
       try {
-        const images = await savedTutorImages(item.ink, item.items ? new Set(item.items) : null);
+        // The list came without the boards' pictures; this one's are read for its picture.
+        const { ink } = await withPictures({ id: item.sessionId, ink: item.ink });
+        const images = await savedTutorImages(ink, item.items ? new Set(item.items) : null);
         if (!images.canvasImage) continue;
         const outcome = await queueQuietRead(item, images, waitForQuiet);
         if (outcome === 'cap') return { read, capped: true };

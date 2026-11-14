@@ -7,7 +7,7 @@ const { crc32, writeZip, readZip } = load('src/lib/zip.ts');
 // The database is replaced by a recorder: restore logic is tested on what it would write.
 const written = [];
 const db = {
-  listSessions: async () => [], listShelf: async () => [], listFolders: async () => [],
+  listSessions: async () => [], listShelf: async () => [], listFolders: async () => [], withPictures: async (session) => session,
   restoreRecords: async (sessions, shelf, profile, ink, folders) => {
     written.push({ sessions, shelf, profile, ink, folders });
     return { sessions: sessions.map((s) => s.id), shelf: shelf.filter((d) => d.file).map((d) => d.id), profile: Boolean(profile), ink: ink.map((p) => p.id), folders: folders.map((f) => f.id), skipped: 0, missingPdfs: shelf.filter((d) => !d.file).map((d) => d.title) };
