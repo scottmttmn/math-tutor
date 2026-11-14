@@ -1,4 +1,4 @@
-import { getSetting, hasSavedWork, listFolders, listSessions, listInk, listShelf, loadProfile, onDataChange, setSetting } from '@/lib/db';
+import { getSetting, hasSavedWork, listBoardStamps, listFolders, listInk, listShelf, loadProfile, loadSession, onDataChange, setSetting, type BoardStampFields, type DataChange } from '@/lib/db';
 import { BOARD_FOLDER, MANIFEST_NAME, PDF_FOLDER, backupFingerprint, backupIndex, boardFile, boardPath, boardStamp } from '@/lib/backup';
 import { androidDirectory, androidFolderAllowed, androidFolders, browserDirectory, pickAndroidFolder, releaseAndroidFolder } from '@/lib/backupFolder';
 import type { BackupDirectory, BackupStatus } from '@/types';
@@ -53,6 +53,29 @@ let folder: BackupDirectory | null = null;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let running: Promise<void> = Promise.resolve();
 let started = false;
+// What the backup needs to know of every board, kept up to date from each board's own saves so a
+// backup doesn't read the whole library to find the one board that changed. Null until read, and
+// again after any write that doesn't say which board it was.
+let boards: Map<string, BoardStampFields> | null = null;
+let boardWrites = 0;
+
+function noteChange(change?: DataChange) {
+  boardWrites += 1;
+  if (!change) boards = null;
+  else if ('saved' in change) boards?.set(change.saved.id, change.saved);
+  else boards?.delete(change.deleted);
+}
+
+async function knownBoards(): Promise<BoardStampFields[]> {
+  if (!boards) {
+    const before = boardWrites;
+    const read = new Map((await listBoardStamps()).map((board) => [board.id, board]));
+    // A write while reading may or may not be in what was read: use it now, read again next time.
+    if (boardWrites !== before) return [...read.values()];
+    boards = read;
+  }
+  return [...boards.values()];
+}
 
 function update(patch: Partial<BackupStatus>) {
   status = { ...status, ...patch };
@@ -87,7 +110,7 @@ async function init() {
     setFolder((await getSetting<ChosenFolder>(FOLDER_KEY)) ?? null);
     update({ lastBackupAt: saved.lastBackupAt, lastDownloadAt: saved.lastDownloadAt, folderName: folder?.name ?? null, hasWork: await hasSavedWork() });
   } catch { return; /* No IndexedDB: nothing saved to back up. */ }
-  onDataChange(() => { update({ hasWork: true }); schedule(BACKUP_DELAY_MS); });
+  onDataChange((change) => { noteChange(change); update({ hasWork: true }); schedule(BACKUP_DELAY_MS); });
   // Leaving the page: write what is pending now rather than wait for a next visit.
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && timer) schedule(0); });
   if (!chosen) return;
@@ -134,7 +157,7 @@ export function backUpNow(force = false): Promise<void> {
 async function writeBackup(force: boolean) {
   if (!folder || status.state === 'paused' || status.state === 'off') return;
   try {
-    const [sessions, shelf, profile, ink, folders] = await Promise.all([listSessions(), listShelf(), loadProfile(), listInk(), listFolders()]);
+    const [sessions, shelf, profile, ink, folders] = await Promise.all([knownBoards(), listShelf(), loadProfile(), listInk(), listFolders()]);
     const fingerprint = backupFingerprint(sessions, shelf, profile, ink, folders);
     if (!force && fingerprint === saved.fingerprint) { if (status.state !== 'ok') update({ state: 'ok', error: null }); return; }
     update({ state: 'writing' });
@@ -148,11 +171,14 @@ async function writeBackup(force: boolean) {
     const present = new Set(await boardFolder.names());
     let dayFolder: BackupDirectory | undefined;
     const stamps: Record<string, string> = {};
-    for (const session of sessions) {
-      const name = fileName(boardPath(session.id));
-      const stamp = boardStamp(session);
-      stamps[session.id] = stamp;
-      if (saved.boards?.[session.id] === stamp && present.has(name)) continue;
+    for (const listed of sessions) {
+      const name = fileName(boardPath(listed.id));
+      stamps[listed.id] = boardStamp(listed);
+      if (saved.boards?.[listed.id] === stamps[listed.id] && present.has(name)) continue;
+      // Only a board that changed is read, whole, for its file.
+      const session = await loadSession(listed.id);
+      if (!session) { delete stamps[listed.id]; continue; } // deleted meanwhile: the next backup drops it
+      stamps[listed.id] = boardStamp(session);
       const file = await boardFile(session);
       await boardFolder.write(name, file);
       dayFolder ??= await (await target.directory(HISTORY_FOLDER)).directory(day);

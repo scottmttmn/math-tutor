@@ -14,16 +14,33 @@ function pdfjs() {
   return library;
 }
 
+/**
+ * Opens a PDF by reading the parts of the file it needs as it needs them, rather than the whole
+ * file up front: a textbook is tens or hundreds of megabytes, and held whole it stayed in memory
+ * for as long as the book was open. The Blob itself stays on disk (it comes from IndexedDB).
+ */
 export async function openPdf(file: Blob): Promise<PDFDocumentProxy> {
   const lib = await pdfjs();
+  class FileParts extends lib.PDFDataRangeTransport {
+    requestDataRange(begin: number, end: number) {
+      void file.slice(begin, end).arrayBuffer().then((part) => this.onDataRange(begin, new Uint8Array(part)));
+    }
+  }
   return lib.getDocument({
-    data: new Uint8Array(await file.arrayBuffer()),
+    range: new FileParts(file.size, null),
+    // Only what is asked for: no reading on through the rest of the file in the background.
+    disableAutoFetch: true,
+    disableStream: true,
+    rangeChunkSize: PDF_PART_BYTES,
     cMapUrl: '/pdfjs/cmaps/',
     standardFontDataUrl: '/pdfjs/standard_fonts/',
     wasmUrl: '/pdfjs/wasm/',
     iccUrl: '/pdfjs/iccs/',
   }).promise;
 }
+
+/** A PDF is read in parts of this size. */
+const PDF_PART_BYTES = 64 * 1024;
 
 /**
  * Draws a page `width` CSS pixels wide, sharp on high-density screens; with `crop`, only that part

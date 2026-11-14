@@ -10,18 +10,28 @@ import { checkInTitle } from '@/lib/checkIn';
 import { allSolved, problemsTitle } from '@/lib/boardProblems';
 import type { DrawingCanvasHandle } from '@/components/workspace/DrawingCanvas';
 import { hasWork } from '@/lib/inkBoard/model';
-import type { AutosaveStatus, Session, SessionType, TutorProblem } from '@/types';
+import type { AutosaveStatus, BoardInk, Session, SessionType, TutorProblem } from '@/types';
 
 const SAVE_DELAY_MS = 800;
 
-// Everything a save writes except timestamps and the thumbnail, so an unchanged session isn't rewritten.
-const contentKey = (session: Session) => JSON.stringify([
-  session.problemStatement, session.problemImage, session.chatHistory, session.isSolved, session.sessionType,
-  session.checkIn ?? null, session.writeUp?.tex ?? null, session.paper ?? null, session.canvasDocument?.store ?? null, session.ink ?? null, session.canvasStrokes,
-  session.problems ?? null, session.currentProblem ?? null, session.tutorProblem ?? null,
-]);
+// Everything a save writes except timestamps and the thumbnail, so an unchanged session isn't
+// rewritten. The text is compared written out; the drawing is compared as the object it is (the
+// board makes a new one for every change) and pictures as the strings they are. Writing a board
+// with pictures out as text on every save made several copies of megabytes at once.
+type ContentKey = readonly unknown[];
+const contentKey = (session: Session): ContentKey => [
+  JSON.stringify([
+    session.problemStatement, session.chatHistory, session.isSolved, session.sessionType, session.checkIn ?? null,
+    session.writeUp?.tex ?? null, session.paper ?? null, session.currentProblem ?? null, session.tutorProblem ?? null,
+    session.problems?.map(({ problemImage, ...problem }) => { void problemImage; return problem; }) ?? null,
+  ]),
+  session.problemImage, session.ink ?? null, ...(session.problems ?? []).map((problem) => problem.problemImage),
+];
+const sameContent = (a: ContentKey | null, b: ContentKey | null) =>
+  Boolean(a && b) && a!.length === b!.length && a!.every((part, index) => Object.is(part, b![index]));
 
 const rememberCurrent = setBoardToOpen;
+const emptyInk: Pick<BoardInk, 'images'> = { images: [] };
 
 /**
  * Saves the open session to IndexedDB shortly after each change, flushes it when the page is
@@ -44,7 +54,22 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
   const draftFolder = useRef<string | undefined>(undefined);
   const createdAt = useRef(0);
   const thumbnail = useRef<Blob | null>(null);
-  const savedKey = useRef<string | null>(null);
+  const savedKey = useRef<ContentKey | null>(null);
+  // The drawing as last saved durably: a recovery copy leaves out the pictures that save holds.
+  const savedInk = useRef<BoardInk | null>(null);
+  // Whether the session opened was saved as ink (not an older drawing, converted as it opens).
+  const openedInk = useRef(false);
+  // The drawing a save under way is writing. Until it lands the store may hold either, so a
+  // recovery copy leaves out only the pictures both have (a picture deleted, then put back by undo
+  // while that save runs, is in neither once it lands).
+  const savingInk = useRef<Pick<BoardInk, 'images'> | null>(null);
+  const heldPictures = useCallback((): Pick<BoardInk, 'images'> | null => {
+    const saved = savedInk.current;
+    const saving = savingInk.current;
+    if (!saved || !saving) return saved;
+    const landing = new Map(saving.images.map((image) => [image.id, image.src]));
+    return { images: saved.images.filter((image) => landing.get(image.id) === image.src) };
+  }, []);
   // True from a load request until the editor shows it; nothing is saved in between.
   const loading = useRef(true);
   const awaitingEditor = useRef(false);
@@ -96,13 +121,17 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
       const session = snapshot();
       if (!session) return true;
       const key = contentKey(session);
-      if (key === savedKey.current) return true;
+      if (sameContent(key, savedKey.current)) return true;
       setStatus('saving');
       try {
         // After the page unmounts there is no editor; keep the last thumbnail.
         const handle = canvasHandle.current;
         if (handle) thumbnail.current = await handle.captureThumbnail();
-        await saveRecoverableSession({ ...session, canvasImageBlob: thumbnail.current });
+        savingInk.current = session.ink ?? emptyInk;
+        try {
+          await saveRecoverableSession({ ...session, canvasImageBlob: thumbnail.current }, savedInk.current);
+        } finally { savingInk.current = null; }
+        savedInk.current = session.ink ?? null;
         // The student may have moved to another session while this one was saving.
         const { currentSessionId } = latest.current;
         if (currentSessionId ? currentSessionId === session.id : draftId.current === session.id) {
@@ -129,6 +158,8 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
     loading.current = true;
     awaitingEditor.current = true;
     savedKey.current = null;
+    savedInk.current = null;
+    openedInk.current = Boolean(session?.ink);
     try { loadedUnsaved.current = Boolean(session && hasRecoveryCopy(session.id)); } catch { loadedUnsaved.current = false; }
     draftId.current = null;
     draftFolder.current = undefined;
@@ -199,6 +230,9 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
     loading.current = false;
     const session = snapshot();
     savedKey.current = session && !loadedUnsaved.current ? contentKey(session) : null;
+    // What was opened from the durable save holds its pictures there.
+    // (A board from before the ink board is converted as it opens: that save has none of this ink.)
+    savedInk.current = session && !loadedUnsaved.current && openedInk.current ? session.ink ?? null : null;
   }, [pendingLoad, snapshot]);
 
   // Save shortly after the student stops changing anything.
@@ -210,10 +244,10 @@ export function useSessionAutosave(canvasHandle: RefObject<DrawingCanvasHandle |
   // A reload or closed tab can't wait for IndexedDB; keep a synchronous copy for the next load.
   const flush = useCallback(() => {
     const session = snapshot();
-    if (!session || contentKey(session) === savedKey.current) return;
-    try { stageSession(session); if (reopenLast) rememberCurrent(session.id); } catch { /* The save below may still finish. */ }
+    if (!session || sameContent(contentKey(session), savedKey.current)) return;
+    try { stageSession(session, heldPictures()); if (reopenLast) rememberCurrent(session.id); } catch { /* The save below may still finish. */ }
     void persist();
-  }, [snapshot, persist, reopenLast]);
+  }, [snapshot, persist, reopenLast, heldPictures]);
 
   useEffect(() => {
     const onVisibility = () => { if (document.visibilityState === 'hidden') flush(); };

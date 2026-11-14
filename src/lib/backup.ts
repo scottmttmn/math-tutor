@@ -1,5 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import { listFolders, listInk, listSessions, listShelf, loadProfile, restoreRecords } from '@/lib/db';
+import { listFolders, listInk, listSessions, listShelf, loadProfile, restoreRecords, withPictures } from '@/lib/db';
 import { readZip, writeZip } from '@/lib/zip';
 import { writeInChunks } from '@/lib/nativeFiles';
 import { MAX_NOTEBOOK, RATINGS, favoriteEntry } from '@/lib/learnerProfile';
@@ -38,8 +38,9 @@ export function dataUrlToBlob(url: string): Blob {
   return new Blob([bytes], { type: match[1] });
 }
 
-/** A board as it goes in a backup: the thumbnail Blob as a data URL. */
-export async function boardRecord({ canvasImageBlob, ...session }: Session): Promise<BackupSession> {
+/** A board as it goes in a backup: whole (its pictures in its ink), the thumbnail Blob as a data URL. */
+export async function boardRecord(stored: Session): Promise<BackupSession> {
+  const { canvasImageBlob, ...session } = await withPictures(stored);
   return { ...session, canvasImage: canvasImageBlob ? await blobToDataUrl(canvasImageBlob) : null };
 }
 
@@ -66,7 +67,9 @@ export async function backupIndex(sessions: Pick<Session, 'id'>[], shelf: ShelfD
 /** The backup of these records: backup.json's contents, and the boards' and PDFs' files by path. */
 export async function buildBackup(sessions: Session[], shelf: ShelfDocument[], profile?: LearnerProfile, ink: PageInk[] = [], folders: Folder[] = [], now = Date.now()) {
   const manifest = await backupIndex(sessions, shelf, profile, ink, folders, now);
-  const boards = new Map(await Promise.all(sessions.map(async (session) => [boardPath(session.id), await boardFile(session)] as const)));
+  // One at a time: each board's pictures are read for its file, then let go.
+  const boards = new Map<string, Blob>();
+  for (const session of sessions) boards.set(boardPath(session.id), await boardFile(session));
   const pdfs = new Map(shelf.map((document) => [pdfPath(document.id), document.file] as const));
   return { manifest, boards, pdfs };
 }

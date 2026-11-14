@@ -54,6 +54,18 @@ async function saved(check) {
       if (!id) return null;
       const db = await new Promise((resolve, reject) => { const open = indexedDB.open('math-tutor'); open.onsuccess = () => resolve(open.result); open.onerror = reject; });
       const found = await new Promise((resolve) => { const get = db.transaction('sessions').objectStore('sessions').get(id); get.onsuccess = () => resolve(get.result); });
+      // A board's pictures are stored apart from it, under [board, picture]; here they come back
+      // in the ink, with `apart` saying so and `kept` naming every picture stored for the board.
+      if (found?.ink) {
+        const pictures = db.transaction('pictures').objectStore('pictures');
+        const read = (request) => new Promise((resolve) => { request.onsuccess = () => resolve(request.result); });
+        found.kept = (await read(pictures.getAllKeys(IDBKeyRange.bound([id], [id, []])))).map((key) => key[1]);
+        for (const image of found.ink.images) {
+          if (image.src) continue;
+          image.src = (await read(pictures.get([id, image.id]))) ?? '';
+          image.apart = true;
+        }
+      }
       db.close();
       // A Blob doesn't come back to the test; say whether there is one.
       return found && new Function('session', `return ${test}`)(found) ? { ...found, canvasImageBlob: Boolean(found.canvasImageBlob) } : null;
@@ -318,6 +330,9 @@ try {
   assert.ok(added.w <= withPicture.ink.page.width - 64 && Math.abs(added.w / added.h - 2) < 0.01, `picture ${added.w} × ${added.h}`);
   const stored = Buffer.from(added.src.split(',')[1], 'base64');
   assert.ok(stored.readUInt32BE(16) <= 1920, 'a large photo is stored at most 1920 px wide');
+  // Pictures are stored apart from the board, so saving a stroke doesn't rewrite them.
+  assert.ok(added.apart && own.apart, 'the saved board names its pictures without holding them');
+  assert.deepEqual([...withPicture.kept].sort(), [added.id, own.id].sort());
   // The selection's corner handle resizes it: dragged in by a quarter of its width plus height, half
   // the size, the same shape, one undo step, and still selected.
   // The handle's area (left to the page on a BOOX) is centered on the corner of the box, 8 px outside the picture.
@@ -336,10 +351,27 @@ try {
   assert.equal(await ink().getAttribute('data-selected'), '1', 'it stays selected');
   await page.keyboard.press('Delete');
   await waitCount('images', 1);
+  // A deleted picture leaves the store, and comes back whole when that is undone.
+  await saved(`session.ink?.images?.length === 1 && session.kept.length === 1 && session.kept[0] === '${own.id}'`);
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await waitCount('images', 2);
+  const undone = await saved('session.ink?.images?.length === 2 && session.kept.length === 2');
+  assert.equal(undone.ink.images.find((item) => !item.problem).src, added.src, 'the picture is stored again');
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await saved(`session.ink?.images?.some((item) => !item.problem && item.w === ${added.w})`);
+  // Reopened, the board has its pictures back: the photo's gray is on the page again.
+  const grayPixels = () => page.locator('[data-ink-board] canvas').first().evaluate((canvas) => {
+    const { data } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+    let gray = 0;
+    for (let i = 0; i < data.length; i += 4) if (data[i] > 200 && data[i] < 240 && data[i] === data[i + 1] && data[i] === data[i + 2]) gray += 1;
+    return gray;
+  });
+  await page.reload();
+  await waitCount('images', 2);
+  for (let tries = 0; tries < 50 && await grayPixels() < 10000; tries += 1) await page.waitForTimeout(100);
+  assert.ok(await grayPixels() >= 10000, 'the reopened board draws its pictures');
+  const reopened = await saved('session.ink?.images?.length === 2');
+  assert.ok(reopened.ink.images.every((item) => item.apart && item.src.startsWith('data:image/png')), 'opening it leaves the pictures where they are');
   await page.getByRole('button', { name: 'Clear board' }).click();
   await waitCount('images', 1);
   await page.getByRole('button', { name: 'Pen', exact: true }).click();
@@ -408,6 +440,31 @@ try {
   await ink().waitFor();
   assert.equal(await problemBox().inputValue(), 'Nothing drawn yet.');
   console.log('PASS a board saved with nothing drawn reopens empty');
+
+  // A board saved before pictures had their own store holds them inside it; after a start they
+  // are moved out, the board otherwise as it was, and it opens with them.
+  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAwS2OUAAAAABJRU5ErkJggg==';
+  await page.evaluate(async (src) => {
+    const db = await new Promise((resolve, reject) => { const open = indexedDB.open('math-tutor'); open.onsuccess = () => resolve(open.result); open.onerror = reject; });
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(['sessions', 'settings'], 'readwrite');
+      tx.objectStore('sessions').put({
+        id: 'older-pictures', title: 'Older', problemStatement: 'Saved with its picture inside', problemImage: null, canvasStrokes: [], canvasDocument: null,
+        canvasImageBlob: null, chatHistory: [], createdAt: 5, updatedAt: 5, sessionType: 'problem',
+        ink: { version: 1, page: { left: 0, top: 0, width: 960 }, strokes: [], images: [{ id: 'pic', x: 40, y: 40, w: 200, h: 100, src }] },
+      });
+      tx.objectStore('settings').delete('picturesApart');
+      tx.oncomplete = resolve; tx.onerror = reject;
+    });
+    db.close();
+    localStorage.setItem('math-tutor:currentSession', 'older-pictures');
+  }, pixel);
+  await page.reload();
+  await waitCount('images', 1);
+  const apart = await saved("session.id === 'older-pictures' && session.kept.length === 1");
+  assert.ok(apart.ink.images[0].apart && apart.ink.images[0].src === pixel, 'its picture moved to the store, whole');
+  assert.equal(apart.updatedAt, 5, 'moving the picture is not work on the board');
+  console.log('PASS pictures are stored apart from their board, and older boards are moved over');
 
   assert.deepEqual(errors, []);
 } finally {
