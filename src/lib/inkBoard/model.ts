@@ -127,17 +127,21 @@ export function paginate(board: BoardInk): BoardInk {
 /**
  * The page with room for `content`: the same page when it already fits, else wider (either side) or
  * with a higher top. Work is never moved to fit the page.
+ *
+ * A notes board's pages keep their width, and with `widen` false (handwriting) so does one long page:
+ * the view fits the page's width, so a page that grew a little with every line written at its edge
+ * was shown smaller each time the view was fitted again (a page turn, full screen), and a notes
+ * page, which keeps its height, ever shorter on the screen (Go 10.3, 2026-11-13).
  */
-export function pageAround(page: BoardPage, content: Bounds | null): BoardPage {
+export function pageAround(page: BoardPage, content: Bounds | null, widen = true): BoardPage {
   if (!content) return page;
-  const left = Math.min(page.left, content.minX - PAGE_MARGIN);
-  const right = Math.max(page.left + page.width, content.maxX + PAGE_MARGIN);
   if (page.pages) {
     // Pages keep their top, so none of them moves; work below the last page adds pages.
     const pages = Math.max(page.pages, Math.ceil((content.maxY - page.top) / PAGE_HEIGHT));
-    if (left === page.left && right === page.left + page.width && pages === page.pages) return page;
-    return { left, top: page.top, width: right - left, pages };
+    return pages === page.pages ? page : { ...page, pages };
   }
+  const left = widen ? Math.min(page.left, content.minX - PAGE_MARGIN) : page.left;
+  const right = widen ? Math.max(page.left + page.width, content.maxX + PAGE_MARGIN) : page.left + page.width;
   const top = Math.min(page.top, content.minY - PAGE_MARGIN);
   if (left === page.left && right === page.left + page.width && top === page.top) return page;
   return { left, top, width: right - left };

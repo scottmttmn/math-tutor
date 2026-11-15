@@ -142,6 +142,22 @@ try {
   await switchTo(/New Notes/, "Topic or concept you're studying...");
   await waitAttr('pages', 1);
   assert.equal(await page.getByTestId('page-number').textContent(), '1/1');
+  // Lines written from edge to edge of the paper leave the page as wide as it was: the view fits the
+  // page's width, so a page that grew with them was shown smaller, and shorter, at each page turn.
+  const paper = await page.getByTestId('ink-board').boundingBox();
+  for (const y of [200, 320]) {
+    await stroke(18, y, 140, y + 20);
+    await stroke(paper.width - 140, y, paper.width - 18, y + 20);
+  }
+  await waitAttr('strokes', 4);
+  await page.getByRole('button', { name: 'New page' }).click();
+  await waitAttr('page', 2);
+  await stroke(4, 200, 140, 220);
+  await waitAttr('strokes', 5);
+  const edges = await saved('session.ink?.strokes.length === 5');
+  assert.deepEqual(edges.ink.page, { left: 0, top: 0, width: 960, pages: 2 });
+  console.log('PASS writing at the paper\'s edges keeps a notes page its width');
+
   assert.deepEqual(errors, []);
   console.log('PASS problem boards keep one long page, also switched to with + New; no browser exceptions');
 } finally {
