@@ -4,15 +4,18 @@ import { boardBounds, imageBounds, pageAround, strokeBounds, union, type Bounds 
 // Edits never change a board in place: each returns a new one sharing the untouched strokes, so
 // undo keeps earlier boards and what changed is found by comparing references.
 
-/** The board with strokes and pictures added on top (pictures under all ink), its page grown to fit them. */
-export function addItems(board: BoardInk, strokes: BoardStroke[], images: BoardImage[] = []): BoardInk {
+/**
+ * The board with strokes and pictures added on top (pictures under all ink), its page grown to fit
+ * them; `widen` false for handwriting, which never makes the page wider (see pageAround).
+ */
+export function addItems(board: BoardInk, strokes: BoardStroke[], images: BoardImage[] = [], widen = true): BoardInk {
   if (strokes.length === 0 && images.length === 0) return board;
   let added: Bounds | null = null;
   for (const stroke of strokes) added = union(added, strokeBounds(stroke));
   for (const image of images) added = union(added, imageBounds(image));
   return {
     ...board,
-    page: pageAround(board.page, added),
+    page: pageAround(board.page, added, widen),
     strokes: strokes.length ? [...board.strokes, ...strokes] : board.strokes,
     images: images.length ? [...board.images, ...images] : board.images,
   };

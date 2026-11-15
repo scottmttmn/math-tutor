@@ -35,6 +35,21 @@ test('the page grows to fit work beyond its sides or top, and otherwise stays th
   assert.deepEqual(model.pageAround(page, { minX: -100, minY: -50, maxX: 1000, maxY: 10 }), { left: -132, top: -82, width: 1164 });
 });
 
+test('handwriting never widens the page, and nothing widens a notes board\'s pages', () => {
+  // The view fits the page's width: a page that grew with each line written at its edge was shown smaller every time.
+  const atEdges = [line('a', 2, 100, 60, 110), line('b', 900, 100, 975, 110)];
+  const long = board([]);
+  assert.equal(edits.addItems(long, atEdges, [], false).page, long.page);
+  assert.deepEqual(edits.addItems(long, [line('c', 2, 10, 60, 20)], [], false).page, { left: 0, top: -24.1, width: 960 }, 'the top still grows');
+  assert.equal(edits.addItems(long, atEdges).page.width > 960, true, 'pasted ink and pictures still widen one long page');
+  const notes = model.paginate(board([line('n', 100, 100, 200, 100)]));
+  assert.equal(edits.addItems(notes, atEdges, [], false).page, notes.page);
+  assert.equal(edits.addItems(notes, atEdges).page, notes.page);
+  assert.equal(edits.moveItems(notes, new Set(['n']), -300, 0).page, notes.page);
+  assert.equal(edits.scaleItems(notes, new Set(['n']), 100, 100, 8).page, notes.page);
+  assert.deepEqual(edits.addItems(notes, [line('d', -40, model.PAGE_HEIGHT + 10, 1000, model.PAGE_HEIGHT + 20)], [], false).page, { ...notes.page, pages: 2 });
+});
+
 test('scaleItems resizes strokes (points and width) and pictures about a corner, and grows the page', () => {
   const a = line('a', 100, 100, 200, 100);
   const b = line('b', 0, 0, 10, 0);

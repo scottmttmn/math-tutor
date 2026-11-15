@@ -449,7 +449,8 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = f
       const taken = scratchedOut(board(), index.current, stroke.points, ERASER_REACH / camera.current.z);
       if (taken.size > 0) { apply(removeItems(board(), taken)); return; }
     }
-    apply(addItems(board(), [stroke]));
+    // Handwriting never widens the page, or it would be shown smaller at the next page turn or full screen.
+    apply(addItems(board(), [stroke], [], false));
   }, [apply]);
 
   const setCamera = useCallback((next: Camera) => {
