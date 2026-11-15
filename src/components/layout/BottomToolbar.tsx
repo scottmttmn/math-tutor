@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { useCanvasState } from '@/context/CanvasContext';
 import { useRateLimit } from '@/hooks/useRateLimit';
-import { useScratchOutOff } from '@/hooks/useInkBoardChoice';
+import { usePinchZoomOff, useScratchOutOff } from '@/hooks/useInkBoardChoice';
 import { RATE_LIMIT_MS } from '@/lib/constants';
 import type { Paper, SessionType } from '@/types';
 import { PAPERS } from '@/lib/paper';
@@ -52,6 +52,7 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
   const router = useRouter();
   const { hasContent } = useCanvasState();
   const [scratchOff, toggleScratchOff] = useScratchOutOff();
+  const [pinchOff, togglePinchOff] = usePinchZoomOff();
   const rail = useBoardRail();
   const copied = useCopiedPicture();
   const { isLimited } = useRateLimit(RATE_LIMIT_MS);
@@ -130,6 +131,7 @@ export default function BottomToolbar({ onAskForHelp, checkInLabel, onClear, isS
       items={[
         ...(addPicture ? [{ label: 'Add picture…', disabled: isStreaming, onSelect: () => pictureInput.current?.click() }] : []),
         { label: 'Scratch out to erase', separatorBefore: Boolean(addPicture), role: 'menuitemcheckbox', checked: !scratchOff, onSelect: toggleScratchOff },
+        { label: 'Pinch to zoom', role: 'menuitemcheckbox', checked: !pinchOff, onSelect: togglePinchOff },
         ...(tools ? [{ label: 'Hide tool rail', role: 'menuitemcheckbox' as const, checked: tools.hidden, onSelect: tools.toggle }] : []),
         // The Android app has no address bar, so the pen test is reached from here.
         { label: 'Pen test…', disabled: isStreaming, onSelect: () => router.push('/pen-test') },
