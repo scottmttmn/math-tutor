@@ -253,6 +253,16 @@ try {
     assert.ok((await viewY()) - before.y > 0, 'the drifting scroll still scrolls');
   }
   assert.ok((await twoFingers({ gap: 20, spread: 60 })).zoom > 1.2, 'a pinch zooms');
+  // Board → Pinch to zoom turned off on the device: the same pinch leaves the zoom alone.
+  const pinchZoom = (on) => page.evaluate((value) => {
+    localStorage.setItem('math-tutor:pinchZoomOff', value);
+    window.dispatchEvent(new Event('storage'));
+  }, on ? '0' : '1');
+  await pinchZoom(false);
+  await page.waitForTimeout(100);
+  assert.equal((await twoFingers({ gap: 20, spread: 60 })).zoom, 1, 'with Pinch to zoom off a pinch does not zoom');
+  assert.ok((await twoFingers({ gap: 20, spread: 0 })).moved > 0, 'with Pinch to zoom off two fingers still scroll');
+  await pinchZoom(true);
   await pen.detach();
   await touch.detach();
 

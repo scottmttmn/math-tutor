@@ -1,128 +1,78 @@
 # TODO
 
-Reviewed against the app on 2026-10-18.
+Reviewed against the app on 2026-11-15.
 
-Goal: make Math Tutor a great math notebook on its own, even for someone who never uses the AI tutor. The primary audience is the self-motivated learner who enjoys math, at any skill level.
+Goal: a great math notebook on its own, even for someone who never uses the AI tutor. The audience is the self-motivated learner who enjoys math, at any level.
 
-Direction: pen-first and keyboard-free for the core reading, writing and tutor loop. The Android app is already built. The BOOX Go 10.3 arrived on 2026-10-21 and device validation is underway.
+Designed around the tablet: the Android app on a BOOX Go 10.3 (black and white e-ink, pen first, often offline), with BOOX Notes as the reference for the notebook. The computer version follows the tablet, not the other way round.
 
-Every change goes through a branch and a PR (see CLAUDE.md, "Workflow and CI"). The remaining items below carry forward the existing roadmap; priorities can change after the device test.
+Every change goes through a branch and a PR (see CLAUDE.md, "Workflow and CI"). How each feature works is described in CLAUDE.md; this file is only the order of work.
 
-## Remaining work
+## Order of work (agreed 2026-11-15)
 
-### PDF reading and writing
+1. **Settle it.** No new features until the app holds up through long sessions.
+2. **Close the loop.** Bring recorded work back to the learner, on Home.
+3. **Notebook depth**, only as use shows it is missed.
+4. **Not now**: see the end of this file.
 
-- [ ] **Open as note:** move ink from a passage on a PDF page onto a new note board. Marking a passage as a note page already works.
-- [x] Marks are named from the book's number ("4.2 #55") and renamed on their board; an exercise can go on over the page. Still open: redrawing a saved mark's box.
-- [ ] Dedicated PDF zoom controls beyond the current fit-to-width page and browser pinch zoom. The board zooms with two fingers or Ctrl+wheel and has Fit width.
-- [ ] Save a PDF with its page ink and highlights included. Board PNG/PDF export and full backups already exist.
-- [ ] An optional default paper setting for new boards. Today each board remembers its paper; new Problems start Blank and Notes start Lined.
-- [ ] Evaluate notebook mode on real problem solving: writing comfort, zoom habits and tutor handwriting recognition. New boards use a fixed width; existing wide work keeps its room. Token savings are not assumed.
+## 1. Settle it
 
-### Backup on the tablet
+- [ ] **App kills on the tablet.** Every exit in the 2026-11-13 log was the app killed while in front, with no reason from Android. The memory work (pictures stored apart from boards, light autosave, backup reading only changed boards, PDFs read in parts) is in, but not yet confirmed on the device. Needed: a Settings → Errors log after a kill on a current build ("Last noted … before" says what was open). If kills continue, next is folder backup, which still rewrites all of a board's pictures into its file on each change (backup version 3: pictures as their own files).
+- [x] When the page's process dies, the app starts its page again at Home instead of closing (a second loss within a minute still closes it). Not yet seen on the device.
+- [x] **Board → Pinch to zoom**, a device choice: off, two fingers only scroll.
+- [ ] Marking an exercise in a PDF and naming it takes too many steps; look for fewer.
+- [ ] Notebooks whose pages were widened by writing at the edge (before 2026-11-15) stay wide. Offer a way to bring one back to the normal width if it bothers.
+- [ ] ChatGPT-plan replies arrive whole on the tablet, not streamed (requests go through the native HTTP path). Stream them natively.
+- [ ] Tutor reply text reads a little small on the tablet.
+- [ ] Long-session check on the device: erasing, lasso, undo, page turns and reading for an hour or more without lag building up.
+- [ ] Decide whether the pen's ink choices should be fewer on the monochrome screen.
 
-- [ ] Automatic backup to a folder or a sync-app location from the Android app. Desktop Chromium folder backup is built; Android currently saves a backup ZIP through its native Save dialog and can restore a chosen backup.
+## 2. Close the loop
 
-### Tutor and memory
+The app records solved and unfinished problems, the tutor's second-look flags, favorites and topic notes. Home only lists them. Everything here shows on Home or in Tutor memory, never on the board (Scott: not distracting). Design as a mockup first.
 
-- [ ] **Check me on this topic** for one topic or area straight from its row in Tutor memory. The multi-topic Skill check-in is built.
-- [ ] Tutor-recommended problems based on Favorites and the learner profile. Step A, **+ New → Problem from tutor** (a topic from the memory, like a favorite, Different problem), is built. Next: **Another like this** on a board, then a typeset copy of the problem to **Put on board**.
-- [ ] Design contextual tutor cards beside the selected passage or handwritten work, preserving useful feedback and follow-up context. The current tutor is a collapsible drawer with pen-friendly choices; replacing it remains a separate design step.
+- [ ] **Pick up** on Home: a short section with flagged problems to look at again, unfinished ones, and a rusty topic to try.
+- [ ] Each quiet read becomes a tutor note on its topic, and notes record how much help a topic took.
+- [ ] Scoring a flag (It was a mistake / It was fine; Was actually wrong for a miss), to compare models.
+- [ ] **Another like this** on a board (a new board with a similar problem), then a typeset copy of a tutor's problem to **Put on board**.
+- [ ] **Check me on this topic** from one topic's row in Tutor memory. The multi-topic check-in is built.
 
-### Handwriting to TeX
+## 3. Notebook depth
 
-- [ ] Include drawings as images in a write-up; they currently become `\fbox{Figure: …}` placeholders.
-- [ ] Offer TeX write-up on boards opened from PDF marks. It is currently available on free boards through **Board → TeX write-up…**.
+- [ ] Marked problems listed under their book and section (a notebook tied to a text).
+- [ ] Straightening lines (ink board step 8).
+- [ ] **Open as note:** move ink from a passage on a PDF page onto a new note board.
+- [ ] Redrawing a saved mark's box on a PDF page.
+- [ ] An optional default paper for new boards. Today Problems start Blank and Notes start Lined.
+- [ ] PDF zoom controls beyond fit to width.
+- [ ] Save a PDF with its page ink and highlights included.
+- [ ] Continuous reading instead of page by page; design it first.
+- [ ] TeX write-up: drawings as images (now `\fbox{Figure: …}`), and on boards opened from PDF marks.
+- [ ] Contextual tutor cards beside the selected work, as a design step. The lasso's Hint · Check already asks about a selection.
 
-## BOOX validation — device testing underway
+## 4. Not now
 
-- [x] First BOOX sizing pass: 25% larger app text, spacing and shared icons, 55px standard controls, larger legacy drawing buttons, scrollable menus, and a content-sized problem panel in portrait. Browser checks cover both orientations; physical reading comfort still needs a device trial.
-- [ ] Test the actual app's small mathematical symbols, stroke latency, palm rejection, erasing, selection, undo, page movement and long reading sessions. The bare `/pen-test` page is available for comparison.
-- [x] Use those results to decide whether tldraw is suitable and whether a native pen layer / BOOX SDK integration is needed (decided: our own ink board with Onyx's pen; tldraw removed 2026-11-08). Keep canvas-specific polish small until then. First Go 10.3 test (2026-10-21): built-in Notes feels immediate; browser pen input is laggy. The SDK receives about 280 samples/s, but per-stroke refreshes interrupt writing; temporarily suppressing them felt much better. The native layer now waits for a pause in writing and keeps the input reader running during refresh. Scott confirmed the installed fix stays smooth after pausing and resuming writing. The real board then felt quite good, with one missed start and blocked writing near the screen edges. Its toolbar layout wrappers excluded tall blank side strips; exclusions now follow only the interactive controls. Scott confirmed writing and starting strokes at both side edges works after that correction. All 177 saved strokes survived an update and reload of the isolated test app. Physical undo validation remains.
-- [ ] Finish BOOX interaction validation. Initial erasing, selection, moving and zooming were laggy and flashy even in EinkWise Speed mode (anti-flicker 10). Monitoring measured 35 ms median input-event delay (64 ms at the 95th percentile), with tasks up to 117 ms, excluding physical panel refresh. Disabling camera animations, canvas pen hover and the eraser trail felt the same or worse; hover and eraser feedback are restored. Holding Onyx's transient animation update mode was **clearly better and usable**, though still slower than native drawing. A per-gesture version with a settled cleanup repaint felt worse and flashed more. The revision holds fast mode while an editing tool is chosen and releases it without a forced repaint when returning to the pen; finger pan/zoom with the pen chosen still enters and leaves fast mode per gesture. Device status confirms held editing mode, gesture entry/exit and native pen restoration. Scott reports less flashing, with tool feel about the same or possibly a little worse than the preceding trial; overall tool latency still needs work. Camera moves are immediate; autosave thumbnails are capped at 512 pixels with fixed padding. Profiles of the same 135-stroke board confirm thumbnail pixel readback disappears, though 50–88 ms tasks remain. Long-session behavior still needs validation.
-- [x] Keep the BOOX pen preview's width consistent at the handoff to saved board ink. Scott reported existing ink thickening after a pause. The fixed 2.5-pixel preview did not follow tldraw's pen size or zoom; a startup-only matching width still thickened. Applying the width to the running pen kept the ink consistent in the device trial. Startup now reapplies width after SDK initialization, and pen-size/zoom changes update it without restarting input.
-- [ ] **Ink board replacing tldraw** (agreed 2026-10-21; plan: https://claude.ai/artifact/WgrS9kXhB83B9ardHWxd1Q). Done: 1 format and engine core with the tldraw converter; 2 opt-in board on the computer (Board → Ink board for new boards); 3 BOOX built (Onyx's pen draws the pen tool into ink, eraser end, fast mode for fingers and the other tools). Go 10.3 trial of 3 (2026-10-21): works well, so the web board stays; the page-drawn highlighter lagged and now goes through the SDK too. Cached page bitmaps only if scrolling proves slow. 4 lasso built (select, move, duplicate, delete; the tutor reads the selection), awaiting a Go 10.3 try. Ink on PDF pages uses Onyx's pen too (no board open). 5 pictures: Board → Add picture… (an image or a PDF's first page, moved, resized and deleted with the lasso), and Select to copy on a PDF page with Paste in the board's rail. 6 the default (tldraw boards open converted). 7 tldraw removed (2026-11-08): older boards open converted without it, text and shapes left out. Resizing a selection or picture from its corner handle is done (from 8). Next: 8 straightening lines.
-- [ ] Try the installed Android app's tutor calls and Sign in with ChatGPT on the device, without a Mac.
-- [ ] Test backup/restore on the device and choose its long-term backup location or sync workflow.
-- [ ] Decide whether the pen panel should have fewer colors and no opacity for the monochrome screen.
+- A new name for the app.
+- DRM-free EPUB as texts. Reflow needs a different approach to marks, ink anchors and page references. The workaround is converting to PDF.
+- Typed boards (discussed 2026-10-21): a Typed kind beside Problem and Notes with visual math entry. It pulls against the keyboard-free direction.
+- A shared problem collection and recommendations from other learners. It would be a separate project; the app is never hosted.
+- Function plots on the board.
+- Showing cache reuse on the ChatGPT-plan connection. Identical requests still reported zero cached tokens, and the connection rejects explicit cache controls.
 
-## From the Go 10.3 notes (2026-11-04)
+## What is built
 
-- [x] Wider lines on lined paper (80 units, about BOOX Notes' ruling).
-- [x] Ink board controls in a left rail, header and rail collapsible, nothing at the foot of the board where the writing hand rests.
-- [ ] The same for the PDF reader's page toolbar (no board open).
-- [ ] Opening a board from a PDF and naming its problem feels cumbersome; look for fewer steps.
-- [x] Error log on the tablet for the random-seeming crashes (2026-11-08): page errors, Java and native crashes, the WebView's page process dying, the app closed while in front or not responding, in Settings → Errors to copy or save.
-- [ ] If the log shows the page process dying: reload the page instead of closing the app. Finger gestures that moved the page, if the board scrolling while writing comes back.
-- [ ] An optional no-zoom mode (fingers only scroll).
-- [x] Scratch out to erase on the ink board (Board → Scratch out to erase, on by default).
-- [x] **Problems in a notebook** (2026-11-10; replaces the print-book notebook design, Scott: not something separate from notes): notes boards have pages (flip like BOOX Notes), and the lasso's **Mark problem** names a problem in them with an optional book. Its tag has Hint · Check (asked as a problem: the tutor works out the problem from the work, or says it can't), Mark solved, Favorite, Rename and Unmark; Home finds marks by search and the Problems, In progress, Solved and Favorites filters and opens the notebook at one.
-- [ ] Marked problems in a book's list and sections (a notebook tied to a Shelf text), if wanted after using marks.
-- [x] **Quiet checks, step 1** (2026-11-11): Mark solved (a board or a marked problem) has the tutor read the work once in the background; the verdict (Take another look: where / Tutor agrees) shows only on Home, with a **Second look** filter. Off switch in Tutor memory, 100 a day. Solved-but-unchecked problems (marked offline, failed, or solved before) are read in the background on start and on reconnect, or with **Read them**; in the app a question runs beside a quiet read (through the server it cancels it). Scott: never distracting, nothing on the board.
-- [ ] Quiet checks, next: scoring a flag (It was a mistake / It was fine; Was actually wrong for a miss) to compare models, and each read becoming a tutor note on the topic.
-
-## Later ideas
-
-- [ ] Continuous reading instead of only page-by-page navigation; design it first. Page ink, highlights and note boards are already built.
-- [ ] Function plots on the canvas. Grid/graph paper is already built.
-- [ ] **DRM-free EPUB as texts.** Reflow needs a different approach to marks, ink anchors and page references; math rendering also needs evaluation. DRM-locked books are outside this import path. The existing workaround is EPUB-to-PDF conversion, then **Add a PDF…**.
-- [ ] **Typed boards** (discussed 2026-10-21, not now). Recommended shape if picked up: a Typed board kind beside Problem and Notes, lines of text or visual math (MathLive, so no LaTeX needed), with the tutor reading exact text instead of handwriting. Alternatives considered: typed text/math boxes on the ink board (custom tldraw shape) and a Markdown + LaTeX source editor. It pulls against the keyboard-free BOOX direction, so it would be an addition, not a replacement for ink.
-- [ ] A shared problem collection and recommendations from other learners. Personal Favorites already provide the "interesting problem" star.
-
-## Delivered
-
-### Home, folders and texts
-
-**Home** is the library: Continue, nested folders, texts and free boards, with thumbnails, search, sorting, filters (including Favorites), Rename, Move to and Delete/Remove. **+ New** offers Problem, Notes, Add a PDF and, in the library, New folder. The main bar is Home, + New and Settings; the old Shelf tab is gone.
-
-A PDF is a **text**, added or dropped into the library in a folder of its own. Its folder holds the text and its marked boards, and can contain more folders. Open the text from there to read at the saved page. Texts outside folders open directly in the reader. Search and filters find boards within folders and texts; deleting a folder moves its contents up a level.
-
-### PDF reader and marked boards
-
-Read with edge taps, sideways swipes, arrow keys, printed page numbers, Contents, margin trimming and full screen. **Your list**, **Contents** and **Search** organize and find exercises, note pages, highlights and page ink by section. The list can be hidden to give the page more room.
-
-The compact text toolbar groups page arrows and drawing tools as named 44px icons, with Full screen and Your list icons, **Trim margins** in the Text menu, and direct **Mark** and **Ask** buttons.
-
-**Mark** boxes an Exercise or Note, creates its board and keeps a mark on the PDF. An exercise picture is placed automatically on an empty board. Several marked exercises can share one PDF board (**This board** / **Own board**), with a current exercise and separate solved states. On an upright tablet, **Page N** / **Back to board** swaps between the page and board.
-
-Pen, Highlight, Eraser and Undo work directly on PDF pages; ink is saved per page and included in backups. **Ask about the page** explains a boxed passage and **Save as note page** keeps the conversation on a note board. Exercise questions can include the preceding PDF text, limited to the exercise's page and at most 15 pages; the student can adjust or disable that context.
-
-### Boards and tutor controls
-
-- [x] Offer an opt-in notebook experiment on free and Shelf boards: consistent writing width, paper edges, vertical scrolling, zoom and Fit width, remembered per device. Preserve existing ink and board sending.
-- [x] Break down each reply's reported token usage into input, output and total across providers, with reasoning shown as part of output when reported.
-- [x] Show how many input tokens were reused from cache when the provider reports it, including an explicit zero without adding cached tokens to the total again.
-- [x] Keep ChatGPT's reference pages and current board ahead of changing memory/history to preserve reusable context; use only the automatic caching supported by the ChatGPT-plan connection.
-- [ ] Demonstrate actual cache reuse on the ChatGPT-plan connection. Live Sol 6.1 checks still reported zero cached tokens on identical 12,948-input-token requests, and the connection rejects explicit cache controls; request ordering alone has not shown savings.
-
-Problem and Notes boards are ink boards: they autosave, restore after reload, and start with the pen at S. Paper choices are Blank, Lined and Grid. **Add picture** accepts an image or a PDF's first page; **Put on board** places it behind the writing. This replaces the old Single problem flow.
-
-The compact toolbar has Full screen, current Paper, sweep Clear, a Board menu, Favorite, Solved and one **Ask tutor** toggle. Board holds Hide drawing tools, PNG/PDF export and, on free boards, TeX write-up. **Show tools** restores hidden tools. Pen styles collapse behind a remembered color/size chip, opening the native controls on tap and closing on a stroke or Esc.
-
-The tutor drawer's choices are Hint / Check my work / Feedback for Problems and Explain this / Check my notes for Notes, above the custom-question box and microphone. Opening/closing sends nothing and preserves drafts and active replies; hiding stops speech input, and reopening shows the latest reply. Every question carries a fresh board image, with readable close-ups for large boards; capture errors keep drafts. The five-second request interval and one-active-request limit apply across tutor calls.
-
-On wide screens the PDF page and its board share the space beside the tutor, keeping the board's controls out of the conversation.
-
-### Tutor memory and check-ins
-
-**Tutor memory** holds About you, optional self-ratings, editable tutor topic notes, Favorites and the tutor's notebook. The tutor can update notes at the end of a reply when the work teaches it something; these are not automatic summaries of every session. The profile is kept locally, included in backups and shared with questions when enabled; the student can inspect what the tutor reads.
-
-**Skill check-in** offers up to four uncertain topics, asks one problem at a time and records settled topics in memory. **Start check-in** requests the first problem; **Hand in answer** submits the board. **Show check-in problem** reopens a closed conversation without handing in an answer.
-
-### Export, backup and Android app
-
-**Board → Save as PNG / Save as PDF** exports a whole board. **Settings → Backup** downloads a ZIP of boards, texts, page ink, folders and tutor memory, and restores missing or newer work from a ZIP or folder. Desktop Chromium can automatically write to a chosen folder, keeping seven days of dated copies; **Backup paused** restores permission after a browser restart, and **Back up** reminds when a backup is due.
-
-The Capacitor Android app is bundled and its APK built in CI. It calls tutor providers directly from the device, stores API keys with Android Keystore encryption, supports Sign in with ChatGPT, and uses the native Save dialog for downloads. Real-device validation remains above.
-
-### Handwriting test and development checks
-
-The Wacom pages and LaTeX keys live in `tests/handwriting/`; `npm run handwriting` transcribes and scores configured models. In the **2026-10-09** run, Claude Sonnet 5.5, Claude Opus 5.5 and ChatGPT-plan Sol 6.1 each scored 99% on written lines; Luna scored 91% and invented work, and Gemini 3.8 Flash's free tier was rate limited before completing the set. These are dated test results, not a new benchmark.
-
-CI runs lint, typecheck, unit tests, production build and browser tests, plus the Android bundle tests and APK build. The app's shared visual language is ink on paper, with indigo reserved for tutor controls and feedback.
+- **Notebook:** our own ink board (tldraw removed 2026-11-08) with Onyx's pen on BOOX, a left tool rail, whole-stroke eraser, scratch out to erase, lasso (move, resize, copy and paste, ask the tutor about a selection), pictures, paper, PNG/PDF export. Notes boards have pages you flip, and **Mark problem** names a problem in them.
+- **Library:** Home with Continue, nested folders, texts and boards, search, filters and sorting. A PDF comes in a folder of its own.
+- **PDF reader:** page turns, Contents, Search, Your list, trim margins, full screen, ink and highlights on pages, Mark for exercises and note pages (several exercises on one board, names from the book's numbering), Select to copy onto a board or ask about a passage.
+- **Tutor:** a drawer you call (Hint, Check my work, Feedback; Explain this, Check my notes), run on principles; tutor memory with self-ratings, topic notes, a notebook and favorites; skill check-ins; Problem from tutor; quiet checks of work marked solved, shown only on Home; TeX write-up.
+- **Tablet app:** standalone Android app with tutor calls and Sign in with ChatGPT on the device, encrypted API keys, in-app updates, an error log, and folder backup through Android's folder picker.
+- **Backup:** ZIP download and restore, folder backup with seven days of dated copies.
+- **Checks:** lint, type check, unit and browser tests and the Android build in CI; a handwriting test for comparing models (`npm run handwriting`).
 
 ## Design references
 
-- [Pen-first workbook direction](docs/pen-first-math-workbook-plan.md): historical product discussion; current implementation status is recorded here.
-- [Library folders design](https://claude.ai/artifact/HwasY4HpAiE6Y5qNts1X6k), option B.
-- [PDF reading design](https://claude.ai/artifact/TXw8zCKZbwQ9ohM2Fk9nC8), originally called the Shelf design.
+- [Ink board plan](https://claude.ai/artifact/WgrS9kXhB83B9ardHWxd1Q)
+- [Library folders design](https://claude.ai/artifact/HwasY4HpAiE6Y5qNts1X6k), option B
+- [PDF reading design](https://claude.ai/artifact/TXw8zCKZbwQ9ohM2Fk9nC8)
+- [Quiet checks design](https://claude.ai/artifact/4w9ePv1YFruwonM2JMpXfV)
+- [Pen-first workbook direction](docs/pen-first-math-workbook-plan.md): historical.

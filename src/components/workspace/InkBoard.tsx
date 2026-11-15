@@ -9,7 +9,7 @@ import { HIGHLIGHTER_WIDTH, HIGHLIGHT_ALPHA, INK_COLORS, PEN_WIDTHS, boardBounds
 import { addItems, addMark, changeMark, commit, copyItems, moveItems, redo, removeItems, removeMark, scaleItems, startHistory, undo, type BoardHistory } from '@/lib/inkBoard/edits';
 import { GridIndex, itemsInLasso, strokesHitByPath } from '@/lib/inkBoard/hitTest';
 import { scratchedOut } from '@/lib/inkBoard/scratchOut';
-import { useScratchOutOff } from '@/hooks/useInkBoardChoice';
+import { usePinchZoomOff, useScratchOutOff } from '@/hooks/useInkBoardChoice';
 import { drawBoard, drawBoardStroke } from '@/lib/inkBoard/render';
 import { EXPORT_PADDING, MAX_EXPORT_SIDE, THUMBNAIL_SIDE, problemImage, renderItems, tutorImages } from '@/lib/inkBoard/capture';
 import { VIEW_MARGIN, clampCamera, fitCamera, fitZoom, toBoard, zoomAbout, type Camera, type ViewSize } from '@/lib/inkBoard/camera';
@@ -444,6 +444,10 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = f
   const [scratchOff] = useScratchOutOff();
   const scratchOn = useRef(true);
   useEffect(() => { scratchOn.current = !scratchOff; }, [scratchOff]);
+  // Board → Pinch to zoom, off: two fingers only ever scroll.
+  const [pinchOff] = usePinchZoomOff();
+  const pinchZoom = useRef(true);
+  useEffect(() => { pinchZoom.current = !pinchOff; }, [pinchOff]);
   const addStroke = useCallback((stroke: BoardStroke) => {
     if (scratchOn.current && stroke.tool === 'pen') {
       const taken = scratchedOut(board(), index.current, stroke.points, ERASER_REACH / camera.current.z);
@@ -995,7 +999,7 @@ export default function InkBoard({ handleRef, toolsHidden, paper, ask, paged = f
           if (pinch.mode === 'undecided') {
             const spread = Math.abs(distance - pinch.start);
             const travel = Math.hypot(mid.x - pinch.startMid.x, mid.y - pinch.startMid.y);
-            if (Math.abs(distance / pinch.start - 1) >= PINCH_START && spread > travel) pinch = { ...pinch, distance, mode: 'zoom' };
+            if (pinchZoom.current && Math.abs(distance / pinch.start - 1) >= PINCH_START && spread > travel) pinch = { ...pinch, distance, mode: 'zoom' };
             else if (travel >= SCROLL_LOCK && travel > spread) pinch = { ...pinch, mode: 'scroll' };
           }
           if (pinch.mode === 'zoom') {
